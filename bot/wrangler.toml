@@ -17,8 +17,7 @@ PROMOTE_ENABLED = "false"
 [[d1_databases]]
 binding = "DB"
 database_name = "opendrone-discord-bot"
-# Placeholder: replace with the id printed by `npx wrangler d1 create opendrone-discord-bot`.
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "47c7c4ee-2ccc-4434-9aa8-ceedf8d9d044"
 migrations_dir = "migrations"
 
 [triggers]
