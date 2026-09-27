@@ -3,12 +3,12 @@
  *
  * | Command                  | Type         | Who (checked in code)         | Reply                                  |
  * |--------------------------|--------------|-------------------------------|----------------------------------------|
- * | /link pr:<url>           | slash        | members                       | ephemeral, plus a note in the thread   |
+ * | /link pr:<url>           | slash        | members; private repos: staff | ephemeral, plus a note in the thread   |
  * | /branch [repo]           | slash        | anyone who can use it         | ephemeral                              |
  * | /editing repo:<name>     | slash        | anyone; private repos: staff  | ephemeral                              |
  * | /verify                  | slash        | anyone who can use it         | ephemeral                              |
  * | /promote name summary    | slash        | admin, PROMOTE_ENABLED="true" | ephemeral                              |
- * | To GitHub issue          | message menu | members                       | modal, then ephemeral and a reply      |
+ * | To GitHub issue          | message menu | members; private repos: staff | modal, then ephemeral and a reply      |
  * | Approve build            | message menu | reviewer or admin             | ephemeral                              |
  *
  * Every command is guild-only (contexts [0]). Anything that calls an API

@@ -38,7 +38,7 @@ Any other path is 404; a known path with the wrong method is 405.
 
 | Module | Does |
 |---|---|
-| `src/commands/` | Registers nothing: no slash or context-menu command exists |
+| `src/commands/` | Slash and context-menu commands (see [Commands](#commands)); Discord shows them only after `register-commands --yes` |
 | `src/github/` | Posts GitHub activity into Discord and runs the KiCad collision guard (tables below) |
 | `src/linked-roles/` | Discord + GitHub OAuth, role connection metadata, D1 storage of sealed refresh tokens, cron refresh |
 
@@ -115,6 +115,25 @@ overlapping refreshes of one user.
 | `defer()` work and GitHub handlers run in `ctx.waitUntil`, which Cloudflare cancels 30 s after the response | `src/interactions.ts`, `src/webhooks.ts` |
 | Channel, role and tag ids are resolved by name at runtime; no id is hard-coded | `src/config.ts` |
 | A module conflict (same command, custom_id prefix or route) fails at startup | `src/registry.ts` |
+
+## Commands
+
+All are guild-only. Role checks run in the Worker; `default_member_permissions`
+only decides who sees a command until an override is added in Server
+Settings, Integrations, OpenDrone Dev. Staff means admin or developer.
+
+| Command | Where | Who | What it does |
+|---|---|---|---|
+| `/link pr:<url>` | development forum thread | members; private repos: staff | Writes `Discussion: <thread url>` into the PR description. Replaces an existing line only when it points at a post the bot created or at a deleted thread, and leaves a "moved to" note in the replaced post |
+| `/branch [repo]` | development forum thread | anyone who can use it | Fork and branch commands, and the `Discussion:` line to put in the PR description |
+| `/editing repo:<name>` | anywhere | anyone; private repos: staff | Open PRs that change `.kicad_pcb` or `.kicad_sch` files |
+| `/verify` | anywhere | anyone who can use it | Link to the Linked Roles verification page |
+| `/promote name summary [private]` | anywhere | admin | Creates a repository from `hardware-template` with topic `status-planned`. Refuses while `PROMOTE_ENABLED` is `"false"` |
+| To GitHub issue | message in a development forum thread | members; private repos: staff | Modal, then an issue with a link back to the message |
+| Approve build | message | reviewer or admin | Grants Verified Builder to the message author |
+
+Approve build and `/promote` are visible to Administrators only until an
+override is added.
 
 ## `config/repos.json`
 
@@ -211,11 +230,12 @@ These are the permissions and events the merged code uses. Grant nothing more.
 
 | Repository permission | Access | Used for |
 |---|---|---|
-| Metadata | Read | Required; the repository event |
-| Pull requests | Read and write | Read PRs and their files, list open PRs, append the `Discussion:` line to a PR body, post the collision comment (issue comments API on a PR) |
+| Metadata | Read | Required; the repository event; the `private` flag read by `/editing` and "To GitHub issue" |
+| Pull requests | Read and write | Read PRs and their files, list open PRs, append the `Discussion:` line to a PR body (webhooks and `/link`), post the collision comment (issue comments API on a PR), `/editing` |
+| Issues | Read and write | "To GitHub issue" creates the issue |
 | Checks | Read | `check_suite` events |
 | Contents | Read | `push` and `release` events |
-| Administration | No access | Without it the App cannot create, delete, rename or transfer repositories or change settings and branch protection |
+| Administration | No access | Only `/promote` needs it (see below). Without it the App cannot create, delete, rename or transfer repositories or change settings and branch protection |
 
 | Organization permission | Access | Used for |
 |---|---|---|
@@ -229,6 +249,13 @@ These are the permissions and events the merged code uses. Grant nothing more.
 | Release | published |
 | Repository | edited (only `changes.topics` is read) |
 | Push | every push; only the default branch is posted |
+
+`/promote` is implemented but disabled: `PROMOTE_ENABLED` is `"false"` in
+`wrangler.toml`, and the command then refuses before any GitHub call. Enabling
+it needs `PROMOTE_ENABLED = "true"` and "Administration: Read and write" on the
+App, which is why Administration stays at No access until then. Setting the
+`status-planned` topic also needs the new repository to be inside the App
+installation, so install the App on all repositories of the organisation.
 
 After creating it: generate a private key and a client secret, then install the
 App on OpenDrone-hw. The private key can stay in the PKCS#1 form GitHub issues;
@@ -296,10 +323,16 @@ the environment or `wrangler.toml`, and the token from `DISCORD_BOT_TOKEN`,
 else `OPENDRONE_DISCORD_BOT_TOKEN` from the environment or
 `~/.config/incutec/credentials.env`. The token is never printed.
 
+`register-commands -- --dry-run` prints only the JSON body and cannot be
+combined with `--yes`. A command without `default_member_permissions` or the
+guild-only context is refused.
+
 ```sh
 npm run register-metadata
 npm run register-metadata -- --yes
-npm run register-commands          # prints "No module registers a command."
+npm run register-commands
+npm run register-commands -- --dry-run
+npm run register-commands -- --yes
 ```
 
 ### 7. Attach linked roles

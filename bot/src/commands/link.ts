@@ -3,8 +3,16 @@
  * "Discussion: <thread url>" to the pull request description, which the
  * GitHub module reads to post PR events into this thread. The invoker gets
  * an ephemeral answer; a successful link is also announced in the thread.
+ *
+ * The GitHub module creates a forum post and writes the line for every new
+ * pull request that has none, usually before anyone can run /link. /link
+ * therefore replaces an existing line when its thread was created by this
+ * bot (owner_id is the application id) or no longer exists, and leaves a
+ * note in the replaced post. A line pointing at a thread a person started,
+ * or outside this server, is never replaced.
  */
-import { defer, ephemeral } from "../interactions.ts";
+import { DiscordError } from "../discord.ts";
+import { defer, ephemeral, errorText } from "../interactions.ts";
 import type { Command, InteractionContext } from "../registry.ts";
 import { GitHubError } from "../github.ts";
 import { ApplicationCommandType, MessageFlags } from "../types.ts";
@@ -26,11 +34,23 @@ import {
 } from "./util.ts";
 
 export const DISCUSSION_PREFIX = "Discussion:";
-const DISCUSSION_LINE = /^Discussion:[ \t]*(\S+)[ \t]*$/m;
+const DISCUSSION_LINE = /^[ \t]*Discussion:[ \t]*<?([^\s<>]+)>?[ \t]*$/m;
+const THREAD_URL = /^https:\/\/(?:ptb\.|canary\.)?discord(?:app)?\.com\/channels\/(\d{17,20})\/(\d{17,20})(?:\/\d{17,20})?\/?$/i;
 
-/** The URL on the pull request body's "Discussion:" line, or null. */
+/** The URL on the pull request body's first "Discussion:" line, or null. */
 export function discussionUrl(body: string | null | undefined): string | null {
   return DISCUSSION_LINE.exec(body ?? "")?.[1] ?? null;
+}
+
+/** Guild and thread id of a Discord channel URL, or null. */
+export function parseThreadUrl(url: string): { guildId: string; threadId: string } | null {
+  const match = THREAD_URL.exec(url);
+  return match ? { guildId: match[1] as string, threadId: match[2] as string } : null;
+}
+
+/** Replaces the body's first "Discussion:" line with one naming `url`. */
+export function replaceDiscussion(body: string, url: string): string {
+  return body.replace(DISCUSSION_LINE, `${DISCUSSION_PREFIX} ${url}`);
 }
 
 /** Appends the "Discussion:" line to a pull request body. */
@@ -61,6 +81,35 @@ interface PullRequest {
   body: string | null;
   html_url: string;
   base?: { repo?: { private?: boolean } };
+}
+
+/**
+ * True when the thread was created by this bot (the GitHub module's automatic
+ * post) or no longer exists. Any other answer, including an error, keeps the
+ * existing link.
+ */
+async function replaceableThread(ctx: InteractionContext, threadId: string): Promise<boolean> {
+  const botId = ctx.services.env.APPLICATION_ID || ctx.interaction.application_id;
+  try {
+    const thread = await ctx.services.discord.getChannel(threadId);
+    return typeof thread.owner_id === "string" && thread.owner_id === botId;
+  } catch (error) {
+    return error instanceof DiscordError && error.status === 404;
+  }
+}
+
+/** Tells readers of the bot-created post where the discussion went. Failure is logged only. */
+async function noteMove(ctx: InteractionContext, threadId: string, label: string, url: string): Promise<void> {
+  try {
+    await ctx.services.discord.sendMessage(threadId, {
+      content: `Discussion of ${label} moved to ${url}. New pull request activity is posted there.`,
+      flags: MessageFlags.SUPPRESS_EMBEDS,
+    });
+  } catch (error) {
+    if (!(error instanceof DiscordError && error.status === 404)) {
+      console.error("link: could not leave a note in the replaced thread:", errorText(error));
+    }
+  }
 }
 
 async function link(ctx: InteractionContext, prText: string): Promise<string> {
@@ -97,10 +146,19 @@ async function link(ctx: InteractionContext, prText: string): Promise<string> {
   const label = `[${repo.repo}#${pull.number}](<${pull.html_url}>) ${escapeMarkdown(truncate(pull.title, 150))}`;
   const existing = discussionUrl(pull.body);
   if (existing === url) return `This thread is already linked to ${label}.`;
+  let replaced: string | null = null;
   if (existing !== null) {
-    return `${repo.repo}#${pull.number} already names another discussion: <${existing}>. Edit the pull request description to change it.`;
+    const guildId = interaction.guild_id ?? services.env.GUILD_ID;
+    const target = parseThreadUrl(existing);
+    const replaceable = target !== null && target.guildId === guildId && (await replaceableThread(ctx, target.threadId));
+    if (!replaceable) {
+      return `${repo.repo}#${pull.number} already names another discussion: <${existing}>. Edit the pull request description to change it.`;
+    }
+    replaced = target.threadId;
   }
-  await repoRequest(ctx, repo.repo, "PATCH", path, { body: { body: withDiscussion(pull.body, url) } });
+  const body = existing !== null ? replaceDiscussion(pull.body ?? "", url) : withDiscussion(pull.body, url);
+  await repoRequest(ctx, repo.repo, "PATCH", path, { body: { body } });
+  if (replaced !== null) await noteMove(ctx, replaced, label, url);
   await services.discord.sendMessage(thread.thread.id, {
     content: `${escapeMarkdown(invokerName(interaction))} linked this thread to ${label}. Pull request activity will be posted here.`,
     flags: MessageFlags.SUPPRESS_EMBEDS,

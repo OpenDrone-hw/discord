@@ -1,7 +1,8 @@
 /**
  * /branch [repo]: run inside a development forum thread. Replies (only to the
  * invoker) with the commands to fork the repository and start a branch named
- * after the thread title.
+ * after the thread title, and the "Discussion:" line to put in the pull
+ * request description so its activity comes to this thread.
  */
 import { defer } from "../interactions.ts";
 import type { Command, InteractionContext } from "../registry.ts";
@@ -15,9 +16,10 @@ import {
   repoChoices,
   resolveRepoName,
   stringOption,
+  threadUrl,
 } from "./util.ts";
 
-export function branchInstructions(org: string, repo: string, branch: string): string {
+export function branchInstructions(org: string, repo: string, branch: string, threadLink: string): string {
   return [
     `Work on **${repo}** for this thread:`,
     "```sh",
@@ -33,7 +35,11 @@ export function branchInstructions(org: string, repo: string, branch: string): s
     `git switch -c ${branch}`,
     "```",
     `KiCad boards and schematics cannot be merged: run \`/editing repo:${repo}\` first to see which open pull requests change them.`,
-    "Once your pull request is open, run `/link pr:<url>` in this thread.",
+    "When you open the pull request, put this line in its description so its activity is posted here (without it the bot starts a separate forum post):",
+    "```",
+    `Discussion: ${threadLink}`,
+    "```",
+    "If the pull request is already open, run `/link pr:<url>` in this thread instead.",
   ].join("\n");
 }
 
@@ -56,7 +62,8 @@ async function branch(ctx: InteractionContext, repoOption: string | undefined): 
     return `This thread does not name one product. Run /branch repo:<name> with one of: ${options.join(", ")}.`;
   }
   const slug = branchSlug(thread.thread.name ?? "", `thread-${thread.thread.id}`);
-  return branchInstructions(cfg.org, repo.repo, slug);
+  const link = threadUrl(ctx.interaction.guild_id ?? ctx.services.env.GUILD_ID, thread.thread.id);
+  return branchInstructions(cfg.org, repo.repo, slug, link);
 }
 
 export const branchCommand: Command = {

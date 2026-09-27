@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { discussionUrl, linkCommand, parsePullRef, withDiscussion } from "../../src/commands/link.ts";
+import { discussionUrl, linkCommand, parsePullRef, parseThreadUrl, replaceDiscussion, withDiscussion } from "../../src/commands/link.ts";
 import { ERROR_TEXT } from "../../src/interactions.ts";
 import { InteractionResponseType, MessageFlags } from "../../src/types.ts";
 import { jsonResponse } from "../helpers.ts";
-import { FORUM_POWER, GEN_CHAT, GH_TOKEN, GUILD, harness, ROLE_DEVELOPER, rxThread, slash, text, THREAD, type Handler } from "./fixtures.ts";
+import { ALICE, APP, FORUM_POWER, FORUM_RX, GEN_CHAT, GH_TOKEN, GUILD, harness, ROLE_DEVELOPER, rxThread, slash, text, THREAD, type Handler } from "./fixtures.ts";
 
 const THREAD_URL = `https://discord.com/channels/${GUILD}/${THREAD}`;
 const PR_PATH = "/repos/OpenDrone-hw/OpenRX/pulls/12";
@@ -57,6 +57,11 @@ describe("discussion line helpers", () => {
     expect(discussionUrl(null)).toBeNull();
     expect(withDiscussion("Body\n\n", "U")).toBe("Body\n\nDiscussion: U\n");
     expect(withDiscussion(null, "U")).toBe("Discussion: U\n");
+    expect(discussionUrl("  Discussion: <https://discord.com/channels/1/2>")).toBe("https://discord.com/channels/1/2");
+    expect(replaceDiscussion("A\n\nDiscussion: https://x/1\nB", "U")).toBe("A\n\nDiscussion: U\nB");
+    expect(parseThreadUrl(`https://discord.com/channels/${GUILD}/${THREAD}`)).toEqual({ guildId: GUILD, threadId: THREAD });
+    expect(parseThreadUrl("https://discord.com/channels/1/2")).toBeNull();
+    expect(parseThreadUrl("https://evil.example/channels/1494019459822653512/1700000000000000010")).toBeNull();
   });
 });
 
@@ -96,6 +101,66 @@ describe("/link", () => {
     const { h, reply } = await run("OpenRX#12", github(pull({ body: `Discussion: ${other}` })));
     expect(reply).toContain(`already names another discussion: <${other}>`);
     expect(h.find("PATCH", PR_PATH)).toHaveLength(0);
+  });
+
+  describe("an existing line naming another thread in this server", () => {
+    const OTHER = "1700000000000000099";
+    const OTHER_URL = `https://discord.com/channels/${GUILD}/${OTHER}`;
+    const botBody = `Fixes the pinout.\n\nDiscussion: ${OTHER_URL}`;
+
+    function withThread(owner: string | number): Handler {
+      const base = github(pull({ body: botBody }));
+      return (call, url) => {
+        if (url.pathname === `/api/v10/channels/${OTHER}` && call.method === "GET") {
+          return typeof owner === "number"
+            ? jsonResponse({ message: "Unknown Channel", code: 10003 }, owner)
+            : jsonResponse({ id: OTHER, type: 11, parent_id: FORUM_RX, owner_id: owner });
+        }
+        if (url.pathname === `/api/v10/channels/${OTHER}/messages` && call.method === "POST") return jsonResponse({ id: "m2" });
+        return base(call, url);
+      };
+    }
+
+    it("replaces a line pointing at a post the bot created and notes the move there", async () => {
+      const { h, reply } = await run("OpenRX#12", withThread(APP));
+      const patch = h.find("PATCH", PR_PATH);
+      expect(patch).toHaveLength(1);
+      expect(patch[0]?.body).toEqual({ body: `Fixes the pinout.\n\nDiscussion: ${THREAD_URL}` });
+      const moved = h.find("POST", `/channels/${OTHER}/messages`)[0]?.body as Record<string, unknown>;
+      expect(moved.content).toContain(`moved to ${THREAD_URL}`);
+      expect(moved.allowed_mentions).toEqual({ parse: [] });
+      expect(h.find("POST", `/channels/${THREAD}/messages`)).toHaveLength(1);
+      expect(reply).toContain("Linked this thread to [OpenRX#12]");
+    });
+
+    it("replaces a line pointing at a deleted thread", async () => {
+      const { h } = await run("OpenRX#12", withThread(404));
+      expect(h.find("PATCH", PR_PATH)[0]?.body).toEqual({ body: `Fixes the pinout.\n\nDiscussion: ${THREAD_URL}` });
+    });
+
+    it("keeps a line pointing at a thread a person started", async () => {
+      const { h, reply } = await run("OpenRX#12", withThread(ALICE));
+      expect(reply).toContain(`already names another discussion: <${OTHER_URL}>`);
+      expect(h.find("PATCH", PR_PATH)).toHaveLength(0);
+      expect(h.find("POST", `/channels/${OTHER}/messages`)).toHaveLength(0);
+    });
+
+    it("keeps the line when the thread cannot be read", async () => {
+      const { h, reply } = await run("OpenRX#12", withThread(403));
+      expect(reply).toContain("already names another discussion");
+      expect(h.find("PATCH", PR_PATH)).toHaveLength(0);
+    });
+
+    it("never replaces a bot thread URL from another server", async () => {
+      const foreign = `https://discord.com/channels/1111111111111111111/${OTHER}`;
+      const other = await run("OpenRX#12", (call, url) => {
+        if (url.pathname === PR_PATH && call.method === "GET") return jsonResponse(pull({ body: `Discussion: ${foreign}` }));
+        return withThread(APP)(call, url);
+      });
+      expect(other.reply).toContain(`already names another discussion: <${foreign}>`);
+      expect(other.h.find("PATCH", PR_PATH)).toHaveLength(0);
+      expect(other.h.find("GET", `/channels/${OTHER}`)).toHaveLength(0);
+    });
   });
 
   it("refuses a repository discussed in another forum without calling GitHub", async () => {

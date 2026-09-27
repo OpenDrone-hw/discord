@@ -4,7 +4,7 @@ import { editingCommand, formatEditing, MAX_PULLS } from "../../src/commands/edi
 import { clearVerificationUrlCache, verifyCommand, verifyMessage } from "../../src/commands/verify.ts";
 import { InteractionResponseType, MessageFlags } from "../../src/types.ts";
 import { jsonResponse } from "../helpers.ts";
-import { FORUM_POWER, GEN_CHAT, harness, ROLE_DEVELOPER, rxThread, slash, TAG_LITE, TAG_OPENRX, text, type Handler } from "./fixtures.ts";
+import { FORUM_POWER, GEN_CHAT, GUILD, harness, ROLE_DEVELOPER, rxThread, slash, TAG_LITE, TAG_OPENRX, text, THREAD, type Handler } from "./fixtures.ts";
 
 const EPHEMERAL_DEFER = { type: InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE, data: { flags: MessageFlags.EPHEMERAL } };
 
@@ -20,7 +20,10 @@ describe("/branch", () => {
   it("uses the thread's product tag and title", async () => {
     const { response, reply, h } = await run([]);
     expect(response).toEqual(EPHEMERAL_DEFER);
-    expect(reply).toBe(branchInstructions("OpenDrone-hw", "OpenRX", "fix-uart-pinout-on-v2-rev-b"));
+    const threadLink = `https://discord.com/channels/${GUILD}/${THREAD}`;
+    expect(reply).toBe(branchInstructions("OpenDrone-hw", "OpenRX", "fix-uart-pinout-on-v2-rev-b", threadLink));
+    expect(reply).toContain(`\nDiscussion: ${threadLink}\n`);
+    expect(reply.length).toBeLessThanOrEqual(2000);
     expect(reply).toContain("gh repo fork OpenDrone-hw/OpenRX --clone");
     expect(reply).toContain("git switch -c fix-uart-pinout-on-v2-rev-b");
     expect(reply).toContain("/editing repo:OpenRX");

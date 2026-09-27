@@ -6,6 +6,7 @@ import {
   NOT_MEMBER,
   NOT_THREAD,
   PREFIX,
+  privateRefusal,
   SLOW,
   suggestedTitle,
   toIssueCommand,
@@ -24,6 +25,7 @@ import {
   messageCommand,
   ROLE_ADMIN,
   ROLE_BUILDER,
+  ROLE_DEVELOPER,
   ROLE_MEMBER,
   ROLE_REVIEWER,
   rxThread,
@@ -138,7 +140,12 @@ describe("To GitHub issue: submit", () => {
     };
   }
 
+  const repoMeta = (isPrivate: boolean): Handler => (call, url) =>
+    url.pathname === "/repos/OpenDrone-hw/OpenRX" && call.method === "GET" ? jsonResponse({ name: "OpenRX", private: isPrivate }) : undefined;
+
   const github: Handler = (call, url) => {
+    const meta = repoMeta(false)(call, url);
+    if (meta) return meta;
     if (url.pathname === "/repos/OpenDrone-hw/OpenRX/issues" && call.method === "POST") {
       return jsonResponse({ number: 41, html_url: "https://github.com/OpenDrone-hw/OpenRX/issues/41" }, 201);
     }
@@ -193,6 +200,33 @@ describe("To GitHub issue: submit", () => {
     await toIssueModal.handle(h.ctx(outsider));
     await h.settle();
     expect(text(h.lastEdit())).toBe(NOT_MEMBER);
+    expect(h.find("POST", "/repos/OpenDrone-hw/OpenRX/issues")).toHaveLength(0);
+  });
+
+  it("keeps private repositories to staff", async () => {
+    const privateRepo: Handler = (call, url) => repoMeta(true)(call, url) ?? github(call, url);
+    const h = await harness(privateRepo);
+    await toIssueModal.handle(h.ctx(submission({ repo: "OpenRX", title: "T", body: "B" })));
+    await h.settle();
+    expect(text(h.lastEdit())).toBe(privateRefusal("OpenRX"));
+    expect(h.find("POST", "/repos/OpenDrone-hw/OpenRX/issues")).toHaveLength(0);
+    expect(h.find("POST", `/channels/${THREAD}/messages`)).toHaveLength(0);
+
+    const developer = submission({ repo: "OpenRX", title: "T", body: "B" });
+    developer.member = { user: { id: ALICE, username: "alice" }, roles: [ROLE_DEVELOPER], permissions: "2048" };
+    await toIssueModal.handle(h.ctx(developer));
+    await h.settle();
+    expect(h.find("POST", "/repos/OpenDrone-hw/OpenRX/issues")).toHaveLength(1);
+    expect(text(h.lastEdit())).toContain("Created OpenRX#41");
+  });
+
+  it("files nothing when the repository cannot be read", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const h = await harness((call, url) =>
+      url.pathname === "/repos/OpenDrone-hw/OpenRX" && call.method === "GET" ? jsonResponse({ message: "Not Found" }, 404) : github(call, url),
+    );
+    await toIssueModal.handle(h.ctx(submission({ repo: "OpenRX", title: "T" })));
+    await h.settle();
     expect(h.find("POST", "/repos/OpenDrone-hw/OpenRX/issues")).toHaveLength(0);
   });
 

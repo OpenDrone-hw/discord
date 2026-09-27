@@ -3,7 +3,8 @@
  * development forum thread. Opens a modal prefilled with the message text;
  * on submit it creates an issue in the repository mapped from the forum (the
  * thread's product tag preselects it) with a link back to the message, and
- * replies to the message with the issue link.
+ * replies to the message with the issue link. Private repositories are
+ * refused on submit unless the invoker is staff (admin or developer).
  *
  * The modal is the initial response, so the checks before it must finish
  * inside Discord's 3 s: they get PREPARE_TIMEOUT_MS, and a slower Discord API
@@ -21,6 +22,7 @@ import {
   MEMBER_ROLES,
   messageUrl,
   repoRequest,
+  STAFF_ROLES,
   truncate,
   within,
   type ThreadContext,
@@ -35,6 +37,7 @@ const SNOWFLAKE = /^\d{15,25}$/;
 
 export const NOT_MEMBER = "Only members can file GitHub issues.";
 export const NOT_THREAD = "Use this on a message in a thread of a development forum.";
+export const privateRefusal = (repo: string) => `${repo} is private; only developers can file issues in it.`;
 export const SLOW = "Discord was slow to answer. Try again in a moment.";
 
 interface TargetMessage {
@@ -186,6 +189,11 @@ async function submit(ctx: InteractionContext, channelId: string, messageId: str
   const title = (values.get("title")?.[0] ?? "").trim().slice(0, TITLE_MAX);
   if (!title) return "The issue needs a title.";
   const text = (values.get("body")?.[0] ?? "").slice(0, BODY_MAX);
+
+  // Private repositories are staff-only: the App installation could write to
+  // them for anyone, and the reply in the thread would expose the issue.
+  const meta = await repoRequest<{ private?: boolean }>(ctx, repo.repo, "GET", `/repos/${cfg.org}/${repo.repo}`);
+  if (meta.private !== false && !(await hasRole(ctx, STAFF_ROLES))) return privateRefusal(repo.repo);
 
   const guildId = interaction.guild_id ?? services.env.GUILD_ID;
   const link = messageUrl(guildId, channelId, messageId);
