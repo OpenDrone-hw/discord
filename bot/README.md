@@ -125,11 +125,17 @@ New GitHub App.
 | Issues | Read and write | "To GitHub issue" |
 | Checks | Read | Check results |
 | Commit statuses | Read | Status results |
-| Administration | Read and write | `/promote` (repository from `hardware-template`), only used when `PROMOTE_ENABLED` is `"true"` |
+| Administration | No access | Nothing. Without it the bot cannot create, delete, rename or transfer repositories, change repository settings or change branch protection |
 
 | Organization permission | Access | Used for |
 |---|---|---|
 | Members | Read | `org_member` and `maintainer` linked-role metadata |
+
+Do not grant Administration now: `/promote` is not implemented and
+`PROMOTE_ENABLED` is `"false"`. Grant "Administration: Read and write" only
+when `/promote` is implemented and `PROMOTE_ENABLED` is set to `"true"`,
+preferably through a second GitHub App installed only on the repositories that
+need it, so the main App key never carries it.
 
 Events: Pull request, Pull request review, Check suite, Status, Release,
 Repository, Organization, Membership.
