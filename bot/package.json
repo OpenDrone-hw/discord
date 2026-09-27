@@ -1,0 +1,25 @@
+{
+  "name": "opendrone-discord-bot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cloudflare Worker bot for the OpenDrone Discord server",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=23.6"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check": "tsc --noEmit && vitest run",
+    "dev": "wrangler dev",
+    "register-commands": "node --disable-warning=ExperimentalWarning scripts/register-commands.ts",
+    "register-metadata": "node --disable-warning=ExperimentalWarning scripts/register-metadata.ts"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260927.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.141.0"
+  }
+}

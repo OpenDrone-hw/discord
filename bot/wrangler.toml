@@ -1,0 +1,28 @@
+# Cloudflare Worker for the OpenDrone Discord bot. See README.md for setup.
+# Secrets are never written here; set each with `npx wrangler secret put <NAME>`:
+#   DISCORD_PUBLIC_KEY DISCORD_BOT_TOKEN DISCORD_CLIENT_ID DISCORD_CLIENT_SECRET
+#   GITHUB_APP_ID GITHUB_APP_PRIVATE_KEY GITHUB_WEBHOOK_SECRET
+#   GITHUB_OAUTH_CLIENT_ID GITHUB_OAUTH_CLIENT_SECRET SESSION_SECRET
+name = "opendrone-discord-bot"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+workers_dev = true
+
+[vars]
+GUILD_ID = "1494019459822653512"
+APPLICATION_ID = "1553748824470851644"
+PROMOTE_ENABLED = "false"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "opendrone-discord-bot"
+# Placeholder: replace with the id printed by `npx wrangler d1 create opendrone-discord-bot`.
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+[triggers]
+# Linked-role metadata refresh, every 6 hours.
+crons = ["17 */6 * * *"]
+
+[observability]
+enabled = true
