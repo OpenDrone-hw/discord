@@ -388,9 +388,8 @@ its requirements. This has no API.
 
 | Item | State in this branch |
 |---|---|
-| Metadata refresh on GitHub events | `refreshLinkedUser(services, login)` exists in `src/linked-roles/index.ts`; `src/github/` does not call it. Refresh happens only in the browser flow and the cron |
 | `owner` metadata | Always 0: nothing writes `users.owner` |
-| `status`, `organization`, `membership` webhooks | No handler; do not subscribe |
+| `status` webhook | No handler; do not subscribe |
 | Message, reaction and member events | Need a gateway connection; the Worker has none |
 | Work longer than 30 s | No Cloudflare Queue is configured; only the cron (15 min per invocation) runs longer |
 | `channels.modLog` in `config/repos.json` | Validated and resolvable, used by no handler; `roles` is read by the commands' role checks |
