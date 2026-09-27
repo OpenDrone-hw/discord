@@ -1,0 +1,126 @@
+{
+  "guild_id": "1494019459822653512",
+  "profiles": {
+    "community": {
+      "@everyone": {
+        "deny": ["VIEW_CHANNEL"]
+      },
+      "Newbie": {
+        "deny": ["CREATE_INSTANT_INVITE", "MANAGE_CHANNELS", "ADD_REACTIONS", "PRIORITY_SPEAKER", "STREAM", "VIEW_CHANNEL", "SEND_MESSAGES", "SEND_TTS_MESSAGES", "MANAGE_MESSAGES", "EMBED_LINKS", "ATTACH_FILES", "READ_MESSAGE_HISTORY", "MENTION_EVERYONE", "USE_EXTERNAL_EMOJIS", "CONNECT", "SPEAK", "MUTE_MEMBERS", "DEAFEN_MEMBERS", "MOVE_MEMBERS", "USE_VAD", "MANAGE_ROLES", "MANAGE_WEBHOOKS", "USE_APPLICATION_COMMANDS", "MANAGE_EVENTS", "MANAGE_THREADS", "CREATE_PUBLIC_THREADS", "CREATE_PRIVATE_THREADS", "USE_EXTERNAL_STICKERS", "SEND_MESSAGES_IN_THREADS", "USE_EMBEDDED_ACTIVITIES", "USE_SOUNDBOARD", "CREATE_EVENTS", "USE_EXTERNAL_SOUNDS", "SEND_VOICE_MESSAGES", "SET_VOICE_CHANNEL_STATUS", "SEND_POLLS", "USE_EXTERNAL_APPS", "PIN_MESSAGES", "BYPASS_SLOWMODE"]
+      },
+      "Member": {
+        "allow": ["CREATE_INSTANT_INVITE", "ADD_REACTIONS", "STREAM", "VIEW_CHANNEL", "SEND_MESSAGES", "EMBED_LINKS", "ATTACH_FILES", "READ_MESSAGE_HISTORY", "USE_EXTERNAL_EMOJIS", "CONNECT", "SPEAK", "USE_VAD", "USE_APPLICATION_COMMANDS", "CREATE_PUBLIC_THREADS", "USE_EXTERNAL_STICKERS", "SEND_MESSAGES_IN_THREADS", "USE_SOUNDBOARD", "USE_EXTERNAL_SOUNDS"],
+        "deny": ["MANAGE_CHANNELS", "PRIORITY_SPEAKER", "SEND_TTS_MESSAGES", "MANAGE_MESSAGES", "MENTION_EVERYONE", "MUTE_MEMBERS", "DEAFEN_MEMBERS", "MOVE_MEMBERS", "MANAGE_ROLES", "MANAGE_WEBHOOKS", "MANAGE_THREADS", "CREATE_PRIVATE_THREADS", "USE_EMBEDDED_ACTIVITIES", "SEND_VOICE_MESSAGES", "SET_VOICE_CHANNEL_STATUS", "SEND_POLLS", "USE_EXTERNAL_APPS", "PIN_MESSAGES"]
+      },
+      "developer": {
+        "allow": ["VIEW_CHANNEL", "CONNECT"]
+      }
+    }
+  },
+  "categories": [
+    {
+      "id": "1494779018111746188",
+      "name": "Chats",
+      "access": "community",
+      "channels": [
+        {
+          "id": "1494779609131258048",
+          "name": "gen-chat"
+        },
+        {
+          "id": "1494782854117326969",
+          "name": "builds"
+        }
+      ]
+    },
+    {
+      "id": "1497547320131190864",
+      "name": "Help",
+      "access": "community",
+      "channels": [
+        {
+          "id": "1497547403140530237",
+          "name": "support"
+        }
+      ]
+    },
+    {
+      "id": "1550880981592973433",
+      "name": "Hardware",
+      "access": "community",
+      "channels": [
+        {
+          "id": "1494783056026796262",
+          "name": "fc"
+        },
+        {
+          "id": "1494758396577058900",
+          "name": "vtx"
+        },
+        {
+          "id": "1494758355825328158",
+          "name": "frame"
+        },
+        {
+          "id": "1538618173354414190",
+          "name": "aio"
+        },
+        {
+          "id": "1494803018770809065",
+          "name": "digital-vtx"
+        },
+        {
+          "id": "1494758377010757682",
+          "name": "remote-id"
+        },
+        {
+          "id": "1494758332903456969",
+          "name": "rx"
+        },
+        {
+          "id": "1494782966302507118",
+          "name": "esc"
+        },
+        {
+          "id": "1550883307246461033",
+          "name": "gps"
+        },
+        {
+          "id": "1550883427220197396",
+          "name": "motors"
+        },
+        {
+          "id": "1550884618322972693",
+          "name": "charger"
+        }
+      ]
+    },
+    {
+      "id": "1550881887050928248",
+      "name": "Software",
+      "access": "community",
+      "channels": [
+        {
+          "id": "1510002456849813595",
+          "name": "chatfpv"
+        },
+        {
+          "id": "1494758297885212832",
+          "name": "esc-am32"
+        },
+        {
+          "id": "1494783023114096821",
+          "name": "fc-betaflight"
+        },
+        {
+          "id": "1494796004615131237",
+          "name": "opendrone-web"
+        },
+        {
+          "id": "1550882869839134810",
+          "name": "rx-expresslrs"
+        }
+      ]
+    }
+  ]
+}
