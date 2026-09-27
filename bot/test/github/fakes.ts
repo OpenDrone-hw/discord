@@ -8,7 +8,9 @@ import { Directory, DirectoryCache } from "../../src/config.ts";
 import { DiscordClient } from "../../src/discord.ts";
 import type { Env } from "../../src/env.ts";
 import { GitHubApp } from "../../src/github.ts";
-import { githubModule } from "../../src/github/index.ts";
+import { createGitHubModule } from "../../src/github/index.ts";
+import type { RefreshLinkedUser } from "../../src/github/linked-roles.ts";
+import type { KnownFacts } from "../../src/linked-roles/index.ts";
 import { clearThreadParentCache } from "../../src/github/thread-link.ts";
 import { createWorker } from "../../src/index.ts";
 import type { Services } from "../../src/services.ts";
@@ -166,6 +168,10 @@ export class FakeWorld {
   readonly goneThreads = new Set<string>();
   /** "METHOD /path" prefixes that fail with 500. */
   readonly failing = new Set<string>();
+  /** GitHub logins passed to the linked-role refresh, in order. */
+  readonly refreshed: string[] = [];
+  /** Known facts passed with each refresh, in the same order as refreshed. */
+  readonly refreshFacts: KnownFacts[] = [];
   #nextId = 1700000000000000000n;
   #nextComment = 1;
 
@@ -329,9 +335,19 @@ export interface Harness {
   services: Services;
   /** Signs and sends a delivery through the Worker, then waits for its handlers. */
   deliver(event: string, payload: Record<string, unknown>, delivery?: string): Promise<Response>;
+  /** Like deliver, but returns as soon as the Worker answers; handlers may still run. */
+  send(event: string, payload: Record<string, unknown>, delivery?: string): Promise<Response>;
+  /** Waits for everything passed to waitUntil. */
+  settle(): Promise<void>;
 }
 
-export async function harness(options: { db?: D1Database; world?: FakeWorld } = {}): Promise<Harness> {
+/**
+ * `refresh` replaces refreshLinkedUser; the default records the login in
+ * world.refreshed and answers "not-linked".
+ */
+export async function harness(
+  options: { db?: D1Database; world?: FakeWorld; refresh?: RefreshLinkedUser; refreshDeadlineMs?: number } = {},
+): Promise<Harness> {
   clearThreadParentCache();
   const world = options.world ?? new FakeWorld();
   const env = makeEnv({ GITHUB_APP_PRIVATE_KEY: await appPrivateKey(), DB: options.db ?? sqliteD1() });
@@ -340,25 +356,38 @@ export async function harness(options: { db?: D1Database; world?: FakeWorld } = 
   const directory = new Directory(discord, GUILD, { cache: new DirectoryCache() });
   const context = fakeContext();
   const services: Services = { env, waitUntil: (p) => context.ctx.waitUntil(p), discord, github, directory };
-  const worker = createWorker({ modules: [githubModule], services: () => services });
+  const refresh: RefreshLinkedUser =
+    options.refresh ??
+    (async (_services, login, known) => {
+      world.refreshed.push(login);
+      world.refreshFacts.push(known);
+      return { status: "not-linked", githubLogin: login };
+    });
+  const module = createGitHubModule({ linkedRoles: { refresh, deadlineMs: options.refreshDeadlineMs } });
+  const worker = createWorker({ modules: [module], services: () => services });
   let counter = 0;
+  const send: Harness["send"] = async (event, payload, delivery) => {
+    const text = JSON.stringify({ installation: { id: 77 }, sender: { login: "alice" }, ...payload });
+    const request = new Request("https://bot.example.workers.dev/github", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-GitHub-Event": event,
+        "X-GitHub-Delivery": delivery ?? `delivery-${++counter}`,
+        "X-Hub-Signature-256": await githubSignature(env.GITHUB_WEBHOOK_SECRET, text),
+      },
+      body: text,
+    });
+    return worker.fetch!(request as Request<unknown, IncomingRequestCfProperties>, env, context.ctx);
+  };
   return {
     world,
     env,
     services,
+    send,
+    settle: () => context.settle(),
     async deliver(event, payload, delivery) {
-      const text = JSON.stringify({ installation: { id: 77 }, sender: { login: "alice" }, ...payload });
-      const request = new Request("https://bot.example.workers.dev/github", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-GitHub-Event": event,
-          "X-GitHub-Delivery": delivery ?? `delivery-${++counter}`,
-          "X-Hub-Signature-256": await githubSignature(env.GITHUB_WEBHOOK_SECRET, text),
-        },
-        body: text,
-      });
-      const response = await worker.fetch!(request as Request<unknown, IncomingRequestCfProperties>, env, context.ctx);
+      const response = await send(event, payload, delivery);
       await context.settle();
       return response;
     },

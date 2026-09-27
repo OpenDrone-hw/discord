@@ -54,6 +54,12 @@ Any other path is 404; a known path with the wrong method is 405.
 | `release.published` | No | One line | Release card with up to 10 asset links |
 | `repository.edited` (`changes.topics`) | No | One line | When the `status-*` topic changes |
 | `push` | No | Default branch only, not PR merges | No |
+| `organization.member_added`, `member_removed` | No | No | No |
+| `membership.added`, `removed` (team) | No | No | No |
+
+`pull_request.closed` with `merged: true`, `organization.member_added` and
+`member_removed`, and team `membership.added` and `removed` also refresh the
+affected user's linked-role metadata (see [Linked-role metadata](#linked-role-metadata)).
 
 Private repositories post nothing to Discord; the collision guard still comments
 on their pull requests.
@@ -102,6 +108,35 @@ that failed.
 The cron refreshes 6 users per run whose last refresh is older than 24 h, oldest
 first (4 runs a day, at most 24 users a day). A per-user lease in D1 serialises
 overlapping refreshes of one user.
+
+Discord re-evaluates linked roles only when the bot pushes new metadata, so
+these webhook events push it at once for the GitHub login they concern
+(`src/github/linked-roles.ts`, calling `refreshLinkedUser`):
+
+| Event.action | Login refreshed |
+|---|---|
+| `pull_request.closed` with `merged: true` | The PR author |
+| `organization.member_added`, `member_removed` | `membership.user` |
+| `membership.added`, `removed`, scope `team` | `member` |
+
+Only events of the `config/repos.json` organisation count, and bot logins such
+as `dependabot[bot]` are skipped. The refresh runs as its own handler in
+`ctx.waitUntil`, next to the posting handlers, so the 202 reply and the Discord
+cards never wait for it. A failed refresh is logged and the webhook carries on;
+a refresh still running after 25 s is logged as unfinished, before Cloudflare
+cancels it at 30 s. A login nobody linked is a D1 lookup and nothing else. A
+user whose webhook refresh failed is refreshed by the cron once their last
+refresh is older than 24 h.
+
+`merged_prs` comes from GitHub search, which indexes a merge asynchronously and
+can still return the pre-merge count when the refresh runs a second after the
+webhook. The merge refresh therefore passes a lower bound of 1
+(`refreshLinkedUser(services, login, options, { minMergedPrs: 1 })`): the
+pushed value is `max(search count, 1)`, so a first merged pull request moves
+`merged_prs` from 0 to 1 at once. The bound applies only while the Discord user
+is still linked to that login; after a GitHub unlink or rename the search count
+stands. For an author who already had merged PRs the count can stay one short
+until their next refresh.
 
 ## Behaviour every module inherits
 
@@ -245,16 +280,18 @@ These are the permissions and events the merged code uses. Grant nothing more.
 
 | Organization permission | Access | Used for |
 |---|---|---|
-| Members | Read | `org_member` and `maintainer` linked-role metadata |
+| Members | Read | `org_member` and `maintainer` linked-role metadata; required to subscribe to the Organization and Membership events |
 
 | Webhook event | Actions handled |
 |---|---|
-| Pull request | opened, reopened, ready_for_review, synchronize, closed |
+| Pull request | opened, reopened, ready_for_review, synchronize, closed (a merge also refreshes the author's linked roles) |
 | Pull request review | submitted |
 | Check suite | completed |
 | Release | published |
 | Repository | edited (only `changes.topics` is read) |
 | Push | every push; only the default branch is posted |
+| Organization | member_added, member_removed (linked-role refresh) |
+| Membership | added, removed (team membership; linked-role refresh) |
 
 `/promote` is implemented but disabled: `PROMOTE_ENABLED` is `"false"` in
 `wrangler.toml`, and the command then refuses before any GitHub call. Enabling
@@ -351,9 +388,8 @@ its requirements. This has no API.
 
 | Item | State in this branch |
 |---|---|
-| Metadata refresh on GitHub events | `refreshLinkedUser(services, login)` exists in `src/linked-roles/index.ts`; `src/github/` does not call it. Refresh happens only in the browser flow and the cron |
 | `owner` metadata | Always 0: nothing writes `users.owner` |
-| `status`, `organization`, `membership` webhooks | No handler; do not subscribe |
+| `status` webhook | No handler; do not subscribe |
 | Message, reaction and member events | Need a gateway connection; the Worker has none |
 | Work longer than 30 s | No Cloudflare Queue is configured; only the cron (15 min per invocation) runs longer |
 | `channels.modLog` in `config/repos.json` | Validated and resolvable, used by no handler; `roles` is read by the commands' role checks |
