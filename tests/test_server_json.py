@@ -68,7 +68,7 @@ EMOJIS = ["quad", "fpv", "tinywhoop", "freestyle", "commercial", "longrange", "c
 HARDWARE, SOFTWARE = "1550880981592973433", "1550881887050928248"
 # Channel id -> (category, name in server.json) for every channel the archive held until it was emptied.
 RESTORED = {
-    "1494780931498705057": ("Staff", "roles"),
+    "1494780931498705057": ("Start", "roles"),
     "1494033189532860707": ("Community", "proposal-chat"),
     "1494782854117326969": ("Community", "build-chat"),
     "1497547403140530237": ("Support", "support-chat"),
@@ -217,7 +217,7 @@ class ServerJson(ToolCase):
         gen = fake.chan("1494779609131258048")
         self.assertIn(ow("777001", P["SEND_MESSAGES"], 0, 1), gen["permission_overwrites"])
 
-    def test_old_channels_are_restored_open_and_roles_is_staff_only(self):
+    def test_old_channels_are_restored_open_and_roles_is_read_only(self):
         self.assertNotIn("archive", DESIRED)
         fake = self.applied()
         cats = {c["name"]: c["id"] for c in fake.channels if c["type"] == 4}
@@ -229,8 +229,10 @@ class ServerJson(ToolCase):
             self.assertEqual((ch["name"], ch["parent_id"], ch["type"]), (name, cats[category], 0), cid)
             ows = {o["id"]: (int(o["allow"]), int(o["deny"])) for o in ch["permission_overwrites"] if o["type"] == 0}
             allow, deny = ows[GID]
-            if category == "Staff":
-                self.assertTrue(deny & P["VIEW_CHANNEL"], name)
+            if name == "roles":
+                # the live Server Guide still links #roles, and Discord refuses to hide a guide channel
+                self.assertTrue(allow & P["VIEW_CHANNEL"], name)
+                self.assertTrue(deny & P["SEND_MESSAGES"], name)
                 continue
             for perm in ("VIEW_CHANNEL", "SEND_MESSAGES", "READ_MESSAGE_HISTORY", "SEND_MESSAGES_IN_THREADS"):
                 self.assertTrue(allow & P[perm], (name, perm))
