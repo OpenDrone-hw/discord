@@ -30,7 +30,7 @@ import {
   shortSha,
 } from "./format.ts";
 import { readCheckSuite, readPull, readReview, str, type PullRequest, type Review } from "./payload.ts";
-import { findOrCreateThread, parseDiscussion } from "./thread-link.ts";
+import { findOrCreateThread, linkedThread } from "./thread-link.ts";
 
 export const PULL_ACTIONS = ["opened", "reopened", "ready_for_review", "synchronize", "closed"];
 const OPENING = new Set(["opened", "reopened", "ready_for_review"]);
@@ -160,7 +160,9 @@ export async function handlePullRequest(ctx: GitHubEventContext): Promise<void> 
   }
   if (COLLISION_ACTIONS.has(action) && pull.state === "open") {
     // Runs after the thread step so a thread created by this delivery gets the warning too.
-    tasks.push(() => checkCollisions(scope, pull, threadId ?? parseDiscussion(pull.body, scope.guildId)));
+    // Private repositories and a failed thread step leave threadId null; the guard then
+    // verifies the body's link itself before posting.
+    tasks.push(() => checkCollisions(scope, pull, threadId));
   }
   await runAll(`pull_request.${action} ${scope.repo.fullName}#${pull.number}`, tasks);
 }
@@ -220,7 +222,7 @@ export async function handleCheckSuite(ctx: GitHubEventContext): Promise<void> {
     const pull = await scope.api.pull(number);
     // A suite for an older commit than the PR head is stale news.
     if (!pull || pull.state !== "open" || pull.headSha !== suite.headSha) return;
-    const threadId = parseDiscussion(pull.body, scope.guildId);
+    const threadId = await linkedThread(scope, pull.body);
     if (!threadId) return;
     const message = card({
       color: outcome.color,

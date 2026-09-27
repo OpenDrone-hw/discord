@@ -9,6 +9,7 @@ import { DiscordClient } from "../../src/discord.ts";
 import type { Env } from "../../src/env.ts";
 import { GitHubApp } from "../../src/github.ts";
 import { githubModule } from "../../src/github/index.ts";
+import { clearThreadParentCache } from "../../src/github/thread-link.ts";
 import { createWorker } from "../../src/index.ts";
 import type { Services } from "../../src/services.ts";
 import { ChannelType, type Channel } from "../../src/types.ts";
@@ -24,6 +25,13 @@ export const TAG_PLANNED = "1600000000000000104";
 export const FEED = "1600000000000000200";
 export const ANNOUNCEMENTS = "1600000000000000300";
 export const EXISTING_THREAD = "1600000000000000999";
+/** A forum that config/repos.json does not list, e.g. #web-support. */
+export const OTHER_FORUM = "1600000000000000400";
+export const OTHER_FORUM_THREAD = "1600000000000000401";
+/** A development forum assigned to other repositories (config/repos.json "flight-controllers"). */
+export const FORUM_FC = "1600000000000000500";
+export const FC_THREAD = "1600000000000000501";
+export const RULES = "1600000000000000600";
 
 /** D1 over an in-memory SQLite database; implements prepare().bind().run()/first(). */
 export function sqliteD1(db = new DatabaseSync(":memory:")): D1Database & { sqlite: DatabaseSync } {
@@ -138,7 +146,16 @@ export class FakeWorld {
     { id: FORUM_RX, type: ChannelType.GUILD_FORUM, name: "receivers", available_tags: forumTags() },
     { id: FEED, type: ChannelType.GUILD_TEXT, name: "git-feed" },
     { id: ANNOUNCEMENTS, type: ChannelType.GUILD_ANNOUNCEMENT, name: "announcements" },
+    { id: RULES, type: ChannelType.GUILD_TEXT, name: "rules" },
+    { id: OTHER_FORUM, type: ChannelType.GUILD_FORUM, name: "web-support", available_tags: [] },
+    { id: FORUM_FC, type: ChannelType.GUILD_FORUM, name: "flight-controllers", available_tags: [] },
   ];
+  /** Threads answered by GET /channels/{id}; guild channel lists do not include them. */
+  readonly threadChannels = new Map<string, Channel>([
+    [EXISTING_THREAD, { id: EXISTING_THREAD, type: 11, parent_id: FORUM_RX }],
+    [OTHER_FORUM_THREAD, { id: OTHER_FORUM_THREAD, type: 11, parent_id: OTHER_FORUM }],
+    [FC_THREAD, { id: FC_THREAD, type: 11, parent_id: FORUM_FC }],
+  ]);
   /** Messages by channel or thread id. */
   readonly messages = new Map<string, Record<string, unknown>[]>();
   readonly threads: Array<{ id: string; forumId: string; body: Record<string, unknown>; reason: string | undefined }> = [];
@@ -233,10 +250,16 @@ export class FakeWorld {
     const body = (call.body ?? {}) as Record<string, unknown>;
     let m: RegExpExecArray | null;
     if (call.method === "GET" && path === `/guilds/${GUILD}/channels`) return jsonResponse(this.channels);
+    if (call.method === "GET" && (m = /^\/channels\/(\d+)$/.exec(path))) {
+      const id = m[1] as string;
+      const channel = this.goneThreads.has(id) ? undefined : (this.threadChannels.get(id) ?? this.channels.find((c) => c.id === id));
+      return channel ? jsonResponse(channel) : jsonResponse({ code: 10003, message: "Unknown Channel" }, 404);
+    }
     if (call.method === "POST" && (m = /^\/channels\/(\d+)\/threads$/.exec(path))) {
       const id = this.#id();
       this.threads.push({ id, forumId: m[1] as string, body, reason: call.headers["x-audit-log-reason"] });
       this.messages.set(id, [body.message as Record<string, unknown>]);
+      this.threadChannels.set(id, { id, type: 11, parent_id: m[1] as string });
       return jsonResponse({ id, type: 11, parent_id: m[1], message: { id } }, 201);
     }
     if (call.method === "POST" && (m = /^\/channels\/(\d+)\/messages$/.exec(path))) {
@@ -309,6 +332,7 @@ export interface Harness {
 }
 
 export async function harness(options: { db?: D1Database; world?: FakeWorld } = {}): Promise<Harness> {
+  clearThreadParentCache();
   const world = options.world ?? new FakeWorld();
   const env = makeEnv({ GITHUB_APP_PRIVATE_KEY: await appPrivateKey(), DB: options.db ?? sqliteD1() });
   const discord = new DiscordClient({ token: BOT_TOKEN, fetch: world.fetch });

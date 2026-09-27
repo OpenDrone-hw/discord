@@ -62,6 +62,33 @@ describe("escaping", () => {
     expect(plainExcerpt("x".repeat(50), 10)).toBe("xxxxxxx...");
   });
 
+  it("unwraps nested masked links so no link text can hide its target", () => {
+    const text = plainExcerpt("see [[docs](https://github.com/OpenDrone-hw)](https://evil.example/x)", 500);
+    expect(text).toBe("see docs (https://github.com/OpenDrone-hw) (https://evil.example/x)");
+    expect(text).not.toMatch(/(?<!\\)\]\(/);
+  });
+
+  it("escapes every bracket and backslash that survives the rewrite", () => {
+    const inputs = [
+      "[[[a](https://github.com/x)](https://evil.example/1)](https://evil.example/2)",
+      "\\[click\\](https://evil.example/x)",
+      "[a] [b](https://evil.example/x",
+      "x\\\\[y](https://evil.example/z)",
+    ];
+    for (const input of inputs) {
+      const text = plainExcerpt(input, 500);
+      // Every "[" or "]" left in the output is preceded by an odd run of backslashes.
+      for (const match of text.matchAll(/(\\*)[[\]]/g)) expect((match[1] ?? "").length % 2).toBe(1);
+    }
+  });
+
+  it("keeps autolinks and timestamps as escaped text instead of dropping them", () => {
+    expect(plainExcerpt("docs <https://github.com/OpenDrone-hw> at <t:1700000000:R>", 500)).toBe(
+      "docs \\<https://github.com/OpenDrone-hw\\> at \\<t:1700000000:R\\>",
+    );
+    expect(plainExcerpt("a<br/>b <img src=x> <details open>c</details>", 500)).toBe("ab  c");
+  });
+
   it("keeps release markdown but drops HTML comments", () => {
     expect(releaseNotes("## Changes\n<!-- hidden -->\n- [PR](https://github.com/x)", 100)).toBe(
       "## Changes\n\n- [PR](https://github.com/x)",

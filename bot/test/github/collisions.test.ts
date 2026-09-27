@@ -6,7 +6,7 @@ import {
   pairKey,
   warnedFiles,
 } from "../../src/github/collisions.ts";
-import { EXISTING_THREAD, FakeWorld, GUILD, harness, pullJson, repoPayload } from "./fakes.ts";
+import { EXISTING_THREAD, FORUM_RX, FakeWorld, GUILD, OTHER_FORUM_THREAD, RULES, harness, pullJson, repoPayload } from "./fakes.ts";
 
 const OTHER_THREAD = "1600000000000000888";
 const link = (thread: string) => `Discussion: https://discord.com/channels/${GUILD}/${thread}`;
@@ -27,6 +27,7 @@ function event(action: string, pull: object, repository = repoPayload()) {
 async function twoPulls(mine: string[], theirs: string[]) {
   const world = new FakeWorld();
   world.messages.set(OTHER_THREAD, []);
+  world.threadChannels.set(OTHER_THREAD, { id: OTHER_THREAD, type: 11, parent_id: FORUM_RX });
   const h = await harness({ world });
   const other = world.addPull("OpenRX", pullJson("OpenRX", 10, { body: link(OTHER_THREAD), title: "Rework power" }), theirs);
   const pull = world.addPull("OpenRX", pullJson("OpenRX", 12, { body: link(EXISTING_THREAD), title: "Move antenna" }), mine);
@@ -95,6 +96,20 @@ describe("KiCad collision guard", () => {
     expect(world.messagesIn(OTHER_THREAD).filter((m) => FakeWorld.text(m).includes("KiCad collision"))).toHaveLength(1);
   });
 
+  it("does not post into the other PR's Discussion target unless it is a thread in this repository's forum", async () => {
+    for (const target of [RULES, OTHER_FORUM_THREAD]) {
+      const { world, deliver, pull, other } = await twoPulls([PCB], [PCB]);
+      world.messages.set(target, []);
+      other.body = link(target);
+      await deliver("pull_request", event("synchronize", { ...pull }));
+      expect(errors).not.toHaveBeenCalled();
+      expect(world.comments.get("OpenRX#12")).toHaveLength(1);
+      expect(world.messagesIn(target)).toHaveLength(0);
+      expect(world.messagesIn(OTHER_THREAD)).toHaveLength(0);
+      expect(world.messagesIn(EXISTING_THREAD).some((m) => FakeWorld.text(m).includes("KiCad collision"))).toBe(true);
+    }
+  });
+
   it("warns again when a new file starts to overlap", async () => {
     const { world, deliver, pull } = await twoPulls([PCB, SCH], [PCB]);
     await deliver("pull_request", event("synchronize", { ...pull }));
@@ -137,6 +152,7 @@ describe("KiCad collision guard", () => {
   it("also runs on opened, after the new thread exists", async () => {
     const world = new FakeWorld();
     world.messages.set(OTHER_THREAD, []);
+    world.threadChannels.set(OTHER_THREAD, { id: OTHER_THREAD, type: 11, parent_id: FORUM_RX });
     const { deliver } = await harness({ world });
     world.addPull("OpenRX", pullJson("OpenRX", 10, { body: link(OTHER_THREAD) }), [PCB]);
     const pull = world.addPull("OpenRX", pullJson("OpenRX", 12), [PCB]);

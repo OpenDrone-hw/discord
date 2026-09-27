@@ -2,7 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 import { githubModule } from "../../src/github/index.ts";
 import { Registry } from "../../src/registry.ts";
 import {
+  ANNOUNCEMENTS,
   EXISTING_THREAD,
+  FC_THREAD,
+  OTHER_FORUM_THREAD,
+  RULES,
   FEED,
   FORUM_RX,
   FakeWorld,
@@ -266,7 +270,8 @@ describe("pull_request other actions", () => {
     await deliver("pull_request", prEvent("ready_for_review", { ...pull }));
     expectNoErrors();
     expect(world.threads).toHaveLength(0);
-    expect(String(warnings.mock.calls[0]?.[0])).toContain("is unavailable");
+    expect(String(warnings.mock.calls[0]?.[0])).toContain("is not a thread in #receivers");
+    expect(world.discordPosts().filter((c) => c.url.includes(EXISTING_THREAD))).toHaveLength(0);
     expect(FakeWorld.text(world.messagesIn(FEED)[0])).toContain("marked ready for review");
   });
 });
@@ -373,5 +378,60 @@ describe("check_suite", () => {
     expect(world.messagesIn(FEED).map((m) => FakeWorld.text(m))).toEqual([
       "**OpenRX** checks failed on `main` (GitHub Actions, [ccccccc](https://github.com/OpenDrone-hw/OpenRX/commit/cccccccccccccccccccccccccccccccccccccccc))",
     ]);
+  });
+});
+
+describe("Discussion lines that do not point at this repository's forum", () => {
+  const targets: Array<[string, string]> = [
+    ["a text channel (#rules)", RULES],
+    ["an announcement channel", ANNOUNCEMENTS],
+    ["a thread in a forum outside repos.json (#web-support)", OTHER_FORUM_THREAD],
+    ["a thread in another repository's forum", FC_THREAD],
+    ["a channel that does not exist", "1600000000000077777"],
+  ];
+  const linkTo = (id: string) => `Discussion: https://discord.com/channels/${GUILD}/${id}`;
+
+  for (const [label, target] of targets) {
+    it(`posts nothing for ${label} and creates no second post`, async () => {
+      const { world, deliver } = await harness();
+      const pull = world.addPull("OpenRX", pullJson("OpenRX", 21, { body: `Change.\n\n${linkTo(target)}` }));
+      const before = pull.body;
+      await deliver("pull_request", prEvent("opened", { ...pull }));
+      await deliver("pull_request", prEvent("synchronize", { ...pull }, { after: "b".repeat(40) }));
+      await deliver("pull_request_review", {
+        action: "submitted",
+        review: { state: "APPROVED", body: "ok", user: { login: "erin" }, html_url: `${pull.html_url}#review-1` },
+        pull_request: { ...pull },
+        repository: repoPayload(),
+      });
+      await deliver("check_suite", {
+        action: "completed",
+        check_suite: {
+          conclusion: "failure",
+          head_sha: pull.head.sha,
+          head_branch: "feature",
+          app: { name: "GitHub Actions" },
+          pull_requests: [{ number: 21 }],
+        },
+        repository: repoPayload(),
+      });
+      expectNoErrors();
+      expect(world.threads).toHaveLength(0);
+      const posted = world.discordPosts().map((c) => c.url);
+      expect(posted.every((url) => url.endsWith(`/channels/${FEED}/messages`))).toBe(true);
+      expect(posted).toHaveLength(2);
+      expect(world.pull("OpenRX", 21).body).toBe(before);
+      expect(warnings.mock.calls.map((c) => String(c[0])).some((w) => w.includes(`points at ${target}`))).toBe(true);
+    });
+  }
+
+  it("reads each linked channel from Discord once per isolate", async () => {
+    const { world, deliver } = await harness();
+    const pull = world.addPull("OpenRX", pullJson("OpenRX", 22, { body: LINK }));
+    await deliver("pull_request", prEvent("synchronize", { ...pull }));
+    await deliver("pull_request", prEvent("synchronize", { ...pull }));
+    expectNoErrors();
+    expect(world.messagesIn(EXISTING_THREAD)).toHaveLength(2);
+    expect(world.calls.filter((c) => c.method === "GET" && c.url.endsWith(`/channels/${EXISTING_THREAD}`))).toHaveLength(1);
   });
 });

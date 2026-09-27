@@ -24,7 +24,7 @@ import { postToThread } from "./context.ts";
 import { Colors, card, code, link } from "./format.ts";
 import type { IssueComment } from "./api.ts";
 import type { PullRequest } from "./payload.ts";
-import { parseDiscussion } from "./thread-link.ts";
+import { linkedThread } from "./thread-link.ts";
 
 export const KICAD_FILE = /\.kicad_(pcb|sch)$/i;
 /** Other open PRs compared per check, to stay inside the 30 s handler budget. */
@@ -114,7 +114,9 @@ function warningCard(scope: Scope, other: PullRequest, overlap: readonly string[
 
 /**
  * Compares `pull` with the other open PRs and warns about new overlaps.
- * `threadId` is this PR's forum thread when known.
+ * `threadId` is this PR's verified forum thread when the caller already has
+ * it; otherwise the PR body's link is verified here. The other PR's link is
+ * always verified (linkedThread) before anything is posted to it.
  */
 export async function checkCollisions(scope: Scope, pull: PullRequest, threadId: string | null): Promise<void> {
   const mine = kicadFiles(await scope.api.pullFiles(pull.number));
@@ -134,6 +136,7 @@ export async function checkCollisions(scope: Scope, pull: PullRequest, threadId:
   const colliding = overlaps.filter((o) => o.overlap.length > 0);
   if (colliding.length === 0) return;
   const myComments = await scope.api.comments(pull.number);
+  let myThread: string | null | undefined = threadId ?? undefined;
 
   for (const { other, overlap } of colliding) {
     const warned = warnedFiles([...myComments, ...(await scope.api.comments(other.number))], pull.number, other.number);
@@ -141,9 +144,10 @@ export async function checkCollisions(scope: Scope, pull: PullRequest, threadId:
 
     await scope.api.comment(pull.number, collisionComment(other, overlap, pull.number));
     if (scope.repo.private) continue;
-    const otherThread = parseDiscussion(other.body, scope.guildId);
-    if (threadId) await postToThread(scope.services, threadId, warningCard(scope, other, overlap));
-    if (otherThread && otherThread !== threadId) {
+    myThread ??= await linkedThread(scope, pull.body);
+    const otherThread = await linkedThread(scope, other.body);
+    if (myThread) await postToThread(scope.services, myThread, warningCard(scope, other, overlap));
+    if (otherThread && otherThread !== myThread) {
       await postToThread(scope.services, otherThread, warningCard(scope, pull, overlap));
     }
   }
