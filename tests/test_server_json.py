@@ -15,7 +15,7 @@ from fake_discord import FakeDiscord, channel, ow, role
 P = dc.PERMISSIONS
 DESIRED = dc.load_desired(ROOT / "server.json")
 GID = DESIRED["guild_id"]
-BOT_USER = "1553748824470851644"
+BOT_USER = "1553826696673759344"
 REPOS = json.loads((ROOT / "bot" / "config" / "repos.json").read_text(encoding="utf-8"))
 PROTECTED = set(DESIRED["guard"]["protected_channels"])
 CHATFPV = "1510002456849813595"

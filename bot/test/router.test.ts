@@ -21,7 +21,7 @@ import {
 
 const BASE = "https://bot.example.workers.dev";
 const GUILD = "1494019459822653512";
-const APP = "1553748824470851644";
+const APP = "1553826696673759344";
 
 function servicesWith(fetch: ReturnType<typeof mockFetch>["fetch"]): ServicesFactory {
   return (env: Env, waitUntil) => {
