@@ -1,6 +1,7 @@
 /**
  * POST /github: HMAC check, then every matching handler runs in waitUntil
- * after a 202 reply, because GitHub gives a delivery 10 s.
+ * after a 202 reply, because GitHub gives a delivery 10 s. Cloudflare cancels
+ * waitUntil work 30 s after the reply.
  */
 import type { Env } from "./env.ts";
 import { errorText } from "./interactions.ts";

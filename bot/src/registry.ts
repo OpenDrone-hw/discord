@@ -14,12 +14,21 @@
  * |                        | type 4 autocomplete (Command.autocomplete)         | defer() from            |
  * |                        |                                                    | interactions.ts         |
  * | components             | interaction type 3 and 5, custom_id "prefix:rest"  | 3 s, same               |
- * | github                 | POST /github, by X-GitHub-Event and payload.action | runs in waitUntil after |
- * |                        |                                                    | the 202 reply           |
+ * | github                 | POST /github, by X-GitHub-Event and payload.action | waitUntil after the 202 |
+ * |                        |                                                    | reply: 30 s, then       |
+ * |                        |                                                    | cancelled               |
  * | routes                 | only the paths in MODULE_ROUTES                    | normal request          |
- * | scheduled              | the wrangler.toml cron trigger                     | runs in waitUntil       |
+ * | scheduled              | the wrangler.toml cron trigger                     | 15 min per invocation   |
  * | roleConnectionMetadata | scripts/register-metadata.ts                       | -                       |
  * | commands[].definition  | scripts/register-commands.ts                       | -                       |
+ *
+ * Time budgets are Cloudflare's: ctx.waitUntil in an HTTP-triggered Worker
+ * extends execution for at most 30 s after the response is sent, and cancels
+ * whatever is still running then. That covers defer() work and GitHub
+ * handlers. Discord's 15 minute interaction-token window matters only to
+ * work that outlives the request, which needs a Queue or the cron trigger.
+ * DiscordClient caps its rate-limit waits at 5 s per call so a handler's
+ * error path still runs inside the 30 s.
  */
 import type { Env } from "./env.ts";
 import type { Services } from "./services.ts";
@@ -61,7 +70,7 @@ export interface Command {
   definition: ApplicationCommandDefinition;
   /**
    * Answers within 3 s: return a message response, or defer() and finish in
-   * the background. Mentions are suppressed in whatever is returned.
+   * the background within 30 s. Mentions are suppressed in whatever is returned.
    */
   execute(ctx: InteractionContext): Promise<InteractionResponse> | InteractionResponse;
   /** Choices for the focused option; at most 25 are sent. */

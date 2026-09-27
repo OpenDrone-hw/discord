@@ -5,8 +5,12 @@
  *   execution) that authenticate through the URL.
  * - Rate limits: tracks X-RateLimit-* per bucket and waits before a request
  *   into an exhausted bucket; on 429 waits retry_after and retries, up to
- *   maxRetries. A wait longer than maxWaitMs throws RateLimitError instead of
- *   holding the Worker.
+ *   maxRetries. All waits inside one request() call share a budget of
+ *   maxWaitMs (default 5 s); a wait that would exceed it throws
+ *   RateLimitError at once. Most calls run inside ctx.waitUntil, which
+ *   Cloudflare cancels 30 s after the response, so a call must fail fast
+ *   enough for the caller's error handling (the ERROR_TEXT edit of a
+ *   deferred interaction) to still run.
  * - Mentions: every message body sent through this client gets
  *   allowed_mentions {parse: []} unless the caller set allowed_mentions
  *   explicitly. Text built from GitHub or user input must never ping anyone;
@@ -26,6 +30,8 @@ import type {
 export const API_BASE = "https://discord.com/api/v10";
 export const USER_AGENT = "DiscordBot (https://github.com/OpenDrone-hw/discord, 0.1.0)";
 export const DEFAULT_AUDIT_REASON = "OpenDrone-hw/discord bot";
+/** Rate-limit wait budget per request() call; see the header comment. */
+export const DEFAULT_MAX_WAIT_MS = 5_000;
 
 export type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
 
@@ -140,7 +146,10 @@ export interface DiscordClientOptions {
   baseUrl?: string;
   /** Retries after a 429. Default 3. */
   maxRetries?: number;
-  /** Longest wait the client accepts before throwing RateLimitError. Default 20 s. */
+  /**
+   * Total rate-limit wait (bucket waits plus 429 retry_after) one request()
+   * call accepts before throwing RateLimitError. Default 5 s.
+   */
   maxWaitMs?: number;
   sleep?: (ms: number) => Promise<void>;
   /** Clock in milliseconds. */
@@ -185,7 +194,7 @@ export class DiscordClient {
     this.#fetch = options.fetch ?? ((url, init) => fetch(url, init));
     this.#baseUrl = options.baseUrl ?? API_BASE;
     this.#maxRetries = options.maxRetries ?? 3;
-    this.#maxWaitMs = options.maxWaitMs ?? 20_000;
+    this.#maxWaitMs = options.maxWaitMs ?? DEFAULT_MAX_WAIT_MS;
     this.#sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.#now = options.now ?? (() => Date.now());
   }
@@ -211,8 +220,9 @@ export class DiscordClient {
     const init: RequestInit = { method: upper, headers };
     if (body !== undefined) init.body = JSON.stringify(body);
 
+    let waitedMs = 0;
     for (let attempt = 0; ; attempt++) {
-      await this.#waitForBucket(key, path, route);
+      waitedMs += await this.#waitForBucket(key, path, route, waitedMs);
       const response = await this.#fetch(url, init);
       this.#updateBucket(key, path, response);
 
@@ -225,8 +235,11 @@ export class DiscordClient {
         const waitMs = Math.max(0, Math.ceil((Number.isFinite(seconds) ? seconds : 1) * 1000));
         const global = (isRecord(data) && data.global === true) || response.headers.get("x-ratelimit-global") === "true";
         if (global) this.#globalResetAt = this.#now() + waitMs;
-        if (attempt >= this.#maxRetries || waitMs > this.#maxWaitMs) throw new RateLimitError(route, waitMs, data);
+        if (attempt >= this.#maxRetries || waitedMs + waitMs > this.#maxWaitMs) {
+          throw new RateLimitError(route, waitMs, data);
+        }
         await this.#sleep(waitMs);
+        waitedMs += waitMs;
         continue;
       }
       if (!response.ok) throw new DiscordError(response.status, route, await readBody(response));
@@ -248,7 +261,8 @@ export class DiscordClient {
     return hash ? `${hash}|${majorParameter(path)}` : key;
   }
 
-  async #waitForBucket(key: string, path: string, route: string): Promise<void> {
+  /** Sleeps until the bucket allows a request; returns the milliseconds slept. */
+  async #waitForBucket(key: string, path: string, route: string, waitedMs: number): Promise<number> {
     const now = this.#now();
     let waitMs = Math.max(0, this.#globalResetAt - now);
     const bucketKey = this.#bucketKey(key, path);
@@ -258,10 +272,11 @@ export class DiscordClient {
       else if (state.remaining <= 0) waitMs = Math.max(waitMs, state.resetAt - now);
       else state.remaining -= 1;
     }
-    if (waitMs <= 0) return;
-    if (waitMs > this.#maxWaitMs) throw new RateLimitError(route, waitMs);
+    if (waitMs <= 0) return 0;
+    if (waitedMs + waitMs > this.#maxWaitMs) throw new RateLimitError(route, waitMs);
     await this.#sleep(waitMs);
     this.#buckets.delete(bucketKey);
+    return waitMs;
   }
 
   #updateBucket(key: string, path: string, response: Response): void {

@@ -245,6 +245,36 @@ describe("DiscordClient rate limits", () => {
     expect(time.sleeps).toEqual([]);
   });
 
+  it("defaults to a 5 s wait budget", async () => {
+    const time = clock();
+    const { fetch, calls } = mockFetch(() => jsonResponse({ retry_after: 6, global: false }, 429));
+    const client = new DiscordClient({ token: BOT_TOKEN, fetch, sleep: time.sleep, now: time.now });
+    await expect(client.getChannel(CHANNEL)).rejects.toBeInstanceOf(RateLimitError);
+    expect(calls).toHaveLength(1);
+    expect(time.sleeps).toEqual([]);
+  });
+
+  it("shares maxWaitMs across every wait of one call", async () => {
+    const time = clock();
+    const { fetch, calls } = mockFetch(() => jsonResponse({ retry_after: 2, global: false }, 429));
+    const client = new DiscordClient({ token: BOT_TOKEN, fetch, sleep: time.sleep, now: time.now, maxRetries: 10 });
+    const error = (await client.getChannel(CHANNEL).catch((e: unknown) => e)) as RateLimitError;
+    expect(error).toBeInstanceOf(RateLimitError);
+    expect(time.sleeps).toEqual([2000, 2000]);
+    expect(calls).toHaveLength(3);
+  });
+
+  it("gives each call its own wait budget", async () => {
+    const time = clock();
+    const { fetch } = mockFetch((_, i) =>
+      i % 2 === 0 ? jsonResponse({ retry_after: 4, global: false }, 429) : jsonResponse({ id: "1" }),
+    );
+    const client = new DiscordClient({ token: BOT_TOKEN, fetch, sleep: time.sleep, now: time.now });
+    await client.getChannel(CHANNEL);
+    await client.getChannel(CHANNEL);
+    expect(time.sleeps).toEqual([4000, 4000]);
+  });
+
   it("waits for an exhausted bucket before the next request on that route", async () => {
     const time = clock();
     const { fetch, calls } = mockFetch(() =>

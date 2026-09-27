@@ -58,10 +58,12 @@ flowchart LR
 | Interactions older than 300 s are rejected | `src/verify.ts` |
 | Interactions from any guild other than `GUILD_ID` get an ephemeral refusal | `src/interactions.ts` |
 | Every message the bot sends carries `allowed_mentions: {parse: []}` unless the caller sets `allowed_mentions` explicitly | `src/discord.ts`, `src/interactions.ts` |
-| On 429 the client waits `retry_after` and retries (3 times); a wait over 20 s throws instead | `src/discord.ts` |
+| On 429 the client waits `retry_after` and retries (3 times); rate-limit waits share a 5 s budget per call, beyond it the call throws `RateLimitError` | `src/discord.ts` |
 | Tokens in `/webhooks/{id}/{token}` and `/interactions/{id}/{token}` paths are redacted from errors | `src/discord.ts` |
 | Mutating Discord calls carry the audit log reason `OpenDrone-hw/discord bot` unless given another | `src/discord.ts` |
 | GitHub handlers run after the 202 reply; a failing handler is logged and does not stop the others | `src/webhooks.ts` |
+| `defer()` work and GitHub handlers run in `ctx.waitUntil`, which Cloudflare cancels 30 s after the response; a cancelled `defer()` never replaces its "thinking..." placeholder | `src/interactions.ts`, `src/webhooks.ts` |
+| Work that can take longer than 30 s needs a Cloudflare Queue (none is configured) or the cron trigger (every 6 h, 15 min per invocation) | `wrangler.toml`, `src/registry.ts` |
 | Channel, role and tag ids are resolved by name at runtime; no id is hard-coded | `src/config.ts` |
 
 ## `config/repos.json`

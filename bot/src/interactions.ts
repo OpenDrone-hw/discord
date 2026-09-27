@@ -44,8 +44,14 @@ export function ephemeral(text: string): InteractionResponse {
 
 /**
  * Acknowledges now (type 5, "thinking...") and replaces the placeholder with
- * the result of `work` once it finishes, within Discord's 15 minute window.
- * A failure replaces it with ERROR_TEXT.
+ * the result of `work` once it finishes. A failure replaces it with ERROR_TEXT.
+ *
+ * Time budget: `work` runs in ctx.waitUntil, which Cloudflare cancels 30 s
+ * after the response is sent. Work cut off there never edits the placeholder,
+ * not even with ERROR_TEXT, so `work` plus the final edit must finish well
+ * inside 30 s. Discord's 15 minute interaction-token window is not the limit
+ * here. Anything longer belongs in a Queue or the cron trigger, which then
+ * edits the response or sends a follow-up while the token is still valid.
  */
 export function defer(
   ctx: InteractionContext,
