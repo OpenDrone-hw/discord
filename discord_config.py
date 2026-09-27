@@ -90,7 +90,8 @@ TAG_KEYS = {"name", "emoji", "moderated"}
 ROLE_KEYS = {"name", "renamed_from", "color", "hoist", "mentionable", "permissions"}
 ARCHIVE_KEYS = {"id", "category", "access", "channels"}
 ONBOARDING_KEYS = {"enabled", "mode", "default_channels", "prompts"}
-PROMPT_KEYS = {"title", "renamed_from", "type", "single_select", "required", "in_onboarding", "options"}
+PROMPT_KEYS = {"title", "renamed_from", "type", "single_select", "required", "in_onboarding", "options",
+               "retired_options"}
 OPTION_KEYS = {"title", "description", "emoji", "roles", "channels"}
 WELCOME_KEYS = {"enabled", "description", "channels"}
 WELCOME_CHANNEL_KEYS = {"channel", "description", "emoji"}
@@ -882,7 +883,15 @@ class Planner:
                     "role_ids": [self.role_id(r, ow) for r in os_.get("roles", [])],
                     "channel_ids": [self.resolve_channel(c, ow) for c in os_.get("channels", [])],
                 })
-            kept = [o for o in (lp or {}).get("options", []) if o["title"] not in seen]
+            retired = ps.get("retired_options", [])
+            if not isinstance(retired, list) or not all(isinstance(r, str) and r for r in retired):
+                raise ConfigError(f"{where}.retired_options: must be a list of option titles")
+            if set(retired) & seen:
+                raise ConfigError(f"{where}.retired_options: {sorted(set(retired) & seen)} are also listed as options")
+            for title in retired:
+                if title in live_opts:
+                    lines.append(f"prompt {ps['title']!r}: remove option {title!r}")
+            kept = [o for o in (lp or {}).get("options", []) if o["title"] not in seen and o["title"] not in retired]
             if kept:
                 self.notes.append(f"{where}: options not in server.json are kept: {', '.join(o['title'] for o in kept)}")
             options += [option_request(o) for o in kept]

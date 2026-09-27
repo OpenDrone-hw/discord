@@ -39,7 +39,7 @@ flowchart LR
   end
   subgraph Development["Development: open"]
     direction TB
-    feed["#git-feed: announcement, readonly"] --- alpha["alpha-testing: forum, testers"]
+    feed["#git-feed: announcement, GitHub feed role only"] --- alpha["alpha-testing: forum, testers only"]
   end
   subgraph Hardware["Hardware: open"]
     direction TB
@@ -76,14 +76,15 @@ the repository, its releases and its lifecycle (`migrate.py hubs`).
 | Community | proposals | text | open | yes | Proposals |
 | Support | help | forum | open | yes | |
 | Support | chatfpv | text | open | | Web and tools |
-| Development | git-feed | announcement | readonly | | GitHub feed |
-| Development | alpha-testing | forum | testers | | Alpha testing |
+| Development | git-feed | announcement | feed | | GitHub feed (role) |
+| Development | alpha-testing | forum | testers | | none |
 | Hardware | fc, aio, esc, rx, vtx, digital-vtx, remote-id, gps, frame, charger, motors, kicad-library | text | open | | the product line, see [Onboarding](#onboarding) |
 | Software | fc-betaflight, esc-am32, rx-expresslrs, opendrone-web | text | open | | Betaflight, AM32, ExpressLRS; Web and tools |
 | Voice | general, troubleshooting | voice (kept as live) | open | | |
 | Voice | dev-call | voice | open | | |
 | Voice | community-call | stage | open | | |
 | Staff | mod-log | text | staff | | |
+| Staff | web-support, web-support-admin | forum, text | unmanaged | | |
 
 Text channel topics in `server.json` are one line. Every product channel's topic
 names the repositories `bot/config/repos.json` maps to it. The #welcome topic
@@ -97,7 +98,17 @@ posts their text.
 
 `#web-support` and `#web-support-admin` belong to the storefront support bot:
 they are `guard.protected_channels`, so the tool refuses any plan that manages
-or archives them, and they are reported as unmanaged.
+or archives them, and they are reported as unmanaged. Storefront tickets land
+in `#web-support`; both sit in Staff, which the tool leaves in place.
+
+Two channels are hidden from `@everyone` so members who did not ask for them
+see no unread badge. Discord has no server-side default mute, so hiding is the
+only lever:
+
+| Channel | Who sees it | How a member gets it |
+|---|---|---|
+| #git-feed | the `GitHub feed` role, admin, the bot | Pick GitHub feed in onboarding or Channels & Roles |
+| alpha-testing | `beta tester`, `developer`, admin | An admin gives `beta tester` with an alpha board |
 
 Channels that are no longer in `server.json` are reported as unmanaged and
 deleted by hand, never by the tool: the twelve empty forums of the previous
@@ -160,7 +171,7 @@ members change their answers later in Channels & Roles (`<id:customize>`).
 |---|---|---|---|
 | Where are you from? | Yes, single select | North America, Europe, Asia, South America, Oceania, Africa: that region role and `Member` | none |
 | What do you fly? | No | Plane, Camera ("Camera drones and cinematography"), FPV, Tinywhoop, Racing, Freestyle, Commercial, Long Range, Cinewhoop, Toothpick (custom server emojis): the role of the same name | none |
-| Follow OpenDrone development | No | A follower role: Flight controllers `FC follower`; ESCs `ESC follower`; Receivers `RX follower`; Video `Video follower`; Remote ID and GPS `RemoteID-GPS follower`; Frames `Frame follower`; Power `Power follower`; KiCad library `Library follower`; Web and tools `Web-Tools follower`; Proposals, Alpha testing and GitHub feed: no role | See below |
+| Follow OpenDrone development | No | A follower role: Flight controllers `FC follower`; ESCs `ESC follower`; Receivers `RX follower`; Video `Video follower`; Remote ID and GPS `RemoteID-GPS follower`; Frames `Frame follower`; Power `Power follower`; KiCad library `Library follower`; Web and tools `Web-Tools follower`; GitHub feed `GitHub feed`, which is what makes #git-feed visible; Proposals: no role | See below |
 | Which firmware do you use? | No | Betaflight, AM32, ExpressLRS: `Betaflight user`, `AM32 user`, `ExpressLRS user` | fc-betaflight, esc-am32, rx-expresslrs |
 
 Option descriptions name the channels an option adds; none promises a ping,
@@ -179,8 +190,7 @@ because the bot never pings a follower role. The firmware prompt was titled
 | KiCad library | #kicad-library |
 | Web and tools | #opendrone-web, #chatfpv |
 | Proposals | #proposals |
-| Alpha testing | alpha-testing |
-| GitHub feed | #git-feed |
+| GitHub feed | none: the `GitHub feed` role shows #git-feed |
 
 Default channels: #welcome, #rules, #announcements, #gen-chat,
 #introduce-yourself, #off-topic, #flying, help, #builds and #proposals. The
@@ -276,7 +286,7 @@ Every write carries the audit log reason `OpenDrone-hw/discord discord_config.py
 | `channels[]` | Optional `id`, `name`, optional `type` (`text`, `announcement`, `voice`, `stage`, `forum`, `media`), `topic` (one line on a text channel; post guidelines on a forum), `slowmode`, `bitrate`, `user_limit`, `forum`, `access`. Without `access` a channel gets its category's. With `id` and no `type` the live type is kept. Without `id` it is matched by name and type (default `text`) inside its category and created when missing; a live channel of the same name but another type is left alone and noted. A live channel listed anywhere by `id` is never matched by name, so a text channel renamed in place frees its old name for a new forum. Only `text` and `announcement` convert into each other. Text, announcement, forum and media names must be lowercase without spaces, the form Discord stores; other names are refused. List order is channel order |
 | `forum` | `tags[]` (`name`, `emoji`, `moderated`; at most 20, live tags not listed are kept), `default_reaction`, `layout` (`list`, `gallery`), `sort` (`activity`, `creation`), `require_tag`, `post_slowmode` |
 | `archive` | `category` (created when missing), optional `id` of that category, `access`, `channels[]` (ids, `Category/name` or a unique name of channels not listed under `categories`): each listed channel moves into that category and gets its access; messages stay. Categories cannot be archived |
-| `onboarding` | `enabled`, `mode` (`default`, `advanced`), `default_channels[]`, `prompts[]` with `title`, optional `renamed_from` (a former title: that live prompt is retitled and keeps its id), `type` (`multiple_choice`, `dropdown`), `single_select`, `required`, `in_onboarding`, `options[]` (`title`, `description`, `emoji`, `roles[]`, `channels[]`). Prompts and options match by title; live ones not listed are kept |
+| `onboarding` | `enabled`, `mode` (`default`, `advanced`), `default_channels[]`, `prompts[]` with `title`, optional `renamed_from` (a former title: that live prompt is retitled and keeps its id), `type` (`multiple_choice`, `dropdown`), `single_select`, `required`, `in_onboarding`, `options[]` (`title`, `description`, `emoji`, `roles[]`, `channels[]`), optional `retired_options[]` (titles of live options to remove). Prompts and options match by title; live ones not listed are kept, except a retired option |
 | `welcome_screen` | `enabled`, `description`, `channels[]` (at most 5: `channel`, `description`, `emoji`) |
 | `automod[]` | Rules matched by `name`: `trigger` (`keyword`, `spam`, `keyword_preset`, `mention_spam`, `member_profile`), optional `event`, `metadata`, `actions[]` (`block` with optional `message`, `alert` with `channel`, `timeout` with `seconds`, `block_interaction`), `enabled`, `exempt_roles[]`, `exempt_channels[]`. Live rules not listed are left alone; per-trigger caps are checked including them |
 | `guild` | `description`, `rules_channel`, `public_updates_channel`, `system_channel`, `safety_alerts_channel`, `system_channel_flags` (the flags to set, by Discord's names: `SUPPRESS_JOIN_NOTIFICATIONS`, `SUPPRESS_PREMIUM_SUBSCRIPTIONS`, `SUPPRESS_GUILD_REMINDER_NOTIFICATIONS`, `SUPPRESS_JOIN_NOTIFICATION_REPLIES` and the two role subscription flags; a known flag not listed is cleared, an unknown bit is kept) |

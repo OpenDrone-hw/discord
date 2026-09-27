@@ -389,16 +389,17 @@ class ServerJson(ToolCase):
         firmware = next(p for p in ob["prompts"] if p["title"] == "Which firmware do you use?")
         self.assertFalse([p for p in ob["prompts"] if p["title"] == "Firmware"])
         granted |= {by_id[c]["name"] for o in firmware["options"] for c in o["channel_ids"]}
-        self.assertLessEqual(set(PRODUCT_CHANNELS) | {"proposals", "alpha-testing"}, granted)
-        self.assertFalse({c["type"] for o in follow["options"] for c in map(by_id.get, o["channel_ids"])
-                          if c["name"] not in ("alpha-testing", "git-feed")} - {0})
+        self.assertLessEqual(set(PRODUCT_CHANNELS) | {"proposals"}, granted)
+        self.assertNotIn("alpha-testing", granted)
+        self.assertFalse({c["type"] for o in follow["options"] for c in map(by_id.get, o["channel_ids"])} - {0})
         feed = next(o for o in follow["options"] if o["title"] == "GitHub feed")
-        self.assertEqual([by_id[c]["name"] for c in feed["channel_ids"]], ["git-feed"])
+        self.assertEqual(feed["channel_ids"], [])
+        self.assertEqual([r["name"] for r in fake.roles if r["id"] in feed["role_ids"]], ["GitHub feed"])
         followers = {r["id"] for r in fake.roles if r["name"] in FOLLOWER_ROLES}
         self.assertEqual(len(followers), len(FOLLOWER_ROLES))
         self.assertFalse([r["name"] for r in fake.roles if r["name"].endswith(" dev")])
         for option in follow["options"]:
-            self.assertLessEqual(set(option["role_ids"]), followers, option["title"])
+            self.assertLessEqual(set(option["role_ids"]), followers | set(feed["role_ids"]), option["title"])
             self.assertNotIn("ping", option["description"], option["title"])
             self.assertLessEqual(len(option["description"]), 100, option["title"])
             if {by_id[c]["name"] for c in option["channel_ids"]} & set(PRODUCT_CHANNELS):
@@ -556,7 +557,7 @@ class FromThePreviousLayout(ToolCase):
         text = "\n".join(plan["ops"]["onboarding"][0]["summary"])
         self.assertIn("prompt 'Firmware': title -> 'Which firmware do you use?'", text)
         self.assertRegex(text, r"default channels: \+\[\] -\['(Hardware|Software)', '(Hardware|Software)'\]")
-        self.assertIn("new option 'GitHub feed': channels [#git-feed]", text)
+        self.assertIn("new option 'GitHub feed': roles [GitHub feed]", text)
         self.assertEqual(plan["unmanaged"]["onboarding prompts"], [])
         self.apply(DESIRED)
         after = {r["name"]: r["id"] for r in self.fake.roles}
