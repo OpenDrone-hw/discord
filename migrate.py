@@ -148,7 +148,7 @@ What it does not do (yet): make schematics, place parts or route a board.""",
 This server is where OpenDrone, a fully open source FPV stack, is developed, tested and supported.
 Start with {{#rules}}, say hi in {{#introduce-yourself}}, ask board questions in {{#help}} and propose products or changes in {{#proposals}}.
 Pick the product channels you follow in Channels & Roles: {CUSTOMIZE}
-Development happens in the product channels, one thread per pull request; {{#git-feed}} carries the GitHub activity.
+Development happens in the product channels, one thread per pull request. For every GitHub pull request, merge and release in one channel, pick GitHub feed in Channels & Roles.
 Orders, payment and shipping: https://opendrone.be/support""",
 }
 

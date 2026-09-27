@@ -97,19 +97,23 @@
         ]
       }
     },
-    "testers": {
-      "@everyone": {
-        "allow": [
-          "VIEW_CHANNEL",
-          "READ_MESSAGE_HISTORY",
-          "ADD_REACTIONS",
-          "ATTACH_FILES",
-          "EMBED_LINKS",
-          "SEND_MESSAGES_IN_THREADS",
-          "USE_APPLICATION_COMMANDS"
-        ],
-        "deny": ["SEND_MESSAGES", "MENTION_EVERYONE"]
+    "feed": {
+      "@everyone": {"deny": ["VIEW_CHANNEL"]},
+      "GitHub feed": {
+        "allow": ["VIEW_CHANNEL", "READ_MESSAGE_HISTORY", "ADD_REACTIONS"],
+        "deny": ["SEND_MESSAGES", "CREATE_PUBLIC_THREADS", "CREATE_PRIVATE_THREADS", "SEND_MESSAGES_IN_THREADS"]
       },
+      "admin": {
+        "allow": ["VIEW_CHANNEL", "SEND_MESSAGES", "READ_MESSAGE_HISTORY", "EMBED_LINKS", "ATTACH_FILES",
+                  "SEND_MESSAGES_IN_THREADS"]
+      },
+      "OpenDrone Dev": {
+        "allow": ["VIEW_CHANNEL", "SEND_MESSAGES", "READ_MESSAGE_HISTORY", "EMBED_LINKS", "ATTACH_FILES",
+                  "SEND_MESSAGES_IN_THREADS", "PIN_MESSAGES"]
+      }
+    },
+    "testers": {
+      "@everyone": {"deny": ["VIEW_CHANNEL"]},
       "beta tester": {
         "allow": [
           "VIEW_CHANNEL",
@@ -183,6 +187,7 @@
     {"name": "Power follower", "renamed_from": "Power dev", "hoist": false, "mentionable": false, "permissions": []},
     {"name": "Library follower", "renamed_from": "Library dev", "hoist": false, "mentionable": false, "permissions": []},
     {"name": "Web-Tools follower", "renamed_from": "Web-Tools dev", "hoist": false, "mentionable": false, "permissions": []},
+    {"name": "GitHub feed", "hoist": false, "mentionable": false, "permissions": []},
     {"name": "Betaflight user", "color": "#000000", "hoist": false, "mentionable": false, "permissions": []},
     {"name": "AM32 user", "color": "#000000", "hoist": false, "mentionable": false, "permissions": []},
     {"name": "ExpressLRS user", "color": "#000000", "hoist": false, "mentionable": false, "permissions": []}
@@ -255,14 +260,14 @@
         {
           "name": "git-feed",
           "type": "announcement",
-          "access": "readonly",
+          "access": "feed",
           "topic": "Pull requests, merges and releases from github.com/OpenDrone-hw, posted by the bot."
         },
         {
           "name": "alpha-testing",
           "type": "forum",
           "access": "testers",
-          "topic": "Alpha boards in the hands of testers. Testers, developers and admins open one post per board and revision; everyone can read and reply.\nA report says: board and revision, firmware and version, the setup, what was tested, what worked and what failed, with photos, logs or a diff.",
+          "topic": "Alpha boards in the hands of testers, visible to testers, developers and admins. One post per board and revision.\nA report says: board and revision, firmware and version, the setup, what was tested, what worked and what failed, with photos, logs or a diff.",
           "forum": {
             "layout": "list",
             "sort": "activity",
@@ -388,6 +393,7 @@
         "single_select": false,
         "required": false,
         "in_onboarding": true,
+        "retired_options": ["Alpha testing"],
         "options": [
           {
             "title": "Flight controllers",
@@ -459,16 +465,10 @@
             "channels": ["proposals"]
           },
           {
-            "title": "Alpha testing",
-            "description": "Alpha board reports: #alpha-testing",
-            "emoji": "🧪",
-            "channels": ["alpha-testing"]
-          },
-          {
             "title": "GitHub feed",
-            "description": "Pull requests, merges and releases from GitHub: #git-feed",
+            "description": "Pull requests, merges and releases from GitHub, in #git-feed",
             "emoji": "📰",
-            "channels": ["git-feed"]
+            "roles": ["GitHub feed"]
           }
         ]
       },

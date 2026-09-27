@@ -419,6 +419,22 @@ class Onboarding(ToolCase):  # F6
         self.assertTrue(any("options not in server.json are kept: Europe" in n for n in plan["notes"]))
         self.assertIdempotent(d)
 
+    def test_retired_options_are_removed(self):
+        d = self.onboarding_desired(prompts=[{"title": "Where are you from?", "single_select": True, "required": True,
+                                              "retired_options": ["Europe"],
+                                              "options": [{"title": "Asia", "roles": ["Member"]}]}])
+        plan = self.plan(d)
+        op = plan["ops"]["onboarding"][0]
+        self.assertEqual([o["title"] for o in op["body"]["prompts"][0]["options"]], ["Asia"])
+        self.assertIn("prompt 'Where are you from?': remove option 'Europe'", op["summary"])
+        self.assertFalse(any("are kept" in n for n in plan["notes"]))
+        self.assertIdempotent(d)
+
+    def test_a_retired_option_that_is_also_listed_is_refused(self):
+        self.assertConfigError(self.onboarding_desired(prompts=[{
+            "title": "Where are you from?", "retired_options": ["Asia"],
+            "options": [{"title": "Asia", "roles": ["Member"]}]}]), "also listed as options")
+
     def test_option_role_change_is_shown(self):
         d = self.onboarding_desired(prompts=[{"title": "Where are you from?", "single_select": True, "required": True,
                                               "options": [{"title": "Europe", "emoji": "\U0001F1EA\U0001F1FA",
