@@ -33,11 +33,16 @@ If Python has no CA store (python.org builds on macOS), `/etc/ssl/cert.pem` is u
 | `python3 discord_config.py restore snapshots/<file>.json --yes` | Live server, the snapshot | `before-restore` snapshot, then overwrites and category of managed and archived channels, onboarding and welcome screen from the snapshot, then reads back |
 
 "Live server" is the guild, channels, roles, emojis, onboarding, welcome screen
-and AutoMod rules. In compact output, permission lists longer than 4 show
-`ADMINISTRATOR`, `MANAGE_GUILD`, `MANAGE_ROLES`, `MANAGE_CHANNELS`,
-`MANAGE_WEBHOOKS`, `MENTION_EVERYONE`, `BAN_MEMBERS`, `KICK_MEMBERS` and
-`MODERATE_MEMBERS` by name and count the rest; identical overwrite changes are
-grouped. A role create line lists the role's permissions and an update line the
+and AutoMod rules. In compact output, permission lists longer than 4 show the
+privileged permissions by name and count the rest; identical overwrite changes
+are grouped. Privileged permissions are the ones that manage the server, act on
+other members or their messages, or ping everyone:
+
+| Privileged permissions |
+|---|
+| `ADMINISTRATOR`, `MANAGE_GUILD`, `MANAGE_ROLES`, `MANAGE_CHANNELS`, `MANAGE_WEBHOOKS`, `MENTION_EVERYONE`, `BAN_MEMBERS`, `KICK_MEMBERS`, `MODERATE_MEMBERS`, `MANAGE_MESSAGES`, `MANAGE_THREADS`, `MANAGE_GUILD_EXPRESSIONS`, `MANAGE_EVENTS`, `MANAGE_NICKNAMES`, `MUTE_MEMBERS`, `DEAFEN_MEMBERS`, `MOVE_MEMBERS`, `VIEW_AUDIT_LOG`, `PIN_MESSAGES` |
+
+A role create line lists the role's permissions and an update line the
 added and removed ones, in the same form. A new onboarding prompt or option is
 printed with the roles and channels each option gives, by name, for example
 `prompt 'Where are you from?': new option 'Asia': roles [Asia, Member]`.
@@ -94,25 +99,31 @@ conservative estimate of Discord's rule:
 | `guard` key | Default | Rule |
 |---|---|---|
 | `protected_roles` | `["admin"]` | Never denied `VIEW_CHANNEL` by any planned overwrite and never lose `ADMINISTRATOR` or `VIEW_CHANNEL`; the bot's own role is always included |
-| `gating_roles` | `["Newbie", "Member"]` | A member holding `@everyone` plus any mix of these roles (none included) must be able to view the channels in the table below, in the planned state |
+| `gating_roles` | `["Newbie", "Member"]` | Gating model A: onboarding is the gate, so holding any mix of these roles (none included) never takes a permission away; see below |
 | `must_see` | `["welcome", "rules"]` | Channels every gating mix must see |
 | `protected_channels` | `[]` | Ids of existing channels that are never managed or archived; a name or unknown id is refused |
 | `unassignable_roles` | `[]` | Roles no onboarding option may give; each must exist or be listed in `roles` |
 
-Channels every gating mix must view (gating model A):
+For each checked channel the guard works out, in the planned state, the
+effective permissions of a member holding `@everyone` plus each mix of gating
+roles (`@everyone` alone, `+ Newbie`, `+ Member`, `+ Newbie + Member`):
 
-| Channel | Checked when |
-|---|---|
-| `must_see` channel, onboarding default channel, default category | Always |
-| Channel inside a default category | `@everyone` alone can view it |
-| Any category or channel managed or archived by `server.json` | `@everyone` alone can view it |
+| Channel | Checked | Rule |
+|---|---|---|
+| `must_see` channel, onboarding default channel, default category | Always | Every mix can view it |
+| Channel inside a default category, any category or channel managed or archived by `server.json` | Unless no mix can view it (staff and private channels) | Every mix can view it |
+| All of the above | As above | Every mix keeps every permission `@everyone` alone has there |
 
-So a leftover `Newbie` or `Member` deny on a channel `@everyone` can see is
-refused; staff and private channels, which `@everyone` alone cannot see, are
-skipped. A violation is refused when the channel is managed or archived by
-`server.json`, when the plan changes a gating role's permissions, or, for
-default channels, when the plan changes onboarding. A violation in an unmanaged
-channel the plan does not change is printed as a note instead.
+So any leftover `Newbie` or `Member` deny that removes a permission `@everyone`
+alone has (`VIEW_CHANNEL`, `SEND_MESSAGES`, `READ_MESSAGE_HISTORY`,
+`SEND_MESSAGES_IN_THREADS`, or any other bit) is a violation, and so is a
+channel only `Member` unlocks (`@everyone` denied `VIEW_CHANNEL`, `Member`
+allowed), because a member without `Member` cannot see it. A channel no mix can
+view is skipped as a staff or private channel. A violation is refused when the
+channel is managed or archived by `server.json`, when the plan changes a gating
+role's permissions, or, for default channels, when the plan changes onboarding.
+A violation in an unmanaged channel the plan does not change is printed as a
+note instead.
 
 Onboarding options give their roles to any member who picks them. Every option
 in the planned onboarding, listed or kept from the live server, is refused when
@@ -124,7 +135,7 @@ a role it gives is:
 | A `protected_roles` role or the bot's role | `admin`, `OpenDrone Dev` |
 | Managed by an integration | `carl-bot`, `Server Booster` |
 | In `unassignable_roles` | `developer`, `reviewer` |
-| Holding a privileged permission after the plan | `ADMINISTRATOR`, `MANAGE_GUILD`, `MANAGE_ROLES`, `MANAGE_CHANNELS`, `MANAGE_WEBHOOKS`, `MENTION_EVERYONE`, `BAN_MEMBERS`, `KICK_MEMBERS`, `MODERATE_MEMBERS` |
+| Holding a privileged permission (table above) after the plan | A role with `MANAGE_MESSAGES` or `MANAGE_THREADS` |
 
 The check is strict when the plan changes onboarding or that role's
 permissions; otherwise a live violation is printed as a note.

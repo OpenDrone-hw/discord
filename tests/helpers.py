@@ -18,20 +18,24 @@ from fake_discord import GID, FakeDiscord, base_state  # noqa: E402
 P = dc.PERMISSIONS
 
 PROFILES = {
-    "community": {
-        "@everyone": {"deny": ["VIEW_CHANNEL"]},
-        "Newbie": {"deny": ["VIEW_CHANNEL", "SEND_MESSAGES"]},
-        "Member": {"allow": ["VIEW_CHANNEL", "SEND_MESSAGES", "READ_MESSAGE_HISTORY", "USE_APPLICATION_COMMANDS"]},
+    "community": {  # gating model A: onboarding is the gate, @everyone is granted directly
+        "@everyone": {"allow": ["VIEW_CHANNEL", "SEND_MESSAGES", "READ_MESSAGE_HISTORY", "USE_APPLICATION_COMMANDS"],
+                      "deny": ["MENTION_EVERYONE"]},
     },
-    "open": {  # gating model A: onboarding is the gate, @everyone is granted directly
+    "open": {
         "@everyone": {"allow": ["VIEW_CHANNEL", "SEND_MESSAGES", "READ_MESSAGE_HISTORY", "USE_APPLICATION_COMMANDS"]},
     },
     "staff": {"@everyone": {"deny": ["VIEW_CHANNEL"]}, "admin": {"allow": ["VIEW_CHANNEL"]}},
     "archive": {
-        "@everyone": {"deny": ["VIEW_CHANNEL"]},
-        "Member": {"allow": ["VIEW_CHANNEL", "READ_MESSAGE_HISTORY"],
-                   "deny": ["SEND_MESSAGES", "ADD_REACTIONS", "CREATE_PUBLIC_THREADS", "SEND_MESSAGES_IN_THREADS"]},
+        "@everyone": {"allow": ["VIEW_CHANNEL", "READ_MESSAGE_HISTORY"],
+                      "deny": ["SEND_MESSAGES", "ADD_REACTIONS", "CREATE_PUBLIC_THREADS", "SEND_MESSAGES_IN_THREADS"]},
     },
+}
+# The superseded step-2 model: Member-gated channels. The lockout guard refuses it on managed channels.
+MEMBER_GATED = {
+    "@everyone": {"deny": ["VIEW_CHANNEL"]},
+    "Newbie": {"deny": ["VIEW_CHANNEL", "SEND_MESSAGES"]},
+    "Member": {"allow": ["VIEW_CHANNEL", "SEND_MESSAGES", "READ_MESSAGE_HISTORY", "USE_APPLICATION_COMMANDS"]},
 }
 
 

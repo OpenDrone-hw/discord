@@ -71,12 +71,12 @@ class Overwrites(ToolCase):
 class Output(ToolCase):
     def test_long_permission_lists_are_counted_unless_verbose(self):
         d = minimal_desired()
-        d["profiles"]["community"]["Member"]["allow"] += ["ATTACH_FILES", "EMBED_LINKS"]
+        d["profiles"]["community"]["@everyone"]["allow"] += ["ATTACH_FILES", "EMBED_LINKS"]
         plan = self.plan(d)
         short = "\n".join(dc.render_plan(plan))
         full = "\n".join(dc.render_plan(plan, verbose=True))
         self.assertIn("same overwrite change on", short)
-        self.assertIn("Member: allow+ 6 permissions", short)
+        self.assertIn("@everyone: allow+ 6 permissions", short)
         self.assertNotIn("same overwrite change on", full)
         self.assertIn("USE_APPLICATION_COMMANDS", full)
         self.assertIn("--verbose lists them", short)
@@ -197,8 +197,13 @@ class ServerJson(unittest.TestCase):
 
     def test_members_use_slash_commands(self):
         planner = dc.Planner(self.desired, state_from_server_json(self.desired))
-        member = planner.expand("community", "x")["10"]
-        self.assertTrue(member[0] & P["USE_APPLICATION_COMMANDS"])
+        everyone = planner.expand("open", "x")[self.desired["guild_id"]]
+        self.assertTrue(everyone[0] & P["USE_APPLICATION_COMMANDS"])
+        self.assertTrue(everyone[1] & P["MENTION_EVERYONE"])
+
+    def test_gating_model_a_no_newbie_or_member_overwrites(self):
+        for name, profile in self.desired["profiles"].items():
+            self.assertEqual(set(profile) & {"Newbie", "Member"}, set(), name)
 
     def test_staff_roles_are_never_self_assignable(self):
         self.assertEqual(set(self.desired["guard"]["unassignable_roles"]),

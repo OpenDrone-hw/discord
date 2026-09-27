@@ -1,7 +1,8 @@
+import copy
 import json
 import unittest
 
-from helpers import GID, P, ToolCase, dc, full_desired, minimal_desired
+from helpers import GID, MEMBER_GATED, P, ToolCase, dc, full_desired, minimal_desired
 from fake_discord import FakeDiscord, base_state
 
 VIEW, SEND = P["VIEW_CHANNEL"], P["SEND_MESSAGES"]
@@ -302,9 +303,10 @@ class Archive(ToolCase):  # F5
         self.assertIdempotent(d)
         roles = self.fake.by_name("announcements")
         self.assertEqual(roles["parent_id"], self.fake.by_name("Archive")["id"])
-        member = next(o for o in roles["permission_overwrites"] if o["id"] == "10")
-        self.assertTrue(int(member["allow"]) & VIEW and int(member["allow"]) & P["READ_MESSAGE_HISTORY"])
-        self.assertTrue(int(member["deny"]) & SEND)
+        everyone = next(o for o in roles["permission_overwrites"] if o["id"] == GID)
+        self.assertTrue(int(everyone["allow"]) & VIEW and int(everyone["allow"]) & P["READ_MESSAGE_HISTORY"])
+        self.assertTrue(int(everyone["deny"]) & SEND)
+        self.assertEqual({o["id"] for o in roles["permission_overwrites"]}, {GID})  # the Member overwrite is gone
         self.assertEqual([c for c in self.fake.calls if c[0] == "DELETE"], [])
 
     def test_archive_by_id_frees_the_name_for_a_new_forum(self):
@@ -327,9 +329,11 @@ class Archive(ToolCase):  # F5
         self.assertEqual(self.fake.chan("201")["parent_id"], self.fake.by_name("Archive")["id"])
 
     def test_archiving_a_default_channel_out_of_sight_is_refused(self):
-        # #roles is a live onboarding default channel; the archive profile denies @everyone VIEW_CHANNEL
-        self.assertConfigError(self.archive_desired(["roles"]),
-                               "#roles (onboarding default channel) would be hidden from a member holding @everyone")
+        # #roles is a live onboarding default channel; this archive access hides it from @everyone alone
+        d = self.archive_desired(["roles"])
+        d["archive"]["access"] = {"@everyone": {"deny": ["VIEW_CHANNEL"]}, "Member": {"allow": ["VIEW_CHANNEL"]}}
+        self.assertConfigError(d, "#roles (onboarding default channel) would be hidden from a member holding "
+                                  "@everyone; @everyone + Newbie")
 
     def test_archive_refusals(self):
         self.assertConfigError(self.archive_desired(["101"]), "also listed under categories")
@@ -433,6 +437,26 @@ class Onboarding(ToolCase):  # F6
         state["onboarding"]["enabled"] = False
         self.assertConfigError(self.self_assign(["developer"]), "it holds MANAGE_CHANNELS", fake=FakeDiscord(state))
 
+    def test_option_granting_moderation_permissions_is_refused(self):
+        # the reviewer's repro: a new 'Helper' role on the 'Where are you from?' Europe option
+        mod = ["MANAGE_MESSAGES", "MANAGE_THREADS", "MANAGE_NICKNAMES", "MUTE_MEMBERS", "MOVE_MEMBERS",
+               "PIN_MESSAGES", "MANAGE_EVENTS"]
+        d = self.onboarding_desired(prompts=[{"title": "Where are you from?", "single_select": True, "required": True,
+                                              "options": [{"title": "Europe", "roles": ["Europe", "Member", "Helper"]}]}])
+        d["roles"] = [{"name": "Helper", "permissions": mod}]
+        self.assertConfigError(d, "option 'Europe' would give role Helper to any member who picks it; it holds "
+                                  "MANAGE_MESSAGES, MUTE_MEMBERS, MOVE_MEMBERS, MANAGE_NICKNAMES, MANAGE_EVENTS, "
+                                  "MANAGE_THREADS, PIN_MESSAGES")
+        self.assertConfigError(self.self_assign(["Mods"], roles=[{"name": "Mods", "permissions": ["MANAGE_MESSAGES"]}]),
+                               "role Mods to any member who picks it; it holds MANAGE_MESSAGES")
+        # the compact plan names every moderation bit instead of counting it
+        del d["onboarding"]
+        code, out, err = self.run_cli(d, "plan")
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("permissions: [MANAGE_MESSAGES, MUTE_MEMBERS, MOVE_MEMBERS, MANAGE_NICKNAMES, MANAGE_EVENTS, "
+                      "MANAGE_THREADS, PIN_MESSAGES]", out)
+        self.assertNotIn("7 permissions", out)
+
     def test_unassignable_roles(self):
         self.assertConfigError(self.self_assign(["beta tester"], guard={"unassignable_roles": ["beta tester"]}),
                                "role beta tester to any member who picks it; it is in guard.unassignable_roles")
@@ -482,9 +506,10 @@ class Onboarding(ToolCase):  # F6
         d = self.open_forums(self.onboarding_desired(
             enabled=True, default_channels=["Welcome", "General", "Showcase"]), 3)
         self.assertConfigError(d, "gives 8 viewable, 4 writable")
-        # gen-chat and builds deny @everyone VIEW_CHANNEL (community profile), so they add nothing
-        self.assertConfigError(self.onboarding_desired(enabled=True, default_channels=["Welcome", "Chats", "General"]),
-                               "gives 5 viewable, 4 writable")
+        # gen-chat and builds deny @everyone VIEW_CHANNEL (staff access), so they add nothing
+        d = self.onboarding_desired(enabled=True, default_channels=["Welcome", "Chats", "General"])
+        d["categories"][0]["access"] = "staff"
+        self.assertConfigError(d, "gives 5 viewable, 4 writable")
 
     def test_advanced_mode_counts_option_channels(self):
         prompts = [{"title": "Where are you from?", "single_select": True, "required": True,
@@ -678,6 +703,56 @@ class LockoutGuard(ToolCase):  # F10
                                                        "Newbie": {"deny": ["VIEW_CHANNEL"]},
                                                        "admin": {"allow": ["VIEW_CHANNEL"]}}
         self.assertIdempotent(d)
+
+    def open_channel_with(self, extra):
+        """#gen-chat managed with the open profile plus extra role overwrites; must_see off."""
+        d = minimal_desired(guard={"must_see": []})
+        d["categories"][0]["access"] = "open"
+        d["categories"][0]["channels"][0]["access"] = {**copy.deepcopy(d["profiles"]["open"]), **extra}
+        return d
+
+    def test_newbie_send_deny_on_a_managed_open_channel(self):
+        # a leftover Newbie SEND deny stops the 414 members holding Newbie from posting
+        msg = self.blind_sets(self.open_channel_with({"Newbie": {"deny": ["SEND_MESSAGES"]}}))
+        self.assertTrue(msg.endswith("#gen-chat (managed) a member holding @everyone + Newbie would lose SEND_MESSAGES; "
+                                     "a member holding @everyone + Newbie + Member would lose SEND_MESSAGES"), msg)
+        self.assertEqual(self.fake.writes(), [])
+
+    def test_newbie_history_deny_on_a_managed_open_channel(self):
+        msg = self.blind_sets(self.open_channel_with({"Newbie": {"deny": ["READ_MESSAGE_HISTORY"]}}))
+        self.assertIn("@everyone + Newbie would lose READ_MESSAGE_HISTORY", msg)
+
+    def test_member_denies_on_a_managed_open_channel(self):
+        for perm in ("READ_MESSAGE_HISTORY", "SEND_MESSAGES_IN_THREADS", "SEND_MESSAGES"):
+            d = self.open_channel_with({"Member": {"deny": [perm]}})
+            if perm == "SEND_MESSAGES_IN_THREADS":
+                d["categories"][0]["channels"][0]["access"]["@everyone"]["allow"].append(perm)
+            msg = self.blind_sets(d)
+            self.assertIn(f"#gen-chat (managed) a member holding @everyone + Member would lose {perm}", msg)
+            self.assertIn(f"@everyone + Newbie + Member would lose {perm}", msg)
+
+    def test_gating_allow_on_top_of_everyone_passes(self):
+        # extra grants to gating roles take nothing away
+        self.assertIdempotent(self.open_channel_with({"Member": {"allow": ["ATTACH_FILES"]}}))
+
+    def test_member_gated_community_channel_is_refused(self):
+        # the superseded step-2 model: @everyone denied VIEW, Member allowed; members without Member lose the channel
+        d = minimal_desired(guard={"must_see": []})
+        d["profiles"]["community"] = copy.deepcopy(MEMBER_GATED)
+        msg = self.blind_sets(d)
+        self.assertIn("Chats (managed) would be hidden from a member holding @everyone; @everyone + Newbie", msg)
+        self.assertIn("#gen-chat (managed) would be hidden from a member holding @everyone; @everyone + Newbie", msg)
+        d["profiles"]["community"] = {"@everyone": {"deny": ["VIEW_CHANNEL"]}, "Member": {"allow": ["VIEW_CHANNEL"]}}
+        self.assertIn("#builds (managed) would be hidden from a member holding @everyone; @everyone + Newbie",
+                      self.blind_sets(d))
+        self.assertEqual(self.fake.writes(), [])
+
+    def test_member_gated_archive_is_refused(self):
+        d = minimal_desired(guard={"must_see": []}, archive={"category": "Archive", "channels": ["102"], "access": {
+            "@everyone": {"deny": ["VIEW_CHANNEL"]}, "Member": {"allow": ["VIEW_CHANNEL", "READ_MESSAGE_HISTORY"]}}})
+        d["categories"][0]["channels"].pop()
+        self.assertIn("#builds (archived) would be hidden from a member holding @everyone; @everyone + Newbie",
+                      self.blind_sets(d))
 
     def test_unmanaged_default_channel_is_a_note_until_the_plan_touches_it(self):
         state = base_state()

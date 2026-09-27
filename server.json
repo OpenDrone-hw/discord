@@ -8,19 +8,10 @@
     "unassignable_roles": ["developer", "beta tester", "reviewer", "Support"]
   },
   "profiles": {
-    "community": {
+    "open": {
       "@everyone": {
-        "deny": ["VIEW_CHANNEL"]
-      },
-      "Newbie": {
-        "deny": ["CREATE_INSTANT_INVITE", "MANAGE_CHANNELS", "ADD_REACTIONS", "PRIORITY_SPEAKER", "STREAM", "VIEW_CHANNEL", "SEND_MESSAGES", "SEND_TTS_MESSAGES", "MANAGE_MESSAGES", "EMBED_LINKS", "ATTACH_FILES", "READ_MESSAGE_HISTORY", "MENTION_EVERYONE", "USE_EXTERNAL_EMOJIS", "CONNECT", "SPEAK", "MUTE_MEMBERS", "DEAFEN_MEMBERS", "MOVE_MEMBERS", "USE_VAD", "MANAGE_ROLES", "MANAGE_WEBHOOKS", "USE_APPLICATION_COMMANDS", "MANAGE_EVENTS", "MANAGE_THREADS", "CREATE_PUBLIC_THREADS", "CREATE_PRIVATE_THREADS", "USE_EXTERNAL_STICKERS", "SEND_MESSAGES_IN_THREADS", "USE_EMBEDDED_ACTIVITIES", "USE_SOUNDBOARD", "CREATE_EVENTS", "USE_EXTERNAL_SOUNDS", "SEND_VOICE_MESSAGES", "SET_VOICE_CHANNEL_STATUS", "SEND_POLLS", "USE_EXTERNAL_APPS", "PIN_MESSAGES", "BYPASS_SLOWMODE"]
-      },
-      "Member": {
-        "allow": ["CREATE_INSTANT_INVITE", "ADD_REACTIONS", "STREAM", "VIEW_CHANNEL", "SEND_MESSAGES", "EMBED_LINKS", "ATTACH_FILES", "READ_MESSAGE_HISTORY", "USE_EXTERNAL_EMOJIS", "CONNECT", "SPEAK", "USE_VAD", "USE_APPLICATION_COMMANDS", "CREATE_PUBLIC_THREADS", "USE_EXTERNAL_STICKERS", "SEND_MESSAGES_IN_THREADS", "USE_SOUNDBOARD", "USE_EXTERNAL_SOUNDS"],
-        "deny": ["MANAGE_CHANNELS", "PRIORITY_SPEAKER", "SEND_TTS_MESSAGES", "MANAGE_MESSAGES", "MENTION_EVERYONE", "MUTE_MEMBERS", "DEAFEN_MEMBERS", "MOVE_MEMBERS", "MANAGE_ROLES", "MANAGE_WEBHOOKS", "MANAGE_THREADS", "CREATE_PRIVATE_THREADS", "USE_EMBEDDED_ACTIVITIES", "SEND_VOICE_MESSAGES", "SET_VOICE_CHANNEL_STATUS", "SEND_POLLS", "USE_EXTERNAL_APPS", "PIN_MESSAGES"]
-      },
-      "developer": {
-        "allow": ["VIEW_CHANNEL", "CONNECT"]
+        "allow": ["VIEW_CHANNEL", "SEND_MESSAGES", "READ_MESSAGE_HISTORY", "ADD_REACTIONS", "ATTACH_FILES", "EMBED_LINKS", "CREATE_PUBLIC_THREADS", "SEND_MESSAGES_IN_THREADS", "USE_APPLICATION_COMMANDS"],
+        "deny": ["MENTION_EVERYONE"]
       }
     }
   },
@@ -28,7 +19,7 @@
     {
       "id": "1494779018111746188",
       "name": "Chats",
-      "access": "community",
+      "access": "open",
       "channels": [
         {
           "id": "1494779609131258048",
@@ -43,7 +34,7 @@
     {
       "id": "1497547320131190864",
       "name": "Help",
-      "access": "community",
+      "access": "open",
       "channels": [
         {
           "id": "1497547403140530237",
@@ -54,7 +45,7 @@
     {
       "id": "1550880981592973433",
       "name": "Hardware",
-      "access": "community",
+      "access": "open",
       "channels": [
         {
           "id": "1494783056026796262",
@@ -105,7 +96,7 @@
     {
       "id": "1550881887050928248",
       "name": "Software",
-      "access": "community",
+      "access": "open",
       "channels": [
         {
           "id": "1510002456849813595",

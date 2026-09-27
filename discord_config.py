@@ -99,9 +99,12 @@ ACTION_KEYS = {"type", "message", "channel", "seconds"}
 GUILD_KEYS = {"description", *GUILD_CHANNELS}
 DEFAULT_GUARD = {"protected_roles": ["admin"], "gating_roles": ["Newbie", "Member"],
                  "must_see": ["welcome", "rules"], "protected_channels": [], "unassignable_roles": []}
-# Always spelled out in compact plan output, whatever the list length.
+# Permissions that manage the server, act on other members or their messages, or ping everyone. Always
+# spelled out in compact plan output; no onboarding option may give a role holding one of them.
 PRIVILEGED = ("ADMINISTRATOR", "MANAGE_GUILD", "MANAGE_ROLES", "MANAGE_CHANNELS", "MANAGE_WEBHOOKS",
-              "MENTION_EVERYONE", "BAN_MEMBERS", "KICK_MEMBERS", "MODERATE_MEMBERS")
+              "MENTION_EVERYONE", "BAN_MEMBERS", "KICK_MEMBERS", "MODERATE_MEMBERS", "MANAGE_MESSAGES",
+              "MANAGE_THREADS", "MANAGE_GUILD_EXPRESSIONS", "MANAGE_EVENTS", "MANAGE_NICKNAMES", "MUTE_MEMBERS",
+              "DEAFEN_MEMBERS", "MOVE_MEMBERS", "VIEW_AUDIT_LOG", "PIN_MESSAGES")
 PRIVILEGED_BITS = sum(PERMISSIONS[n] for n in PRIVILEGED)
 MAX_GATING_ROLES = 4  # the guard checks every subset of these roles
 
@@ -1142,11 +1145,12 @@ class Planner:
             self.notes.append(f"lockout guard: {line}; onboarding is unchanged by this plan")
 
     def check_gating(self) -> None:
-        """Gating model A: whatever mix of gating roles a member holds (none included), they see every
-        must_see channel and every onboarding default channel. A category must be visible itself, and each
-        channel in it that @everyone alone can see must be visible to every mix too. The same conditional
-        rule covers every managed or archived category and channel: if @everyone alone can see it, a
-        leftover Newbie or Member deny must not hide it from anyone."""
+        """Gating model A: onboarding is the gate, so holding a gating role never takes anything away.
+        For every checked channel and every mix of gating roles (none included), the member's effective
+        permissions must include every permission @everyone alone has there, and a channel any mix can view
+        must be viewable by every mix. must_see channels and onboarding default channels must be viewable by
+        every mix. Other checked channels (managed, archived, inside a default category) are skipped only
+        when no mix can view them: a staff or private channel."""
         gating = self.guard["gating_roles"]
         if not isinstance(gating, list) or len(gating) > MAX_GATING_ROLES:
             raise ConfigError(f"guard.gating_roles: a list of at most {MAX_GATING_ROLES} role names")
@@ -1167,7 +1171,7 @@ class Planner:
         if default_ids is None:
             default_ids = list((self.s.get("onboarding") or {}).get("default_channel_ids", []))
 
-        checks = {}  # channel id -> (why, only when @everyone alone sees it)
+        checks = {}  # channel id -> (why, skipped when no gating mix can view it)
         for ref in self.guard["must_see"]:
             cid = self.resolve_channel(ref, "guard.must_see")
             checks[cid] = ("must_see", False)
@@ -1187,18 +1191,24 @@ class Planner:
             if cid not in final:
                 continue
             ow = final[cid][2]
-            if conditional and not effective(everyone, 0, ow, self.gid, set()) & VIEW:
-                continue  # staff or private channel: @everyone alone cannot see it either
-            blind = []
+            mixes = []
             for combo in role_sets:
                 role_perms = 0
                 for _, _, perms, _ in combo:
                     role_perms |= perms
-                if not effective(everyone, role_perms, ow, self.gid, {rid for _, rid, _, _ in combo}) & VIEW:
-                    blind.append(" + ".join(["@everyone"] + [name for name, *_ in combo]))
-            if not blind:
+                label = " + ".join(["@everyone"] + [name for name, *_ in combo])
+                mixes.append((label, effective(everyone, role_perms, ow, self.gid, {rid for _, rid, _, _ in combo})))
+            if conditional and not any(perms & VIEW for _, perms in mixes):
+                continue  # staff or private channel: no gating mix can view it
+            alone = mixes[0][1]
+            blind = [label for label, perms in mixes if not perms & VIEW]
+            lose = [f"{label} would lose {', '.join(names(alone & ~perms))}"
+                    for label, perms in mixes if perms & VIEW and alone & ~perms]
+            if not blind and not lose:
                 continue
-            line = f"{self.label(cid)} ({why}) would be hidden from a member holding {'; '.join(blind)}"
+            problems = ([f"would be hidden from a member holding {'; '.join(blind)}"] if blind else []) + \
+                [f"a member holding {text}" for text in lose]
+            line = f"{self.label(cid)} ({why}) " + "; ".join(problems)
             strict = cid in managed or roles_change or (onboarding_changes and why != "must_see")
             (refused if strict else kept).append(line)
         if refused:
@@ -1414,7 +1424,7 @@ def fmt_perms(items: list[str], verbose: bool) -> str:
     rest = len(items) - len(privileged)
     if not privileged:
         return f"{rest} permissions"
-    return ", ".join(privileged) + f" + {rest} more"
+    return ", ".join(privileged) + (f" + {rest} more" if rest else "")
 
 
 def overwrite_lines(ow: dict, verbose: bool) -> list[str]:
