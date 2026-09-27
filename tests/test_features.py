@@ -219,6 +219,24 @@ class Roles(ToolCase):  # F3
         gen = self.fake.by_name("gen-chat")
         self.assertIn(rid, [o["id"] for o in gen["permission_overwrites"]])
 
+    def test_privileged_permissions_are_named_in_compact_output(self):
+        perms = ["ADMINISTRATOR", "VIEW_CHANNEL", "SEND_MESSAGES", "ADD_REACTIONS", "EMBED_LINKS", "ATTACH_FILES"]
+        d = minimal_desired(roles=[{"name": "Operator", "permissions": perms},
+                                   {"name": "developer", "permissions": perms}])
+        plan = self.plan(d)
+        short = "\n".join(dc.render_plan(plan))
+        self.assertIn("+ role Operator\n    color #000000, hoist False, mentionable False\n"
+                      "    permissions: [ADMINISTRATOR + 5 more]", short)
+        self.assertIn("~ role developer\n    permissions: +[ADMINISTRATOR + 5 more] -[]", short)
+        full = "\n".join(dc.render_plan(plan, verbose=True))
+        self.assertIn("permissions: [ADMINISTRATOR, ADD_REACTIONS, VIEW_CHANNEL, SEND_MESSAGES, EMBED_LINKS, "
+                      "ATTACH_FILES]", full)
+        self.assertEqual(dc.fmt_perms(["MANAGE_ROLES", "BAN_MEMBERS", "A", "B", "C"], False),
+                         "MANAGE_ROLES, BAN_MEMBERS + 3 more")
+        self.assertEqual(dc.fmt_perms(["A", "B", "C", "D", "E"], False), "5 permissions")
+        self.assertIn("permissions: [none]", "\n".join(dc.render_plan(self.plan(minimal_desired(
+            roles=[{"name": "Plain"}])))))
+
     def test_managed_roles_skipped_and_unlisted_left_alone(self):
         plan = self.plan(minimal_desired(roles=[{"name": "Integration", "color": "#ffffff"}]))
         self.assertEqual(plan["ops"]["roles"], [])
@@ -277,12 +295,12 @@ class Archive(ToolCase):  # F5
         return minimal_desired(archive={"category": "Archive", "access": "archive", "channels": refs})
 
     def test_moves_channel_read_only_and_keeps_history(self):
-        d = self.archive_desired(["roles"])
+        d = self.archive_desired(["announcements"])
         plan = self.plan(d)
         self.assertEqual(labels(plan, "categories")[-1], "Archive (category)")
-        self.assertEqual(labels(plan, "archive"), ["#roles (24)"])
+        self.assertEqual(labels(plan, "archive"), ["#announcements (23)"])
         self.assertIdempotent(d)
-        roles = self.fake.by_name("roles")
+        roles = self.fake.by_name("announcements")
         self.assertEqual(roles["parent_id"], self.fake.by_name("Archive")["id"])
         member = next(o for o in roles["permission_overwrites"] if o["id"] == "10")
         self.assertTrue(int(member["allow"]) & VIEW and int(member["allow"]) & P["READ_MESSAGE_HISTORY"])
@@ -308,6 +326,11 @@ class Archive(ToolCase):  # F5
         self.assertIdempotent(d)
         self.assertEqual(self.fake.chan("201")["parent_id"], self.fake.by_name("Archive")["id"])
 
+    def test_archiving_a_default_channel_out_of_sight_is_refused(self):
+        # #roles is a live onboarding default channel; the archive profile denies @everyone VIEW_CHANNEL
+        self.assertConfigError(self.archive_desired(["roles"]),
+                               "#roles (onboarding default channel) would be hidden from a member holding @everyone")
+
     def test_archive_refusals(self):
         self.assertConfigError(self.archive_desired(["101"]), "also listed under categories")
         self.assertConfigError(self.archive_desired(["Chats"]), "no unmanaged channel")
@@ -326,7 +349,7 @@ class Onboarding(ToolCase):  # F6
         return minimal_desired(onboarding=spec)
 
     def test_existing_prompt_keeps_id_new_prompt_added_unlisted_kept(self):
-        d = self.onboarding_desired(mode="advanced", default_channels=["welcome", "rules", "roles", "gen-chat"], prompts=[
+        d = self.onboarding_desired(mode="advanced", default_channels=["welcome", "rules", "roles", "support"], prompts=[
             {"title": "Where are you from?", "single_select": True, "required": True,
              "options": [{"title": "Europe", "emoji": "\U0001F1EA\U0001F1FA", "roles": ["Europe", "Member"]},
                          {"title": "Asia", "roles": ["Member"]}]},
@@ -339,7 +362,7 @@ class Onboarding(ToolCase):  # F6
         self.assertEqual(body["prompts"][0]["options"][0]["id"], "4001")
         self.assertEqual(body["prompts"][1]["options"][0]["emoji_id"], "700")
         self.assertEqual(body["mode"], 1)
-        self.assertIn("default channels: +['#gen-chat'] -[]", op["summary"])
+        self.assertIn("default channels: +['#support'] -[]", op["summary"])
         self.assertIn("prompt 'Where are you from?': new option 'Asia'", op["summary"])
         self.assertIdempotent(d)
         self.assertEqual([p["title"] for p in self.fake.onboarding["prompts"]][2], "Legacy prompt")
@@ -367,23 +390,71 @@ class Onboarding(ToolCase):  # F6
         follow = next(p for p in self.fake.onboarding["prompts"] if p["title"] == "Follow")
         self.assertEqual(follow["options"][0]["channel_ids"], [self.fake.by_name("dev-fc")["id"]])
 
+    def open_forums(self, d, count):
+        d["categories"].append({"name": "Showcase", "access": "open", "channels": [
+            {"name": f"forum-{i}", "type": "forum"} for i in range(count)]})
+        return d
+
     def test_requirements_refused_before_any_write(self):
         self.assertConfigError(self.onboarding_desired(enabled=True, default_channels=["welcome"]),
-                               "gives 1 channel(s), 1 writable")
-        # a category counts as its channels; Chats channels deny @everyone VIEW_CHANNEL
-        seven = self.onboarding_desired(enabled=True, default_channels=["Welcome", "gen-chat", "builds", "support",
-                                                                         "General"])
+                               "conservative estimate of Discord's rule")
+        self.assertConfigError(self.onboarding_desired(enabled=True, default_channels=["welcome"]),
+                               "gives 1 viewable, 1 writable")
+        # Welcome expands to 4 text channels; support is text; General (voice) and web-support (forum) only count
+        # towards the 7
+        seven = self.onboarding_desired(enabled=True, default_channels=["Welcome", "support", "General", "web-support"])
         self.assertEqual(self.plan(seven)["ops"]["onboarding"][0]["body"]["enabled"], True)
-        four = self.onboarding_desired(enabled=True, default_channels=["welcome", "rules", "roles", "support",
-                                                                        "gen-chat", "builds"])
-        self.assertConfigError(four, "gives 6 channel(s), 4 writable")
-        code, out, err = self.run_cli(four, "apply", "--yes")
+        six = self.onboarding_desired(enabled=True, default_channels=["Welcome", "General", "web-support"])
+        self.assertConfigError(six, "gives 6 viewable, 4 writable")
+        code, out, err = self.run_cli(six, "apply", "--yes")
         self.assertEqual(code, 1, out + err)
         self.assertEqual(self.fake.writes(), [])
+
+    def test_forums_voice_and_hidden_channels_are_not_writable(self):
+        # 4 text + voice + 3 new open forums = 8 viewable, still only 4 writable text channels
+        d = self.open_forums(self.onboarding_desired(
+            enabled=True, default_channels=["Welcome", "General", "Showcase"]), 3)
+        self.assertConfigError(d, "gives 8 viewable, 4 writable")
+        # gen-chat and builds deny @everyone VIEW_CHANNEL (community profile), so they add nothing
+        self.assertConfigError(self.onboarding_desired(enabled=True, default_channels=["Welcome", "Chats", "General"]),
+                               "gives 5 viewable, 4 writable")
+
+    def test_advanced_mode_counts_option_channels(self):
+        prompts = [{"title": "Where are you from?", "single_select": True, "required": True,
+                    "options": [{"title": "Europe", "roles": ["Europe"], "channels": ["support", "General", "web-support"]}]}]
+        base = dict(enabled=True, default_channels=["Welcome"], prompts=prompts)
+        self.assertConfigError(self.onboarding_desired(**base), "gives 4 viewable, 4 writable")
+        self.assertEqual(self.plan(self.onboarding_desired(mode="advanced", **base))["ops"]["onboarding"][0]["body"]["mode"], 1)
+
+    def prompts_only(self):
+        return self.onboarding_desired(prompts=[{"title": "Where are you from?", "single_select": True, "required": True,
+                                                 "options": [{"title": "Asia", "roles": ["Member"]}]}])
+
+    def test_prompt_only_change_trusts_discord_when_it_reports_requirements_met(self):
+        # the live onboarding has 3 default channels: below this tool's estimate, but Discord accepts it
+        self.fake.onboarding.update(enabled=True, below_requirements=False)
+        plan = self.plan(self.prompts_only())
+        self.assertEqual(len(plan["ops"]["onboarding"]), 1)
+        self.assertTrue(any("requirement check is skipped" in n and "3 channel(s)" in n for n in plan["notes"]),
+                        plan["notes"])
+        self.assertIdempotent(self.prompts_only())
+
+    def test_prompt_only_change_is_checked_when_discord_reports_below_requirements(self):
+        self.fake.onboarding.update(enabled=True, below_requirements=True)
+        self.assertConfigError(self.prompts_only(), "gives 3 viewable")
+        del self.fake.onboarding["below_requirements"]  # unknown counts as below
+        self.assertConfigError(self.prompts_only(), "gives 3 viewable")
+
+    def test_settings_change_is_checked_even_when_discord_reports_requirements_met(self):
+        self.fake.onboarding.update(enabled=True, below_requirements=False)
+        self.assertConfigError(self.onboarding_desired(mode="advanced"), "gives 3 viewable")
+        self.assertConfigError(self.onboarding_desired(default_channels=["welcome", "rules"]), "gives 2 viewable")
         # an already enabled onboarding with no change sends nothing and is not checked
-        self.fake.onboarding["enabled"] = True
         self.assertEqual(self.plan(self.onboarding_desired(default_channels=["welcome", "rules", "roles"]))
                          ["ops"]["onboarding"], [])
+        # disabling is never refused
+        self.assertEqual(self.plan(self.onboarding_desired(enabled=False))["ops"]["onboarding"][0]["body"]["enabled"],
+                         False)
 
     def test_requirement_errors(self):
         self.assertConfigError(self.onboarding_desired(prompts=[{"title": "X", "options": [{"title": "a", "roles": ["Nope"]}]}]),
@@ -457,24 +528,94 @@ class LockoutGuard(ToolCase):  # F10
         d["categories"][0]["channels"][0]["access"] = {"OpenDrone Dev": {"deny": ["VIEW_CHANNEL"]}}
         self.assertConfigError(d, "would deny VIEW_CHANNEL to OpenDrone Dev")
 
-    def test_member_keeps_view_of_rules(self):
-        d = minimal_desired()
-        d["categories"].append({"id": "20", "name": "Welcome", "access": {"@everyone": {"deny": ["VIEW_CHANNEL"]}},
-                                "channels": [{"id": "22", "name": "rules"}]})
-        self.assertConfigError(d, "Member would lose VIEW_CHANNEL on #rules")
+    def blind_sets(self, desired, fake=None):
+        with self.assertRaises(dc.ConfigError) as ctx:
+            self.plan(desired, fake)
+        msg = str(ctx.exception)
+        self.assertTrue(msg.startswith("lockout guard: "), msg)
+        return msg
 
-    def test_archiving_rules_without_member_view(self):
+    def welcome_desired(self, rules_access):
+        """Manage the Welcome category; #rules (must_see and an onboarding default channel) gets rules_access."""
+        d = minimal_desired()
+        d["profiles"]["open"] = {"@everyone": {"allow": ["VIEW_CHANNEL"]}}
+        d["categories"].append({"id": "20", "name": "Welcome", "access": "open", "channels": [
+            {"id": "21", "name": "welcome"}, {"id": "22", "name": "rules", "access": rules_access},
+            {"id": "23", "name": "announcements"}, {"id": "24", "name": "roles"}]})
+        return d
+
+    def test_open_layout_passes(self):
+        self.assertIdempotent(self.welcome_desired("open"))
+
+    def test_everyone_alone(self):
+        d = self.welcome_desired({"@everyone": {"deny": ["VIEW_CHANNEL"]}, "Newbie": {"allow": ["VIEW_CHANNEL"]},
+                                  "Member": {"allow": ["VIEW_CHANNEL"]}})
+        self.assertTrue(self.blind_sets(d).endswith("#rules (must_see) would be hidden from a member holding @everyone"))
+
+    def test_newbie_deny_left_on_a_default_channel(self):
+        # the live pattern: Newbie denied, Member allowed; 414 members hold Newbie
+        d = self.welcome_desired({"Newbie": {"deny": ["VIEW_CHANNEL"]}, "Member": {"allow": ["VIEW_CHANNEL"]}})
+        d["guard"] = {"must_see": []}
+        self.assertTrue(self.blind_sets(d).endswith(
+            "#rules (onboarding default channel) would be hidden from a member holding @everyone + Newbie"))
+
+    def test_member_alone(self):
+        d = self.welcome_desired({"Member": {"deny": ["VIEW_CHANNEL"]}, "Newbie": {"allow": ["VIEW_CHANNEL"]}})
+        self.assertTrue(self.blind_sets(d).endswith("would be hidden from a member holding @everyone + Member"))
+
+    def test_newbie_and_member_together(self):
+        d = self.welcome_desired({"Member": {"deny": ["VIEW_CHANNEL"]}, "Newbie": {"deny": ["VIEW_CHANNEL"]}})
+        self.assertTrue(self.blind_sets(d).endswith("would be hidden from a member holding @everyone + Newbie; "
+                                                    "@everyone + Member; @everyone + Newbie + Member"))
+
+    def test_channels_inside_a_default_category(self):
+        self.fake.onboarding["default_channel_ids"] = ["100"]  # the Chats category
+        d = minimal_desired(guard={"must_see": []})
+        d["profiles"]["community"] = {"Newbie": {"deny": ["VIEW_CHANNEL"]}}
+        d["categories"][0]["access"] = {"@everyone": {"allow": ["VIEW_CHANNEL"]}}
+        d["categories"][0]["channels"][0]["access"] = "community"
+        d["categories"][0]["channels"][1]["access"] = "staff"  # private: @everyone alone cannot see it either
+        self.assertTrue(self.blind_sets(d).endswith(
+            "#gen-chat (in onboarding default channel Chats) would be hidden from a member holding @everyone + Newbie; "
+            "@everyone + Newbie + Member"))  # #builds is private to staff, so it is not checked
+
+    def test_unmanaged_default_channel_is_a_note_until_the_plan_touches_it(self):
+        state = base_state()
+        roles = next(c for c in state["channels"] if c["name"] == "roles")
+        roles["permission_overwrites"].append({"id": "11", "type": 0, "allow": "0", "deny": str(VIEW)})
+        fake = FakeDiscord(state)
+        plan = self.plan(minimal_desired(), fake)
+        self.assertTrue(any(n.startswith("lockout guard: #roles (onboarding default channel) would be hidden from a "
+                                         "member holding @everyone + Newbie") and "unmanaged" in n
+                            for n in plan["notes"]), plan["notes"])
+        fake.onboarding["enabled"] = False
+        self.assertConfigError(minimal_desired(onboarding={"enabled": False, "prompts": [
+            {"title": "Where are you from?", "single_select": True, "required": True,
+             "options": [{"title": "Asia", "roles": ["Member"]}]}]}), "#roles (onboarding default channel)", fake=fake)
+        self.assertConfigError(minimal_desired(roles=[{"name": "Newbie", "permissions": ["CHANGE_NICKNAME"]}]),
+                               "#roles (onboarding default channel)", fake=fake)
+
+    def test_archiving_welcome_out_of_sight(self):
         d = minimal_desired(archive={"category": "Archive", "access": "staff", "channels": ["welcome"]})
-        self.assertConfigError(d, "Member would lose VIEW_CHANNEL on #welcome")
+        self.assertConfigError(d, "#welcome (must_see) would be hidden from a member holding @everyone;")
 
     def test_member_role_permission_change_counts(self):
         state = base_state()
         state["roles"][0]["permissions"] = "0"
         for c in state["channels"]:
             if c["name"] == "rules":
-                c["permission_overwrites"] = []
-        d = minimal_desired(roles=[{"name": "Member", "permissions": []}])
-        self.assertConfigError(d, "Member would lose VIEW_CHANNEL on #rules", fake=FakeDiscord(state))
+                c["permission_overwrites"] = [{"id": "10", "type": 0, "allow": "0", "deny": "0"}]
+        fake = FakeDiscord(state)
+        fake.onboarding["default_channel_ids"] = []
+        self.assertEqual(self.plan(minimal_desired(guard={"must_see": ["welcome"]}), fake)["total"], 3)
+        d = minimal_desired(roles=[{"name": "Member", "permissions": []}], guard={"must_see": ["rules"]})
+        self.assertConfigError(d, "#rules (must_see) would be hidden from a member holding @everyone; "
+                                  "@everyone + Newbie; @everyone + Member; @everyone + Newbie + Member", fake=fake)
+
+    def test_gating_roles_checked(self):
+        self.assertConfigError(minimal_desired(guard={"gating_roles": ["Ghost"]}), "gating role 'Ghost'")
+        self.assertConfigError(minimal_desired(guard={"gating_roles": ["a", "b", "c", "d", "e"]}), "at most 4")
+        self.assertConfigError(minimal_desired(guard={"member_role": "Member"}), "unknown keys ['member_role']")
 
     def test_protected_role_keeps_administrator(self):
         self.assertConfigError(minimal_desired(roles=[{"name": "admin", "permissions": ["VIEW_CHANNEL"]}]),

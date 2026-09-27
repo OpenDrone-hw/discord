@@ -23,9 +23,8 @@ PROFILES = {
         "Newbie": {"deny": ["VIEW_CHANNEL", "SEND_MESSAGES"]},
         "Member": {"allow": ["VIEW_CHANNEL", "SEND_MESSAGES", "READ_MESSAGE_HISTORY", "USE_APPLICATION_COMMANDS"]},
     },
-    "open": {
-        "Newbie": {"deny": ["VIEW_CHANNEL", "SEND_MESSAGES"]},
-        "Member": {"allow": ["VIEW_CHANNEL", "SEND_MESSAGES", "READ_MESSAGE_HISTORY", "USE_APPLICATION_COMMANDS"]},
+    "open": {  # gating model A: onboarding is the gate, @everyone is granted directly
+        "@everyone": {"allow": ["VIEW_CHANNEL", "SEND_MESSAGES", "READ_MESSAGE_HISTORY", "USE_APPLICATION_COMMANDS"]},
     },
     "staff": {"@everyone": {"deny": ["VIEW_CHANNEL"]}, "admin": {"allow": ["VIEW_CHANNEL"]}},
     "archive": {
@@ -58,8 +57,8 @@ def full_desired():
             {"name": "FPV", "color": "#e74c3c"},
         ],
         "categories": [
-            {"id": "100", "name": "Chats", "access": "community", "channels": [
-                {"id": "101", "name": "gen-chat", "access": "open", "topic": "General chat", "slowmode": 5},
+            {"id": "100", "name": "Chats", "access": "open", "channels": [
+                {"id": "101", "name": "gen-chat", "topic": "General chat", "slowmode": 5},
                 {"name": "builds", "type": "forum", "topic": "Show your build",
                  "forum": {"layout": "gallery", "sort": "creation", "default_reaction": ":fpv:",
                            "tags": [{"name": "5 inch"}, {"name": "whoop", "emoji": ":quad:"}]}},
@@ -72,8 +71,8 @@ def full_desired():
                 {"name": "dev-call", "type": "voice", "bitrate": 64000, "user_limit": 10},
                 {"name": "community-call", "type": "stage"},
             ]},
-            {"id": "200", "name": "Help", "access": "community", "channels": [
-                {"id": "201", "name": "support", "access": "open"},
+            {"id": "200", "name": "Help", "access": "open", "channels": [
+                {"id": "201", "name": "support"},
                 {"name": "mod-log", "access": "staff"},
             ]},
         ],

@@ -20,7 +20,7 @@ Tests never touch the network. Keep it that way.
 |---|---|
 | Apply only after the plan was seen | `apply --yes` and `restore --yes` change a live server with hundreds of members. Run them only after the person who asked has seen the `plan` (or restore dry run) output for that exact change |
 | `server.json` is the only place layout and permissions change | Clicking a managed channel's permissions in the Discord UI is reverted by the next apply |
-| No deletes | Never delete channels, roles, messages, commands or anything else from a script |
+| No deletes | Never delete channels, roles, messages, commands or anything else from a script. Retire channels through `archive` in `server.json` |
 | Do not touch `#web-support` or `#web-support-admin` | The storefront support bot owns them |
 | No bot deploys or registrations unasked | `wrangler deploy`, `wrangler secret put`, `register-commands --yes` and `register-metadata --yes` need an explicit request |
 

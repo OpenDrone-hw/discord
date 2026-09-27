@@ -97,8 +97,12 @@ WELCOME_CHANNEL_KEYS = {"channel", "description", "emoji"}
 AUTOMOD_KEYS = {"name", "event", "trigger", "metadata", "actions", "enabled", "exempt_roles", "exempt_channels"}
 ACTION_KEYS = {"type", "message", "channel", "seconds"}
 GUILD_KEYS = {"description", *GUILD_CHANNELS}
-DEFAULT_GUARD = {"protected_roles": ["admin"], "member_role": "Member",
-                 "member_must_see": ["welcome", "rules"], "protected_channels": []}
+DEFAULT_GUARD = {"protected_roles": ["admin"], "gating_roles": ["Newbie", "Member"],
+                 "must_see": ["welcome", "rules"], "protected_channels": []}
+# Always spelled out in compact plan output, whatever the list length.
+PRIVILEGED = ("ADMINISTRATOR", "MANAGE_GUILD", "MANAGE_ROLES", "MANAGE_CHANNELS", "MANAGE_WEBHOOKS",
+              "MENTION_EVERYONE", "BAN_MEMBERS", "KICK_MEMBERS", "MODERATE_MEMBERS")
+MAX_GATING_ROLES = 4  # the guard checks every subset of these roles
 
 
 class ConfigError(RuntimeError):
@@ -266,6 +270,7 @@ class Planner:
         self.role_names = {r["id"]: r["name"] for r in state["roles"]}
         self.role_names[self.gid] = "@everyone"
         self.emojis = {e["name"]: e for e in state.get("emojis", [])}
+        check_keys(desired.get("guard", {}), set(DEFAULT_GUARD), "guard")
         self.guard = {**DEFAULT_GUARD, **desired.get("guard", {})}
         for ref in self.guard["protected_channels"]:
             if not isinstance(ref, str) or not ref.isdigit():
@@ -409,8 +414,8 @@ class Planner:
                 self.add("roles", {"action": "create", "label": f"role {name}", "method": "POST",
                                    "path": f"/guilds/{self.gid}/roles", "body": body,
                                    "summary": [f"color #{body['colors']['primary_color']:06x}, hoist {body['hoist']}, "
-                                               f"mentionable {body['mentionable']}, "
-                                               f"{len(names(want.get('permissions', 0)))} permission(s)"]})
+                                               f"mentionable {body['mentionable']}"],
+                                   "perm_lines": [("permissions", names(want.get("permissions", 0)), None)]})
                 continue
             live = self.live_roles[rid]
             if live.get("managed"):
@@ -834,6 +839,7 @@ class Planner:
             lines.append(f"prompt order: {[p['title'] for p in live['prompts']]} -> {[p['title'] for p in prompts]}")
         body = {"prompts": prompts, "default_channel_ids": list(live.get("default_channel_ids", [])),
                 "enabled": bool(live.get("enabled")), "mode": int(live.get("mode") or 0)}
+        before = (set(body["default_channel_ids"]), body["enabled"], body["mode"])
         if "default_channels" in spec:
             want = [self.resolve_channel(c, "onboarding.default_channels") for c in spec["default_channels"]]
             if set(want) != set(body["default_channel_ids"]):
@@ -850,34 +856,66 @@ class Planner:
             if ONBOARDING_MODES[spec["mode"]] != body["mode"]:
                 lines.append(f"mode: {body['mode']} -> {ONBOARDING_MODES[spec['mode']]} ({spec['mode']})")
                 body["mode"] = ONBOARDING_MODES[spec["mode"]]
+        self.final_default_ids = list(body["default_channel_ids"])
         if lines and body["enabled"]:
-            self.check_onboarding_requirements(body, prompts)
+            settings_change = before != (set(body["default_channel_ids"]), body["enabled"], body["mode"])
+            if settings_change or live.get("below_requirements") is not False:
+                self.check_onboarding_requirements(body, prompts)
+            else:
+                total, writable = self.onboarding_estimate(body, prompts)
+                self.notes.append(f"onboarding: only prompts change and Discord reports the live onboarding meets "
+                                  f"its requirements, so the requirement check is skipped (this tool's estimate: "
+                                  f"{len(total)} channel(s), {len(writable)} writable text channel(s))")
         if lines:
             self.add("onboarding", {"action": "update", "label": "onboarding", "method": "PUT",
                                     "path": f"/guilds/{self.gid}/onboarding", "body": body, "summary": lines})
 
-    def check_onboarding_requirements(self, body: dict, prompts: list[dict]) -> None:
-        """Refuse a PUT that Discord rejects: at least 7 default channels, 5 of them writable by @everyone.
-        Categories count as their channels; ADVANCED mode also counts channels granted by options."""
+    def final_channels(self) -> dict:
+        """{channel id: (type, parent id, role overwrites)} after the plan, planned channels included."""
         final = {c["id"]: (c["type"], c.get("parent_id"), current_overwrites(c)) for c in self.live_channels.values()}
         for e in self.entries + self.archived:
             final[e["id"]] = (e["type"], e["parent_id"], e["overwrites"])
-        refs = set(body["default_channel_ids"])
-        if body["mode"] == 1:
-            refs |= {c for p in prompts for o in p["options"] for c in o["channel_ids"]}
-        counted = set()
+        return final
+
+    def everyone_perms(self) -> int:
+        return int(self.live_roles.get(self.gid, {}).get("permissions", 0))
+
+    def onboarding_estimate(self, body: dict, prompts: list[dict]) -> tuple[list[str], list[str]]:
+        """Channels @everyone can view, and text/announcement channels it can view and send in, among the
+        default channels (categories expand to their channels; ADVANCED mode adds option channels)."""
+        final = self.final_channels()
+        refs = list(body["default_channel_ids"])
+        if body["mode"] == ONBOARDING_MODES["advanced"]:
+            refs += [c for p in prompts for o in p["options"] for c in o["channel_ids"]]
+        counted = []
         for cid in refs:
-            if cid in final and final[cid][0] == 4:
-                counted |= {k for k, v in final.items() if v[1] == cid and v[0] != 4}
-            elif cid in final:
-                counted.add(cid)
-        everyone = self.desired_role_perms.get(self.gid, int(self.live_roles.get(self.gid, {}).get("permissions", 0)))
-        writable = [c for c in counted
-                    if effective(everyone, 0, final[c][2], self.gid, set()) & (VIEW | SEND) == VIEW | SEND]
-        if len(counted) < 7 or len(writable) < 5:
-            raise ConfigError(f"onboarding: Discord needs at least 7 default channels with at least 5 that @everyone "
-                              f"can view and send in; this layout gives {len(counted)} channel(s), "
-                              f"{len(writable)} writable by @everyone ({', '.join(sorted(self.label(c) for c in writable)) or 'none'})")
+            if cid not in final:
+                continue
+            if final[cid][0] == 4:
+                counted += [k for k, v in final.items() if v[1] == cid and v[0] != 4]
+            else:
+                counted.append(cid)
+        counted = list(dict.fromkeys(counted))
+        everyone = self.everyone_perms()
+
+        def perms(cid):
+            return effective(everyone, 0, final[cid][2], self.gid, set())
+
+        visible = [c for c in counted if perms(c) & VIEW]
+        writable = [c for c in visible if final[c][0] in CONVERTIBLE and perms(c) & SEND]
+        return visible, writable
+
+    def check_onboarding_requirements(self, body: dict, prompts: list[dict]) -> None:
+        """Refuse a PUT that Discord may reject, before any write. This is the tool's conservative estimate
+        of Discord's rule: at least 7 default channels @everyone can view, at least 5 of them text or
+        announcement channels @everyone can view and send in. Forums and voice never count as writable."""
+        visible, writable = self.onboarding_estimate(body, prompts)
+        if len(visible) < 7 or len(writable) < 5:
+            raise ConfigError(
+                f"onboarding: this tool's conservative estimate of Discord's rule needs at least 7 default channels "
+                f"@everyone can view, at least 5 of them text or announcement channels @everyone can view and send "
+                f"in; this layout gives {len(visible)} viewable, {len(writable)} writable "
+                f"({', '.join(sorted(self.label(c) for c in writable)) or 'none'})")
 
     # -- welcome screen --
 
@@ -1048,18 +1086,67 @@ class Planner:
             if rid in protected and live and int(live["permissions"]) & ~perms & (ADMIN | VIEW):
                 raise ConfigError(f"lockout guard: role {protected[rid]} would lose "
                                   f"{names(int(live['permissions']) & ~perms & (ADMIN | VIEW))}")
-        member = self.guard["member_role"]
-        mid = self.role_ids.get(member)
-        if mid is None:
-            raise ConfigError(f"lockout guard: member role {member!r} does not exist")
-        everyone = int(self.live_roles.get(self.gid, {}).get("permissions", 0))
-        member_perms = self.desired_role_perms.get(mid, int(self.live_roles.get(mid, {}).get("permissions", 0)))
-        final = {e["id"]: e["overwrites"] for e in self.entries + self.archived}
-        for ref in self.guard["member_must_see"]:
-            cid = self.resolve_channel(ref, "lockout guard")
-            ow = final.get(cid) if cid in final else current_overwrites(self.live_channels.get(cid, {}))
-            if not effective(everyone, member_perms, ow, self.gid, {mid}) & VIEW:
-                raise ConfigError(f"lockout guard: {member} would lose VIEW_CHANNEL on {self.label(cid)}")
+        self.check_gating()
+
+    def check_gating(self) -> None:
+        """Gating model A: whatever mix of gating roles a member holds (none included), they see every
+        must_see channel and every onboarding default channel. A category must be visible itself, and each
+        channel in it that @everyone alone can see must be visible to every mix too."""
+        gating = self.guard["gating_roles"]
+        if not isinstance(gating, list) or len(gating) > MAX_GATING_ROLES:
+            raise ConfigError(f"guard.gating_roles: a list of at most {MAX_GATING_ROLES} role names")
+        roles = []
+        for name in gating:
+            rid = self.role_ids.get(name)
+            if rid is None:
+                raise ConfigError(f"lockout guard: gating role {name!r} does not exist")
+            live = int(self.live_roles.get(rid, {}).get("permissions", 0))
+            roles.append((name, rid, self.desired_role_perms.get(rid, live), live))
+        role_sets = [combo for n in range(len(roles) + 1) for combo in itertools.combinations(roles, n)]
+        roles_change = any(want != live for _, _, want, live in roles)
+        everyone = self.everyone_perms()
+        final = self.final_channels()
+        managed = {e["id"] for e in self.entries + self.archived}
+        onboarding_changes = bool(self.ops["onboarding"])
+        default_ids = getattr(self, "final_default_ids", None)
+        if default_ids is None:
+            default_ids = list((self.s.get("onboarding") or {}).get("default_channel_ids", []))
+
+        checks = {}  # channel id -> (why, only when @everyone alone sees it)
+        for ref in self.guard["must_see"]:
+            cid = self.resolve_channel(ref, "guard.must_see")
+            checks[cid] = ("must_see", False)
+        for cid in default_ids:
+            checks.setdefault(cid, ("onboarding default channel", False))
+        for cid, (why, _) in list(checks.items()):
+            if final.get(cid, (None,))[0] == 4:
+                for child, (ctype, parent, _) in final.items():
+                    if parent == cid and ctype != 4:
+                        checks.setdefault(child, (f"in {why} {self.label(cid)}", True))
+
+        refused, kept = [], []
+        for cid, (why, conditional) in checks.items():
+            if cid not in final:
+                continue
+            ow = final[cid][2]
+            if conditional and not effective(everyone, 0, ow, self.gid, set()) & VIEW:
+                continue  # private channel inside a default category
+            blind = []
+            for combo in role_sets:
+                role_perms = 0
+                for _, _, perms, _ in combo:
+                    role_perms |= perms
+                if not effective(everyone, role_perms, ow, self.gid, {rid for _, rid, _, _ in combo}) & VIEW:
+                    blind.append(" + ".join(["@everyone"] + [name for name, *_ in combo]))
+            if not blind:
+                continue
+            line = f"{self.label(cid)} ({why}) would be hidden from a member holding {'; '.join(blind)}"
+            strict = cid in managed or roles_change or (onboarding_changes and why != "must_see")
+            (refused if strict else kept).append(line)
+        if refused:
+            raise ConfigError("lockout guard: " + " | ".join(refused))
+        for line in kept:
+            self.notes.append(f"lockout guard: {line}; the channel is unmanaged and this plan does not change it")
 
     def build(self) -> dict:
         self.plan_roles()
@@ -1251,9 +1338,14 @@ def execute(api, op: dict) -> None:
 
 
 def fmt_perms(items: list[str], verbose: bool) -> str:
+    """Full list when verbose or short; otherwise privileged bits by name and the rest as a count."""
     if verbose or len(items) <= 4:
         return ", ".join(items)
-    return f"{len(items)} permissions"
+    privileged = [i for i in items if i in PRIVILEGED]
+    rest = len(items) - len(privileged)
+    if not privileged:
+        return f"{rest} permissions"
+    return ", ".join(privileged) + f" + {rest} more"
 
 
 def overwrite_lines(ow: dict, verbose: bool) -> list[str]:
@@ -1271,7 +1363,10 @@ def op_lines(op: dict, verbose: bool) -> list[str]:
     for key, (old, new) in op.get("diff", {}).items():
         out.append(f"    {key}: {old!r} -> {new!r}")
     for key, added, removed in op.get("perm_lines", []):
-        out.append(f"    {key}: +[{fmt_perms(added, verbose)}] -[{fmt_perms(removed, verbose)}]")
+        if removed is None:  # a new role: the full grant
+            out.append(f"    {key}: [{fmt_perms(added, verbose) or 'none'}]")
+        else:
+            out.append(f"    {key}: +[{fmt_perms(added, verbose)}] -[{fmt_perms(removed, verbose)}]")
     out += overwrite_lines(op.get("overwrites") or {}, verbose)
     return out
 
