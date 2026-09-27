@@ -28,7 +28,7 @@ flowchart LR
 | Discord REST client: rate limits, mention suppression, token redaction | Working |
 | GitHub App auth: RS256 JWT, installation token cache | Working |
 | `config/repos.json` loader and runtime name-to-id resolution | Working |
-| `src/github/` webhook handlers | Stub: none registered, deliveries get 202 |
+| `src/github/` webhook handlers | Working: pull_request, pull_request_review, check_suite, release, repository (status-* topics), push; KiCad collision guard |
 | `src/commands/` commands | Stub: none registered, `register-commands` has nothing to send |
 | `src/linked-roles/` routes | Working: `GET /linked-roles` runs Discord then GitHub OAuth and PUTs the role connection with metadata `merged_prs`, `org_member`, `maintainer`, `owner` |
 | `src/linked-roles/` storage | Working: D1 `users`, Discord and GitHub refresh tokens stored only AES-GCM sealed with a key derived from `SESSION_SECRET` |
@@ -143,7 +143,7 @@ preferably through a second GitHub App installed only on the repositories that
 need it, so the main App key never carries it.
 
 Events: Pull request, Pull request review, Check suite, Status, Release,
-Repository, Organization, Membership.
+Repository, Push, Organization, Membership.
 
 After creating it: generate a private key and a client secret, then install the
 App on OpenDrone-hw. The private key can stay in the PKCS#1 form GitHub
