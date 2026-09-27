@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { COOKIE_NAME } from "../../src/linked-roles/session.ts";
 import { escapeHtml } from "../../src/linked-roles/routes.ts";
 import { BOT_TOKEN } from "../helpers.ts";
-import { APP, BASE, ORG, cookieFrom, get, harness, link, type Harness } from "./harness.ts";
+import { APP, BASE, ORG, continueUrl, cookieFrom, get, harness, link, type Harness } from "./harness.ts";
 
 const DISCORD_ID = "123456789012345678";
 
@@ -18,7 +18,7 @@ async function throughDiscord(h: Harness, id = DISCORD_ID) {
   const s = await startFlow(h);
   h.providers.discordCodes.set("dcode", { id });
   const response = await h.call(get(`/linked-roles/discord/callback?code=dcode&state=${s.state}`, s.cookie));
-  const location = new URL(response.headers.get("Location") ?? "");
+  const location = await continueUrl(response);
   return { response, location, state: location.searchParams.get("state") ?? "", cookie: cookieFrom(response) };
 }
 
@@ -38,6 +38,7 @@ describe("GET /linked-roles", () => {
       response_type: "code",
       scope: "identify role_connections.write",
       state,
+      prompt: "consent",
     });
     expect(state).toMatch(/^[A-Za-z0-9_-]{43}$/);
     const setCookie = response.headers.get("Set-Cookie") ?? "";
@@ -58,7 +59,7 @@ describe("full link", () => {
     h.providers.teams.set("maintainers", new Map([["alice", "active"]]));
 
     const discord = await throughDiscord(h);
-    expect(discord.response.status).toBe(302);
+    expect(discord.response.status).toBe(200);
     expect(`${discord.location.origin}${discord.location.pathname}`).toBe("https://github.com/login/oauth/authorize");
     expect(Object.fromEntries(discord.location.searchParams)).toEqual({
       client_id: "gh-client",
@@ -80,7 +81,7 @@ describe("full link", () => {
     const done = await h.call(get(`/linked-roles/github/callback?code=gcode&state=${discord.state}`, discord.cookie));
     const html = await done.text();
     expect(done.status).toBe(200);
-    expect(html).toContain("GitHub account alice");
+    expect(html).toContain(`Discord account @user${DISCORD_ID} is now linked to GitHub account alice`);
     expect(html).toContain("Merged pull requests in OpenDrone-hw: 3");
     expect(done.headers.get("Set-Cookie")).toContain("Max-Age=0");
     expect(done.headers.get("Content-Security-Policy")).toContain("default-src 'none'");
@@ -148,6 +149,43 @@ describe("full link", () => {
     await link(h, "111111111111111111", "alice");
     await link(h, "222222222222222222", "bob");
     expect(h.providers.callsTo("GET", `api.github.com/orgs/${ORG}/installation`)).toHaveLength(1);
+  });
+});
+
+describe("account check", () => {
+  it("names the Discord account the browser authorised before sending anyone to GitHub", async () => {
+    const h = await harness();
+    h.providers.discordDisplayNames.set(DISCORD_ID, "Alice");
+    const discord = await throughDiscord(h);
+    const html = await discord.response.text();
+    expect(discord.response.headers.get("Location")).toBeNull();
+    expect(discord.response.headers.get("Cache-Control")).toBe("no-store");
+    expect(html).toContain(`signed in to Discord as Alice (@user${DISCORD_ID})`);
+    expect(html).toContain(`href="${BASE}/linked-roles"`);
+    expect(html).toContain("Not you?");
+    expect(h.providers.callsTo("POST", "github.com/login/oauth/access_token")).toHaveLength(0);
+    expect(h.providers.roleConnections.size).toBe(0);
+  });
+
+  it("escapes a display name that contains markup", async () => {
+    const h = await harness();
+    h.providers.discordDisplayNames.set(DISCORD_ID, `<img src=x onerror="alert(1)">`);
+    const html = await (await throughDiscord(h)).response.text();
+    expect(html).not.toContain("<img");
+    expect(html).toContain("&#60;img src=x onerror=&#34;alert(1)&#34;&#62;");
+  });
+
+  it("lets a member who authorised the wrong account start again and link the right one", async () => {
+    const h = await harness();
+    const WRONG = "888888888888888888";
+    await throughDiscord(h, WRONG);
+    h.providers.githubCodes.set("gcode", "alice");
+    const right = await throughDiscord(h, DISCORD_ID);
+    const done = await h.call(get(`/linked-roles/github/callback?code=gcode&state=${right.state}`, right.cookie));
+    expect(done.status).toBe(200);
+    expect(h.providers.roleConnections.has(WRONG)).toBe(false);
+    expect(h.providers.roleConnections.get(DISCORD_ID)).toMatchObject({ platform_username: "alice" });
+    expect(h.d1.row(WRONG)?.github_login ?? null).toBeNull();
   });
 });
 

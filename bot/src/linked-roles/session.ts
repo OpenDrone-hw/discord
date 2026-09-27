@@ -1,8 +1,8 @@
 /**
  * The OAuth session cookie. It carries the expected `state` of the provider
  * step in progress, which binds each callback to the browser that started the
- * flow (CSRF protection), and after the Discord step the Discord user id and
- * access token needed to finish. The value is sealed with AES-GCM under the
+ * flow (CSRF protection), and after the Discord step the Discord user id,
+ * access token and account name needed to finish. The value is sealed with AES-GCM under the
  * session key (crypto.ts), so it is both signed and unreadable to the client.
  *
  * Attributes: __Host- prefix (Secure, Path=/, no Domain), HttpOnly,
@@ -24,6 +24,8 @@ export interface Session {
   exp: number;
   discordId?: string;
   discordAccessToken?: string;
+  /** How the result page names the Discord account (discordLabel in oauth.ts). */
+  discordName?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -73,6 +75,7 @@ export async function readSession(
   const session: Session = { step, state: data.state, exp: data.exp };
   if (typeof data.discordId === "string") session.discordId = data.discordId;
   if (typeof data.discordAccessToken === "string") session.discordAccessToken = data.discordAccessToken;
+  if (typeof data.discordName === "string") session.discordName = data.discordName;
   return session;
 }
 
