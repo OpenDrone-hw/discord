@@ -9,7 +9,8 @@
  * therefore replaces an existing line when its thread was created by this
  * bot (owner_id is the application id) or no longer exists, and leaves a
  * note in the replaced post. A line pointing at a thread a person started,
- * or outside this server, is never replaced.
+ * or outside this server, is never replaced. Pull requests of private
+ * repositories are refused for everyone: nothing of theirs is posted to Discord.
  */
 import { DiscordError } from "../discord.ts";
 import { defer, ephemeral, errorText } from "../interactions.ts";
@@ -27,7 +28,6 @@ import {
   MEMBER_ROLES,
   repoRequest,
   resolveRepoName,
-  STAFF_ROLES,
   stringOption,
   threadUrl,
   truncate,
@@ -138,8 +138,12 @@ async function link(ctx: InteractionContext, prText: string): Promise<string> {
     if (error instanceof GitHubError && error.status === 404) return `${repo.repo}#${ref.number} does not exist.`;
     throw error;
   }
-  if (pull.base?.repo?.private && !(await hasRole(ctx, STAFF_ROLES))) {
-    return `${repo.repo} is private; only developers can link its pull requests.`;
+  // Private repositories never post to Discord (the GitHub module drops their
+  // events), so a link would promise activity that never comes and the thread
+  // announcement would show a private title to every member. A missing flag
+  // counts as private.
+  if (pull.base?.repo?.private !== false) {
+    return `${repo.repo} is private. Private repositories post nothing to Discord, so /link does not link their pull requests.`;
   }
 
   const url = threadUrl(interaction.guild_id ?? services.env.GUILD_ID, thread.thread.id);

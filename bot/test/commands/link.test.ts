@@ -193,13 +193,22 @@ describe("/link", () => {
     expect((await run("OpenRX#12", github(404))).reply).toBe("OpenRX#12 does not exist.");
   });
 
-  it("keeps private pull requests to staff", async () => {
-    const privatePull = pull({ base: { repo: { private: true } } });
-    const member = await run("OpenRX#12", github(privatePull));
-    expect(member.reply).toContain("is private");
-    expect(member.h.find("PATCH", PR_PATH)).toHaveLength(0);
-    const developer = await run("OpenRX#12", github(privatePull), { member: { roles: [ROLE_DEVELOPER] } });
-    expect(developer.h.find("PATCH", PR_PATH)).toHaveLength(1);
+  it("refuses private pull requests for everyone and posts nothing", async () => {
+    const privatePull = pull({ title: "Secret layout", base: { repo: { private: true } } });
+    for (const extra of [{}, { member: { roles: [ROLE_DEVELOPER] } }]) {
+      const { h, reply } = await run("OpenRX#12", github(privatePull), extra);
+      expect(reply).toContain("is private");
+      expect(reply).not.toContain("Secret layout");
+      expect(h.find("PATCH", PR_PATH)).toHaveLength(0);
+      expect(h.find("POST", `/channels/${THREAD}/messages`)).toHaveLength(0);
+    }
+  });
+
+  it("treats a missing private flag as private", async () => {
+    const { h, reply } = await run("OpenRX#12", github(pull({ base: {} })), { member: { roles: [ROLE_DEVELOPER] } });
+    expect(reply).toContain("is private");
+    expect(h.find("PATCH", PR_PATH)).toHaveLength(0);
+    expect(h.find("POST", `/channels/${THREAD}/messages`)).toHaveLength(0);
   });
 
   it("replaces the placeholder with the error text when GitHub fails", async () => {

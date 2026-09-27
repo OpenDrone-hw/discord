@@ -124,7 +124,7 @@ Settings, Integrations, OpenDrone Dev. Staff means admin or developer.
 
 | Command | Where | Who | What it does |
 |---|---|---|---|
-| `/link pr:<url>` | development forum thread | members; private repos: staff | Writes `Discussion: <thread url>` into the PR description. Replaces an existing line only when it points at a post the bot created or at a deleted thread, and leaves a "moved to" note in the replaced post |
+| `/link pr:<url>` | development forum thread | members; private repos: refused | Writes `Discussion: <thread url>` into the PR description. Replaces an existing line only when it points at a post the bot created or at a deleted thread, and leaves a "moved to" note in the replaced post |
 | `/branch [repo]` | development forum thread | anyone who can use it | Fork and branch commands, and the `Discussion:` line to put in the PR description |
 | `/editing repo:<name>` | anywhere | anyone; private repos: staff | Open PRs that change `.kicad_pcb` or `.kicad_sch` files |
 | `/verify` | anywhere | anyone who can use it | Link to the Linked Roles verification page |
