@@ -1,5 +1,5 @@
-"""migrate.py against an offline server: the live shape from test_server_json with the previous layout
-(the Archive category) applied, then server.json applied on top.
+"""migrate.py against an offline server: the live shape from test_server_json with the layout live before
+this one (empty forums next to the old text chats) applied, then server.json applied on top.
 
 No network. Messages, pins, members and the audit log are simulated on top of FakeDiscord.
 """
@@ -18,7 +18,7 @@ from unittest import mock
 from helpers import ROOT, dc
 from fake_discord import FakeDiscord
 from test_plan import FakeResponse
-from test_server_json import DESIRED, FIRMWARE, GID, RESTORED, fake_state, live_state, previous_desired
+from test_server_json import BUILDS, DESIRED, FIRMWARE, GID, PROPOSALS, RESTORED, current_desired, fake_state, live_state
 
 import migrate
 
@@ -32,7 +32,6 @@ ESC = "1494782966302507118"
 ROLES_CH = "1494780931498705057"
 BETAFLIGHT_CH = "1494783023114096821"
 MOTORS = "1550883427220197396"
-BUILD_CHAT = "1494782854117326969"
 _seq = iter(range(1, 1 << 22))
 
 
@@ -63,6 +62,8 @@ class MigrationFake(FakeDiscord):
             ("GET", r"/channels/(\d+)/pins", self.get_pins),
             ("PATCH", r"/channels/(\d+)/messages/(\d+)", self.patch_message),
             ("DELETE", r"/channels/(\d+)/pins/(\d+)", self.delete_pin),
+            ("POST", r"/channels/(\d+)/messages", self.post_message),
+            ("PUT", r"/channels/(\d+)/pins/(\d+)", self.put_pin),
             ("GET", g + r"/audit-logs\?action_type=(\d+)&limit=(\d+)(?:&before=(\d+))?", self.get_audit),
             ("GET", g + r"/members/(\d+)", self.get_member),
             ("PUT", g + r"/members/(\d+)/roles/(\d+)", self.put_member_role),
@@ -104,6 +105,17 @@ class MigrationFake(FakeDiscord):
     def delete_pin(self, m):
         self.message(m.group(1), m.group(2))["pinned"] = False
 
+    def post_message(self, m):
+        self.chan(m.group(1))
+        assert self.body["allowed_mentions"] == {"parse": []}
+        assert len(self.body["content"]) <= 2000
+        posted = msg(NOW_MS, self.bot_user_id, self.body["content"], bot=True)
+        self.messages.setdefault(m.group(1), []).append(posted)
+        return copy.deepcopy(posted)
+
+    def put_pin(self, m):
+        self.message(m.group(1), m.group(2))["pinned"] = True
+
     def get_audit(self, m):
         assert m.group(1) == str(migrate.MEMBER_ROLE_UPDATE)
         items = sorted(self.audit, key=lambda e: int(e["id"]), reverse=True)
@@ -144,8 +156,15 @@ def applied(desired, state):
     return fake_state(fake)
 
 
-PREVIOUS = applied(previous_desired(), live_state())  # the live server before this layout
-APPLIED = applied(DESIRED, copy.deepcopy(PREVIOUS))  # after `discord_config.py apply --yes` of server.json
+CURRENT = applied(current_desired(), live_state())  # the live server before this layout
+APPLIED = applied(DESIRED, copy.deepcopy(CURRENT))  # after `discord_config.py apply --yes` of server.json
+
+
+def without_role(state, name):
+    """A copy of a server state with one role missing, as before server.json created it."""
+    state = copy.deepcopy(state)
+    state["roles"] = [r for r in state["roles"] if r["name"] != name]
+    return state
 
 
 class Case(unittest.TestCase):
@@ -185,22 +204,21 @@ class Mapping(unittest.TestCase):
             self.assertEqual(live[cid], old)
             self.assertEqual(RESTORED[cid][1], name)
 
-    def test_forums_are_managed_channels(self):
-        names = [ch["name"] for cat in DESIRED["categories"] for ch in cat["channels"]]
-        for cid, (_old, name, _line, forum, _unit, _role) in migrate.CHATS.items():
-            if forum not in (None, migrate.CUSTOMIZE):
-                self.assertEqual(names.count(forum), 1, (name, forum))
-
-    def test_ping_roles_come_from_the_onboarding_option_for_the_forum(self):
+    def test_ping_roles_come_from_the_onboarding_option_for_the_channel(self):
         options = [o for p in DESIRED["onboarding"]["prompts"] for o in p["options"]]
-        for cid, (_old, name, _line, forum, _unit, role) in migrate.CHATS.items():
+        for cid, (_old, name, _line, role) in migrate.CHATS.items():
             if role:
-                self.assertTrue(any(role in o.get("roles", []) and forum in o.get("channels", [])
-                                    for o in options), (name, forum, role))
+                self.assertTrue(any(role in o.get("roles", []) and name in o.get("channels", [])
+                                    for o in options), (name, role))
 
     def test_no_ping_role_is_a_firmware_team_role(self):
-        self.assertFalse({chat[5] for chat in migrate.CHATS.values()} & set(FIRMWARE))
+        self.assertFalse({chat[3] for chat in migrate.CHATS.values()} & set(FIRMWARE))
         self.assertEqual(migrate.FIRMWARE_ROLES, FIRMWARE)
+
+    def test_repos_json_is_the_bots(self):
+        repos = migrate.load_repos()
+        self.assertLessEqual(set(migrate.PRIVATE_REPOS), set(repos["repos"]))
+        self.assertEqual(tuple(repos["lifecycle"]), migrate.LIFECYCLE_TOPICS)
 
 
 class Unarchive(Case):
@@ -212,8 +230,9 @@ class Unarchive(Case):
         self.seed()
         out = self.ok("unarchive")
         self.assertEqual(self.fake.writes(), [])
-        self.assertIn("unarchive: 19 to update, 0 done, 0 without a notice, 0 blocked", out)
-        self.assertIn(f"<#{self.channel_id('Development', 'flight-controllers')}>", out)
+        self.assertIn("unarchive: 18 to update, 0 done, 0 without a notice, 0 blocked", out)
+        self.assertIn("Chat for flight controllers. Pull requests in the public repositories of this line get a thread "
+                      "here.", out)
         self.assertIn("Dry run", out)
 
     def test_edits_and_unpins_each_notice_once(self):
@@ -221,11 +240,12 @@ class Unarchive(Case):
         self.ok("unarchive", "--yes")
         edits = [c for c in self.fake.writes() if c[0] == "PATCH"]
         unpins = [c for c in self.fake.writes() if c[0] == "DELETE"]
-        self.assertEqual((len(edits), len(unpins), len(self.fake.writes())), (19, 19, 38))
-        self.assertEqual(len(self.sleeps), 38)
+        self.assertEqual((len(edits), len(unpins), len(self.fake.writes())), (18, 18, 36))
+        self.assertEqual(len(self.sleeps), 36)
         for _m, path, body in edits:
             self.assertEqual(body["allowed_mentions"], {"parse": []})
             self.assertNotIn("archived", body["content"])
+            self.assertNotIn("<#", body["content"])  # the forums are gone; nothing links to them
             self.assertIn(migrate.UNARCHIVE_MARK, body["content"])
         for _m, path, body in unpins:
             self.assertRegex(path, r"^/channels/\d+/pins/\d+$")
@@ -235,19 +255,24 @@ class Unarchive(Case):
             mine = [m for m in self.fake.messages[cid] if m["author"]["id"] == BOT]
             self.assertFalse(mine[0]["pinned"], cid)
         text = {path.split("/")[2]: body["content"] for _m, path, body in edits}
-        fc_forum = self.channel_id("Development", "flight-controllers")
-        self.assertTrue(text[FC].startswith(f"Chat for flight controllers. Structured posts, one per change, go in "
-                                            f"<#{fc_forum}>."), text[FC])
-        self.assertIn(f"<#{self.channel_id('Development', 'firmware')}>", text[BETAFLIGHT_CH])
-        self.assertIn(f"<#{self.channel_id('Community', 'builds')}>", text[BUILD_CHAT])
-        self.assertIn(f"<#{self.channel_id('Community', 'proposals')}>", text["1494033189532860707"])
-        self.assertIn(f"<#{self.channel_id('Support', 'help')}>", text["1497547403140530237"])
+        self.assertEqual(text[FC], migrate.chat_text("flight controllers", True))
+        self.assertTrue(text[BETAFLIGHT_CH].startswith("Chat for Betaflight. Pull requests"), text[BETAFLIGHT_CH])
+        self.assertEqual(text[MOTORS], f"Chat for motors.\n-# {migrate.UNARCHIVE_MARK}")
+        self.assertEqual(text[BUILDS], f"Chat for builds.\n-# {migrate.UNARCHIVE_MARK}")
+        self.assertTrue(text[PROPOSALS].startswith("Chat for proposals for new products and changes."))
         self.assertTrue(text[ROLES_CH].startswith("Roles are picked in <id:customize>"), text[ROLES_CH])
-        self.assertNotIn("<#", text[MOTORS])
         before = len(self.fake.writes())
         out = self.ok("unarchive", "--yes")
         self.assertEqual(len(self.fake.writes()), before)
-        self.assertIn("unarchive: 0 to update, 19 done", out)
+        self.assertIn("unarchive: 0 to update, 18 done", out)
+
+    def test_rewrites_a_notice_that_still_links_a_retired_forum(self):
+        old = f"Chat for flight controllers. Structured posts, one per change, go in <#1553>.\n-# {migrate.UNARCHIVE_MARK}"
+        self.fake.messages[FC] = [msg(NOW_MS - DAY_MS, BOT, old, bot=True)]
+        self.ok("unarchive", "--yes")
+        fc = [c for c in self.fake.writes() if f"/channels/{FC}/" in c[1]]
+        self.assertEqual([c[0] for c in fc], ["PATCH"])
+        self.assertEqual(self.fake.messages[FC][0]["content"], migrate.chat_text("flight controllers", True))
 
     def test_finds_an_unpinned_notice_in_history_and_only_edits_it(self):
         self.fake.messages[FC] = [notice(FC, pinned=False)] + [msg(NOW_MS - DAY_MS, "42") for _ in range(150)]
@@ -262,12 +287,13 @@ class Unarchive(Case):
         self.assertIn("#fc: no notice found", out)
 
     def test_blocked_before_the_layout_is_applied(self):
-        fake = MigrationFake(copy.deepcopy(PREVIOUS))
+        fake = MigrationFake(copy.deepcopy(CURRENT))
         for cid in migrate.CHATS:
             fake.messages[cid] = [notice(cid)]
         out = self.ok("unarchive", fake=fake)
-        self.assertIn("19 blocked", out)
-        self.assertIn("blocked #build-chat: not yet #build-chat in Community", out)
+        self.assertIn("2 blocked", out)
+        self.assertIn("blocked #builds: not yet #builds in Community", out)
+        self.assertIn("blocked #proposals: not yet #proposals in Community", out)
         code, _out, _err = self.run_cli("unarchive", "--yes", fake=fake)
         self.assertEqual(code, 1)
         self.assertEqual(fake.writes(), [])
@@ -344,7 +370,7 @@ class FirmwareRoles(Case):
         self.assertIn("not an ISO 8601 timestamp", err)
 
     def test_blocked_before_the_user_roles_exist(self):
-        fake = MigrationFake(copy.deepcopy(PREVIOUS))
+        fake = MigrationFake(without_role(APPLIED, "Betaflight user"))
         out = self.ok("firmware-roles", fake=fake)
         self.assertIn("blocked: role Betaflight user does not exist", out)
         code, _out, _err = self.run_cli("firmware-roles", "--yes", fake=fake)
@@ -436,7 +462,7 @@ class Backfill(Case):
         self.assertEqual(code, 1)
         self.assertIn("FC dev", err)
         self.assertEqual(self.fake.writes(), [])
-        fake = MigrationFake(copy.deepcopy(PREVIOUS))
+        fake = MigrationFake(without_role(APPLIED, "Betaflight user"))
         fake.messages[BETAFLIGHT_CH] = [msg(NOW_MS - DAY_MS, "100")]
         out = self.ok("backfill", "--channel", "fc-betaflight", fake=fake)
         self.assertIn("Betaflight user: 1 member, role does not exist yet", out)
@@ -445,12 +471,214 @@ class Backfill(Case):
         self.assertEqual(fake.writes(), [])
 
 
+REPOS = migrate.load_repos()
+
+
+class FakeGitHub:
+    """GET repos/<org>/<name> answers from a dict; None (404) for anything else. Records every path."""
+
+    def __init__(self):
+        self.calls = []
+        self.meta = {repo: {"private": False, "description": f"{repo}: an open  design\n",
+                            "topics": ["kicad", "status-beta"]}
+                     for repo in REPOS["repos"] if repo not in migrate.PRIVATE_REPOS}
+        del self.meta["OpenRX-Mono"]  # 404: renamed or deleted
+        self.meta["OpenDrone-Brand"]["private"] = True
+
+    def __call__(self, path):
+        self.calls.append(path)
+        return copy.deepcopy(self.meta.get(path.rsplit("/", 1)[-1]))
+
+
+class Hubs(Case):
+    def setUp(self):
+        super().setUp()
+        self.github = FakeGitHub()
+
+    def run_cli(self, *argv, fake=None):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = migrate.main(["--config", str(ROOT / "server.json"), *argv], api=fake or self.fake,
+                                sleep=self.sleeps.append, clock=lambda: NOW_MS / 1000, fetch=self.github)
+        return code, out.getvalue(), err.getvalue()
+
+    def posts(self):
+        return [c for c in self.fake.writes() if c[0] == "POST"]
+
+    def test_dry_run_counts_only_and_writes_nothing(self):
+        out = self.ok("hubs")
+        self.assertEqual(self.fake.writes(), [])
+        self.assertIn("hubs: 22 to post, 0 to edit, 22 to pin, 0 done; 5 private skipped, 1 not found on GitHub, "
+                      "0 channel(s) blocked", out)
+        self.assertIn("#fc: 2 hubs, 2 to post", out)
+        self.assertIn("#kicad-library: 3 hubs, 3 to post", out)
+        self.assertNotIn("#frame:", out)  # both frame repositories are private
+        for repo in migrate.PRIVATE_REPOS:
+            self.assertNotIn(f"repos/OpenDrone-hw/{repo}", self.github.calls)
+        self.assertIn("Dry run", out)
+
+    def test_posts_and_pins_one_hub_per_public_repository_once(self):
+        self.ok("hubs", "--yes")
+        posts = self.posts()
+        pins = [c for c in self.fake.writes() if c[0] == "PUT"]
+        self.assertEqual((len(posts), len(pins)), (22, 22))
+        self.assertEqual(len(self.sleeps), 44)
+        by_channel = {}
+        for _m, path, body in posts:
+            self.assertEqual(body["allowed_mentions"], {"parse": []})
+            self.assertEqual(body["flags"], migrate.SUPPRESS_EMBEDS)
+            by_channel.setdefault(path.split("/")[2], []).append(body["content"])
+        self.assertEqual([t.split("\n")[0] for t in by_channel[FC]], [
+            "## [OpenFC-Lite](https://github.com/OpenDrone-hw/OpenFC-Lite)",
+            "## [OpenFC-Lite-Mini](https://github.com/OpenDrone-hw/OpenFC-Lite-Mini)"])
+        self.assertEqual(by_channel[FC][0], "\n".join([
+            "## [OpenFC-Lite](https://github.com/OpenDrone-hw/OpenFC-Lite)",
+            "OpenFC-Lite: an open design",
+            "Lifecycle: beta",
+            "Releases: https://github.com/OpenDrone-hw/OpenFC-Lite/releases",
+            "Discuss changes in threads: the bot opens one per pull request; link an existing thread with /link.",
+            f"-# {migrate.HUB_MARK} OpenFC-Lite"]))
+        kicad = self.channel_id("Hardware", "kicad-library")
+        self.assertEqual(len(by_channel[kicad]), 3)
+        self.assertFalse(any("OpenDrone-Brand" in t or "OpenRX-Mono" in t for ts in by_channel.values() for t in ts))
+        self.assertTrue(all(m["pinned"] for cid in by_channel for m in self.fake.messages[cid]))
+        before = len(self.fake.writes())
+        out = self.ok("hubs", "--yes")
+        self.assertEqual(len(self.fake.writes()), before)
+        self.assertIn("hubs: 0 to post, 0 to edit, 0 to pin, 22 done", out)
+
+    def test_edits_a_hub_whose_lifecycle_changed_and_repins_an_unpinned_one(self):
+        self.ok("hubs", "--yes")
+        self.github.meta["OpenFC-Lite"]["topics"] = ["status-planned", "status-launched"]
+        mini = next(m for m in self.fake.messages[FC] if "OpenFC-Lite-Mini" in m["content"])
+        mini["pinned"] = False
+        before = len(self.fake.writes())
+        out = self.ok("hubs", "--yes")
+        new = self.fake.writes()[before:]
+        self.assertEqual([c[0] for c in new], ["PATCH", "PUT"])
+        self.assertIn("Lifecycle: launched", new[0][2]["content"])
+        self.assertIn("#fc: 2 hubs, 0 to post, 1 to edit, 1 to pin, 0 done", out)
+
+    def test_a_members_message_with_the_marker_is_not_taken_for_the_hub(self):
+        fake_hub = f"x\n-# {migrate.HUB_MARK} OpenFC-Lite"
+        self.fake.messages[FC] = [msg(NOW_MS - DAY_MS, "42", fake_hub, pinned=True)]
+        out = self.ok("hubs")
+        self.assertIn("#fc: 2 hubs, 2 to post", out)
+
+    def test_blocked_before_the_layout_is_applied(self):
+        fake = MigrationFake(copy.deepcopy(CURRENT))
+        out = self.ok("hubs", fake=fake)
+        self.assertIn("blocked #kicad-library: the channel does not exist yet", out)
+        code, _out, err = self.run_cli("hubs", "--yes", fake=fake)
+        self.assertEqual(code, 1)
+        self.assertIn("Apply server.json first", err)
+        self.assertEqual(fake.writes(), [])
+
+    def test_hub_text(self):
+        labels = REPOS["lifecycle"]
+        text = migrate.hub_text("OpenDrone-hw", "X", {"description": "> A \u2014 B\u2014C", "topics": []}, labels)
+        self.assertIn("\nA, B-C\nLifecycle: not set\n", text)
+        text = migrate.hub_text("OpenDrone-hw", "X", {"topics": ["status-alpha", "status-planned"]}, labels)
+        self.assertEqual(text.split("\n")[1], "Lifecycle: alpha")
+        self.assertNotIn("\u2014", text)
+
+    def test_gh_fetch_maps_404_to_none_and_refuses_other_errors(self):
+        def run(returncode, stdout="", stderr=""):
+            return mock.Mock(returncode=returncode, stdout=stdout, stderr=stderr)
+
+        with mock.patch.object(migrate.subprocess, "run", return_value=run(0, '{"private": false}')) as call:
+            self.assertEqual(migrate.gh_fetch("repos/OpenDrone-hw/X"), {"private": False})
+            self.assertEqual(call.call_args[0][0], ["gh", "api", "repos/OpenDrone-hw/X"])
+        with mock.patch.object(migrate.subprocess, "run", return_value=run(1, stderr="gh: Not Found (HTTP 404)")):
+            self.assertIsNone(migrate.gh_fetch("repos/OpenDrone-hw/X"))
+        with mock.patch.object(migrate.subprocess, "run", return_value=run(1, stderr="HTTP 401: Bad credentials")):
+            with self.assertRaises(dc.ConfigError):
+                migrate.gh_fetch("repos/OpenDrone-hw/X")
+
+
+RULES_MD = """# Server copy
+
+## 3. Resource pages
+
+Not this.
+
+## 4. #rules
+
+```
+**OpenDrone rules**
+
+1. Argue about problems, not people.
+2. Use the right channel.
+```
+
+---
+
+## 5. Next section
+"""
+
+
+class Rules(Case):
+    def setUp(self):
+        super().setUp()
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def md(self, text=RULES_MD):
+        path = Path(self.tmp.name) / "copy.md"
+        path.write_text(text, encoding="utf-8")
+        return str(path)
+
+    def test_section_extraction(self):
+        self.assertEqual(migrate.rules_section(RULES_MD),
+                         "**OpenDrone rules**\n\n1. Argue about problems, not people.\n2. Use the right channel.")
+        self.assertEqual(migrate.rules_section("### 4. #rules\nPlain text.\n\n---\n### 5. x\n"), "Plain text.")
+        for bad, why in (("## 3. x\n", "no heading"), ("## 4. #rules\n\n## 5. x", "empty"),
+                         ("## 4. #rules\nA \u2014 B\n", "em dash"), ("## 4. #rules\n> quoted\n", "blockquote")):
+            with self.assertRaises(dc.ConfigError, msg=bad) as ctx:
+                migrate.rules_section(bad)
+            self.assertIn(why, str(ctx.exception))
+
+    def test_dry_run_then_post_and_pin_once(self):
+        rules = self.channel_id("Start", "rules")
+        out = self.ok("rules", "--rules-file", self.md())
+        self.assertEqual(self.fake.writes(), [])
+        self.assertIn("rules: 1 message (83 characters), 1 to post, 0 to edit, 1 to pin, 0 done", out)
+        self.assertIn("1. Argue about problems, not people.", out)
+        self.ok("rules", "--rules-file", self.md(), "--yes")
+        writes = self.fake.writes()
+        self.assertEqual([(c[0], c[1].split("/")[2]) for c in writes], [("POST", rules), ("PUT", rules)])
+        self.assertEqual(writes[0][2]["content"],
+                         migrate.rules_section(RULES_MD) + f"\n-# {migrate.RULES_MARK} 1")
+        out = self.ok("rules", "--rules-file", self.md(), "--yes")
+        self.assertEqual(len(self.fake.writes()), 2)
+        self.assertIn("0 to post, 0 to edit, 0 to pin, 1 done", out)
+        self.ok("rules", "--rules-file", self.md(RULES_MD.replace("people.", "people, ever.")), "--yes")
+        self.assertEqual([c[0] for c in self.fake.writes()[2:]], ["PATCH"])
+
+    def test_long_rules_are_split_at_paragraphs(self):
+        paragraphs = "\n\n".join(f"{i}. " + "x" * 900 for i in range(1, 4))
+        out = self.ok("rules", "--rules-file", self.md(f"## 4. #rules\n\n{paragraphs}\n"), "--yes")
+        self.assertIn("rules: 2 messages", out)
+        posts = [c[2]["content"] for c in self.fake.writes() if c[0] == "POST"]
+        self.assertEqual([p.rsplit("\n", 1)[1] for p in posts], [f"-# {migrate.RULES_MARK} 1", f"-# {migrate.RULES_MARK} 2"])
+        self.assertTrue(posts[0].startswith("1. ") and posts[1].startswith("3. "))
+
+    def test_a_bad_file_fails_before_any_request(self):
+        code, _out, err = self.run_cli("rules", "--rules-file", self.md("nothing here"), fake=object())
+        self.assertEqual(code, 1)
+        self.assertIn('no heading "4. #rules"', err)
+        code, _out, err = self.run_cli("rules", "--rules-file", str(Path(self.tmp.name) / "missing.md"), fake=object())
+        self.assertEqual(code, 1)
+        self.assertIn("--rules-file", err)
+
+
 class Checklist(Case):
     def test_steps_in_order_without_a_token(self):
         out = self.ok("checklist", fake=object())
-        order = ["discord_config.py apply --yes", "Paste the Server Guide copy", "migrate.py unarchive --yes",
-                 "migrate.py firmware-roles --yes", "backfill --only-user", "migrate.py backfill --yes", "carl-bot",
-                 "linked roles", "2FA"]
+        order = ["discord_config.py apply --yes", "Delete the retired empty channels by hand",
+                 "Paste the Server Guide copy", "migrate.py rules --rules-file <copy.md> --yes", "migrate.py hubs --yes",
+                 "migrate.py unarchive --yes", "migrate.py firmware-roles --yes", "backfill --only-user",
+                 "migrate.py backfill --yes", "carl-bot", "linked roles", "2FA"]
         positions = [out.index(part) for part in order]
         self.assertEqual(positions, sorted(positions))
         self.assertIn("Welcome sign", out)

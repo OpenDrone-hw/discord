@@ -1,18 +1,18 @@
 /**
- * /link pr:<url>: run inside a development forum thread. Adds
+ * /link pr:<url>: run inside a thread of a product channel. Adds
  * "Discussion: <thread url>" to the pull request description, which the
  * GitHub module reads to post PR events into this thread. The invoker gets
  * an ephemeral answer; a successful link is also announced in the thread.
  *
- * The GitHub module creates a forum post and writes the line for every new
+ * The GitHub module starts a thread and writes the line for every new
  * pull request that has none, usually before anyone can run /link. /link
  * therefore replaces an existing line when its thread was created by this
  * bot (owner_id is the application id) or no longer exists, and leaves a
- * note in the replaced post. A line pointing at a thread a person started,
+ * note in the replaced thread. A line pointing at a thread a person started,
  * or outside this server, is never replaced. Pull requests of private
  * repositories are refused for everyone: nothing of theirs is posted to Discord.
- * A repository mapped to another forum is refused before any GitHub call,
- * because the GitHub module ignores a line pointing outside the repo's forum.
+ * A repository mapped to another channel is refused before any GitHub call,
+ * because the GitHub module ignores a line pointing outside the repo's channel.
  */
 import { DiscordError } from "../discord.ts";
 import { defer, ephemeral, errorText } from "../interactions.ts";
@@ -22,18 +22,18 @@ import { ApplicationCommandType, MessageFlags } from "../types.ts";
 import {
   code,
   escapeMarkdown,
-  forumThread,
   guildOnly,
   hasRole,
   invokerName,
   MEMBER_PERMISSIONS,
   MEMBER_ROLES,
+  productThread,
   repoRequest,
   resolveRepoName,
   stringOption,
   threadUrl,
   truncate,
-  wrongForum,
+  wrongChannel,
 } from "./util.ts";
 
 export const DISCUSSION_PREFIX = "Discussion:";
@@ -120,8 +120,8 @@ async function link(ctx: InteractionContext, prText: string): Promise<string> {
   const cfg = services.directory.config;
   if (!(await hasRole(ctx, MEMBER_ROLES))) return "Only members can link pull requests.";
 
-  const thread = await forumThread(ctx);
-  if (!thread) return "Run /link inside a thread of a development forum.";
+  const thread = await productThread(ctx);
+  if (!thread) return "Run /link inside a thread of a product channel.";
 
   const ref = parsePullRef(prText, cfg.org);
   if (!ref || !Number.isSafeInteger(ref.number) || ref.number < 1) {
@@ -129,7 +129,7 @@ async function link(ctx: InteractionContext, prText: string): Promise<string> {
   }
   const repo = resolveRepoName(ctx, `${ref.owner}/${ref.repo}`);
   if (!repo) return `${ref.owner}/${ref.repo} is not an ${cfg.org} repository the bot knows (bot/config/repos.json).`;
-  const refusal = wrongForum(thread, repo, "/link");
+  const refusal = wrongChannel(thread, repo, "/link");
   if (refusal) return refusal;
 
   const path = `/repos/${cfg.org}/${repo.repo}/pulls/${ref.number}`;
@@ -176,7 +176,7 @@ export const linkCommand: Command = {
   definition: {
     name: "link",
     type: ApplicationCommandType.CHAT_INPUT,
-    description: "Link this forum thread to a pull request",
+    description: "Link this thread to a pull request",
     options: [
       {
         type: 3,

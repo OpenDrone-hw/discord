@@ -5,9 +5,10 @@ import {
   escapeMarkdown,
   fitLines,
   focusedValue,
-  forumThread,
   hasAdministrator,
   hasRole,
+  namedRepos,
+  productThread,
   repoChoices,
   stringOption,
   truncate,
@@ -15,16 +16,15 @@ import {
 } from "../../src/commands/util.ts";
 import { jsonResponse } from "../helpers.ts";
 import {
-  FORUM_POWER,
+  CHANNEL_CHARGER,
   GEN_CHAT,
   harness,
+  OLD_FORUM_RX,
   ROLE_ADMIN,
   ROLE_DEVELOPER,
   ROLE_MEMBER,
   rxThread,
   slash,
-  TAG_LITE,
-  TAG_OPENRX,
   THREAD,
 } from "./fixtures.ts";
 
@@ -104,34 +104,50 @@ describe("roles", () => {
   });
 });
 
-describe("forumThread", () => {
-  it("uses the interaction's channel and maps tags to repositories", async () => {
+describe("productThread", () => {
+  it("uses the interaction's channel and maps the thread name to repositories", async () => {
     const h = await harness();
-    const thread = await forumThread(h.ctx(slash("x", [], { channel: rxThread({ applied_tags: [TAG_OPENRX, TAG_LITE] }) })));
-    expect(thread?.forum.name).toBe("receivers");
+    const thread = await productThread(h.ctx(slash("x", [], { channel: rxThread({ name: "OpenRX-Lite and OpenRX: shared UART" }) })));
+    expect(thread?.channel.name).toBe("rx");
     expect(thread?.repos.map((r) => r.repo)).toEqual(["OpenRX", "OpenRX-Lite", "OpenRX-Lite-UFL", "OpenRX-Mono", "OpenRX-Gemini"]);
-    expect(thread?.tagged.map((r) => r.repo)).toEqual(["OpenRX", "OpenRX-Lite"]);
+    expect(thread?.named.map((r) => r.repo)).toEqual(["OpenRX-Lite", "OpenRX"]);
     expect(h.find("GET", `/channels/${THREAD}`)).toHaveLength(0);
   });
 
   it("fetches the channel when the interaction lacks thread details", async () => {
     const h = await harness((call, url) =>
-      url.pathname === `/api/v10/channels/${THREAD}` ? jsonResponse(rxThread({ applied_tags: [] })) : undefined,
+      url.pathname === `/api/v10/channels/${THREAD}` ? jsonResponse(rxThread({ name: "PR #12: move the antenna" })) : undefined,
     );
-    const thread = await forumThread(h.ctx(slash("x", [], { channel: { id: THREAD, type: 11 } })));
-    expect(thread?.tagged).toEqual([]);
+    const thread = await productThread(h.ctx(slash("x", [], { channel: { id: THREAD, type: 11 } })));
+    expect(thread?.named).toEqual([]);
     expect(h.find("GET", `/channels/${THREAD}`)).toHaveLength(1);
   });
 
-  it("returns null outside development forum threads", async () => {
+  it("returns null outside product channel threads, the retired forum included", async () => {
     const h = await harness((call, url) =>
       url.pathname === `/api/v10/channels/${GEN_CHAT}` ? jsonResponse({ id: GEN_CHAT, type: 0, parent_id: null }) : undefined,
     );
-    expect(await forumThread(h.ctx(slash("x", [], { channel: { id: GEN_CHAT, type: 0 } })))).toBeNull();
-    const unknownForum = rxThread({ parent_id: "1799999999999999999" });
-    expect(await forumThread(h.ctx(slash("x", [], { channel: unknownForum })))).toBeNull();
-    expect(await forumThread(h.ctx(slash("x", [], { channel: null })))).toBeNull();
-    const power = await forumThread(h.ctx(slash("x", [], { channel: rxThread({ parent_id: FORUM_POWER, applied_tags: [] }) })));
-    expect(power?.repos.map((r) => r.repo)).toEqual(["Charger"]);
+    expect(await productThread(h.ctx(slash("x", [], { channel: { id: GEN_CHAT, type: 0 } })))).toBeNull();
+    const unknownParent = rxThread({ parent_id: "1799999999999999999" });
+    expect(await productThread(h.ctx(slash("x", [], { channel: unknownParent })))).toBeNull();
+    expect(await productThread(h.ctx(slash("x", [], { channel: rxThread({ parent_id: GEN_CHAT }) })))).toBeNull();
+    expect(await productThread(h.ctx(slash("x", [], { channel: rxThread({ parent_id: OLD_FORUM_RX }) })))).toBeNull();
+    expect(await productThread(h.ctx(slash("x", [], { channel: null })))).toBeNull();
+    const charger = await productThread(h.ctx(slash("x", [], { channel: rxThread({ parent_id: CHANNEL_CHARGER, name: "x" }) })));
+    expect(charger?.repos.map((r) => r.repo)).toEqual(["Charger"]);
+  });
+});
+
+describe("namedRepos", () => {
+  const repos = ["OpenFC-Lite", "OpenFC-Lite-Mini", "OpenFC", ".github", "discord"].map((repo) => ({ repo, channel: "x" }));
+  const named = (title: string) => namedRepos(title, repos).map((r) => r.repo);
+
+  it("matches whole repository names, case-insensitively, longest first", () => {
+    expect(named("OpenFC-Lite: move the USB connector")).toEqual(["OpenFC-Lite"]);
+    expect(named("openfc-lite-mini rev B")).toEqual(["OpenFC-Lite-Mini"]);
+    expect(named("OpenFC and OpenFC-Lite pinout")).toEqual(["OpenFC-Lite", "OpenFC"]);
+    expect(named("Update .github workflows and the discord bot")).toEqual([".github", "discord"]);
+    expect(named("OpenFCX board")).toEqual([]);
+    expect(named("PR #12: move the antenna")).toEqual([]);
   });
 });

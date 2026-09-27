@@ -3,7 +3,7 @@ import { discussionUrl, linkCommand, parsePullRef, parseThreadUrl, replaceDiscus
 import { ERROR_TEXT } from "../../src/interactions.ts";
 import { InteractionResponseType, MessageFlags } from "../../src/types.ts";
 import { jsonResponse } from "../helpers.ts";
-import { ALICE, APP, FORUM_POWER, FORUM_RX, GEN_CHAT, GH_TOKEN, GUILD, harness, ROLE_DEVELOPER, rxThread, slash, text, THREAD, type Handler } from "./fixtures.ts";
+import { ALICE, APP, CHANNEL_CHARGER, CHANNEL_RX, GEN_CHAT, GH_TOKEN, GUILD, harness, ROLE_DEVELOPER, rxThread, slash, text, THREAD, type Handler } from "./fixtures.ts";
 
 const THREAD_URL = `https://discord.com/channels/${GUILD}/${THREAD}`;
 const PR_PATH = "/repos/OpenDrone-hw/OpenRX/pulls/12";
@@ -114,7 +114,7 @@ describe("/link", () => {
         if (url.pathname === `/api/v10/channels/${OTHER}` && call.method === "GET") {
           return typeof owner === "number"
             ? jsonResponse({ message: "Unknown Channel", code: 10003 }, owner)
-            : jsonResponse({ id: OTHER, type: 11, parent_id: FORUM_RX, owner_id: owner });
+            : jsonResponse({ id: OTHER, type: 11, parent_id: CHANNEL_RX, owner_id: owner });
         }
         if (url.pathname === `/api/v10/channels/${OTHER}/messages` && call.method === "POST") return jsonResponse({ id: "m2" });
         return base(call, url);
@@ -163,21 +163,21 @@ describe("/link", () => {
     });
   });
 
-  it("refuses a repository discussed in another forum without calling GitHub", async () => {
+  it("refuses a repository discussed in another channel without calling GitHub", async () => {
     const { h, reply } = await run("https://github.com/OpenDrone-hw/Charger/pull/3");
     expect(reply).toBe(
-      "Charger is discussed in #power, not #receivers; run /link in a thread there. " +
-        "This forum covers: OpenRX, OpenRX-Lite, OpenRX-Lite-UFL, OpenRX-Mono, OpenRX-Gemini.",
+      "Charger is discussed in #charger, not #rx; run /link in a thread there. " +
+        "This channel covers: OpenRX, OpenRX-Lite, OpenRX-Lite-UFL, OpenRX-Mono, OpenRX-Gemini.",
     );
     expect(h.find("POST", `/channels/${THREAD}/messages`)).toHaveLength(0);
     expect(h.calls.some((c) => c.url.startsWith("https://api.github.com"))).toBe(false);
   });
 
-  it("refuses outside a development forum thread", async () => {
-    const { reply } = await run("OpenRX#12", github(), { channel: { id: GEN_CHAT, type: 0, parent_id: null, applied_tags: [] } });
-    expect(reply).toBe("Run /link inside a thread of a development forum.");
-    const power = await run("OpenRX#12", github(), { channel: rxThread({ parent_id: FORUM_POWER }) });
-    expect(power.reply).toBe("OpenRX is discussed in #receivers, not #power; run /link in a thread there. This forum covers: Charger.");
+  it("refuses outside a product channel thread", async () => {
+    const { reply } = await run("OpenRX#12", github(), { channel: { id: GEN_CHAT, type: 0, parent_id: null } });
+    expect(reply).toBe("Run /link inside a thread of a product channel.");
+    const charger = await run("OpenRX#12", github(), { channel: rxThread({ parent_id: CHANNEL_CHARGER }) });
+    expect(charger.reply).toBe("OpenRX is discussed in #rx, not #charger; run /link in a thread there. This channel covers: Charger.");
   });
 
   it("refuses non-members before any GitHub call", async () => {

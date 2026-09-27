@@ -4,27 +4,32 @@ import {
   ConfigError,
   Directory,
   DirectoryCache,
-  LIFECYCLE_TOPICS,
-  MAX_FORUM_TAGS,
   config,
   findRepo,
   parseConfig,
+  productChannels,
+  reposInChannel,
 } from "../src/config.ts";
 import { DiscordClient } from "../src/discord.ts";
 import { ChannelType } from "../src/types.ts";
 import { BOT_TOKEN, jsonResponse, mockFetch } from "./helpers.ts";
 
-const DEVELOPMENT_FORUMS = [
-  "flight-controllers",
-  "escs",
-  "receivers",
-  "video",
-  "remote-id-gps",
-  "frames",
-  "power",
-  "library",
-  "firmware",
-  "web-and-tools",
+// The product text channels in the Hardware and Software categories that carry pull request threads.
+const PRODUCT_CHANNELS = [
+  "fc",
+  "aio",
+  "esc",
+  "rx",
+  "vtx",
+  "remote-id",
+  "gps",
+  "frame",
+  "charger",
+  "kicad-library",
+  "fc-betaflight",
+  "esc-am32",
+  "rx-expresslrs",
+  "opendrone-web",
 ];
 
 // Every OpenDrone-hw repository the bot posts about.
@@ -68,53 +73,52 @@ describe("repos.json", () => {
     expect(config.org).toBe("OpenDrone-hw");
   });
 
-  it("lists exactly the development forums", () => {
-    expect(config.forums).toEqual(DEVELOPMENT_FORUMS);
+  it("uses exactly the product channels", () => {
+    expect(productChannels()).toEqual(PRODUCT_CHANNELS);
   });
 
   it("covers every organisation repository", () => {
     expect(Object.keys(config.repos).sort()).toEqual([...ORG_REPOS].sort());
   });
 
-  it("puts every forum to use", () => {
-    const used = new Set(Object.values(config.repos).map((r) => r.forum));
-    expect([...used].sort()).toEqual([...DEVELOPMENT_FORUMS].sort());
-  });
-
-  it("keeps each forum within Discord's tag limit with room for work-type tags", () => {
-    for (const forum of config.forums) {
-      const products = Object.values(config.repos).filter((r) => r.forum === forum).length;
-      expect(products + LIFECYCLE_TOPICS.length).toBeLessThanOrEqual(MAX_FORUM_TAGS - 5);
-    }
-  });
-
-  it("maps repositories to their product line", () => {
-    expect(config.repos["OpenAIO-Whoop"]?.forum).toBe("flight-controllers");
-    expect(config.repos["OpenRX-Gemini"]?.forum).toBe("receivers");
-    expect(config.repos["OpenGPS"]?.forum).toBe("remote-id-gps");
-    expect(config.repos["AM32"]?.forum).toBe("firmware");
-    expect(config.repos["Charger"]?.forum).toBe("power");
+  it("maps repositories to their product channel", () => {
+    expect(config.repos["OpenFC-Lite-Mini"]?.channel).toBe("fc");
+    expect(config.repos["OpenAIO-Whoop"]?.channel).toBe("aio");
+    expect(config.repos["OpenRX-Gemini"]?.channel).toBe("rx");
+    expect(config.repos["OpenGPS"]?.channel).toBe("gps");
+    expect(config.repos["OpenDrone-Fixtures"]?.channel).toBe("kicad-library");
+    expect(config.repos["AM32"]?.channel).toBe("esc-am32");
+    expect(config.repos["discord"]?.channel).toBe("opendrone-web");
+    expect(reposInChannel("fc").map((r) => r.repo)).toEqual(["OpenFC-Lite", "OpenFC-Lite-Mini", "OpenFC"]);
   });
 });
 
 describe("parseConfig", () => {
-  it("rejects a repository in an unknown forum", () => {
-    const bad = clone(raw) as { repos: Record<string, { forum: string }> };
-    (bad.repos["OpenRX"] as { forum: string }).forum = "rx";
-    expect(() => parseConfig(bad)).toThrow(/rx is not in forums/);
-  });
+  it("rejects a repository without a valid channel, an unknown key and a duplicate repository", () => {
+    const noChannel = clone(raw) as { repos: Record<string, Record<string, unknown>> };
+    delete noChannel.repos["OpenRX"]?.channel;
+    expect(() => parseConfig(noChannel)).toThrow(/repos.OpenRX.channel/);
 
-  it("rejects a duplicate tag within a forum and a duplicate repository", () => {
-    const tagClash = clone(raw) as { repos: Record<string, { tag: string }> };
-    (tagClash.repos["OpenRX-Lite"] as { tag: string }).tag = "openrx";
-    expect(() => parseConfig(tagClash)).toThrow(/already used/);
+    const forum = clone(raw) as { repos: Record<string, Record<string, unknown>> };
+    (forum.repos["OpenRX"] as Record<string, unknown>).forum = "receivers";
+    expect(() => parseConfig(forum)).toThrow(/unknown key forum/);
 
     const repoClash = clone(raw) as { repos: Record<string, unknown> };
-    repoClash.repos["openrx"] = { forum: "receivers", tag: "x" };
+    repoClash.repos["openrx"] = { channel: "rx" };
     expect(() => parseConfig(repoClash)).toThrow(/listed twice/);
+
+    const oldSchema = clone(raw) as Record<string, unknown>;
+    oldSchema.forums = ["receivers"];
+    expect(() => parseConfig(oldSchema)).toThrow(/unknown key forums/);
   });
 
-  it("rejects missing channels, roles and lifecycle tags", () => {
+  it("rejects a bot channel used as a product channel", () => {
+    const feed = clone(raw) as { repos: Record<string, { channel: string }> };
+    (feed.repos["OpenRX"] as { channel: string }).channel = "git-feed";
+    expect(() => parseConfig(feed)).toThrow(/bot channel/);
+  });
+
+  it("rejects missing channels, roles and lifecycle names", () => {
     const noChannel = clone(raw) as { channels: Record<string, unknown> };
     delete noChannel.channels.gitFeed;
     expect(() => parseConfig(noChannel)).toThrow(ConfigError);
@@ -123,33 +127,27 @@ describe("parseConfig", () => {
     delete noRole.roles.maintainer;
     expect(() => parseConfig(noRole)).toThrow(/roles.maintainer/);
 
-    const noLifecycle = clone(raw) as { lifecycleTags: Record<string, unknown> };
-    delete noLifecycle.lifecycleTags["status-beta"];
+    const noLifecycle = clone(raw) as { lifecycle: Record<string, unknown> };
+    delete noLifecycle.lifecycle["status-beta"];
     expect(() => parseConfig(noLifecycle)).toThrow(/status-beta/);
   });
 
-  it("rejects channel names Discord would change, and long tags", () => {
+  it("rejects channel names Discord would change", () => {
     const upper = clone(raw) as { channels: Record<string, string> };
     upper.channels.gitFeed = "Git Feed";
     expect(() => parseConfig(upper)).toThrow(/not a Discord channel name/);
 
-    const long = clone(raw) as { repos: Record<string, { tag: string }> };
-    (long.repos["OpenRX"] as { tag: string }).tag = "x".repeat(21);
-    expect(() => parseConfig(long)).toThrow(/at most 20/);
-  });
-
-  it("rejects a forum with more than 20 product and lifecycle tags", () => {
-    const crowded = clone(raw) as { repos: Record<string, unknown> };
-    for (let i = 0; i < 15; i++) crowded.repos[`Extra-${i}`] = { forum: "video", tag: `Extra-${i}` };
-    expect(() => parseConfig(crowded)).toThrow(/exceed/);
+    const product = clone(raw) as { repos: Record<string, { channel: string }> };
+    (product.repos["OpenRX"] as { channel: string }).channel = "RX";
+    expect(() => parseConfig(product)).toThrow(/not a Discord channel name/);
   });
 });
 
 describe("findRepo", () => {
   it("matches full and short names case-insensitively", () => {
-    expect(findRepo("OpenDrone-hw/OpenRX-Lite")).toEqual({ repo: "OpenRX-Lite", forum: "receivers", tag: "OpenRX-Lite" });
+    expect(findRepo("OpenDrone-hw/OpenRX-Lite")).toEqual({ repo: "OpenRX-Lite", channel: "rx" });
     expect(findRepo("opendrone-hw/openrx-lite")?.repo).toBe("OpenRX-Lite");
-    expect(findRepo("ExpressLRS")?.forum).toBe("firmware");
+    expect(findRepo("ExpressLRS")?.channel).toBe("rx-expresslrs");
   });
 
   it("returns null for other organisations and unknown repositories", () => {
@@ -165,16 +163,9 @@ describe("Directory", () => {
   const channels = [
     { id: "100", type: ChannelType.GUILD_ANNOUNCEMENT, name: "git-feed" },
     { id: "101", type: ChannelType.GUILD_ANNOUNCEMENT, name: "announcements" },
-    {
-      id: "200",
-      type: ChannelType.GUILD_FORUM,
-      name: "receivers",
-      available_tags: [
-        { id: "t1", name: "OpenRX-Lite" },
-        { id: "t2", name: "Beta" },
-      ],
-    },
-    { id: "201", type: ChannelType.GUILD_TEXT, name: "receivers" },
+    { id: "200", type: ChannelType.GUILD_FORUM, name: "rx", available_tags: [] },
+    { id: "201", type: ChannelType.GUILD_TEXT, name: "rx" },
+    { id: "202", type: ChannelType.GUILD_FORUM, name: "vtx", available_tags: [] },
     { id: "300", type: ChannelType.GUILD_TEXT, name: "dupe" },
     { id: "301", type: ChannelType.GUILD_TEXT, name: "dupe" },
   ];
@@ -201,35 +192,23 @@ describe("Directory", () => {
     expect(await directory.roleId("maintainer")).toBeNull();
   });
 
-  it("resolves a repository to its forum and product tag", async () => {
+  it("resolves a repository to its product text channel", async () => {
     const { directory } = setup();
     expect(await directory.resolveRepo("OpenDrone-hw/openrx-lite")).toEqual({
       repo: "OpenRX-Lite",
-      forum: "receivers",
-      tag: "OpenRX-Lite",
-      forumId: "200",
-      tagId: "t1",
+      channel: "rx",
+      channelId: "201",
     });
-    const openRx = await directory.resolveRepo("OpenDrone-hw/OpenRX");
-    expect(openRx?.forumId).toBe("200");
-    expect(openRx?.tagId).toBeNull();
     expect(await directory.resolveRepo("other/OpenRX")).toBeNull();
-    await expect(directory.resolveRepo("OpenDrone-hw/OpenVTX")).rejects.toThrow(/forum video .* does not exist/);
-  });
-
-  it("finds lifecycle tags case-insensitively", async () => {
-    const { directory } = setup();
-    const forum = await directory.forum("receivers");
-    expect(forum?.id).toBe("200");
-    expect(directory.lifecycleTagId(forum!, "status-beta")).toBe("t2");
-    expect(directory.lifecycleTagId(forum!, "status-alpha")).toBeNull();
+    // A forum with the product channel's name is not a product channel.
+    await expect(directory.resolveRepo("OpenDrone-hw/OpenVTX")).rejects.toThrow(/text channel vtx .* does not exist/);
   });
 
   it("refuses ambiguous names", async () => {
     const { directory } = setup();
     await expect(directory.channelByName("dupe")).rejects.toThrow(/ambiguous/);
-    await expect(directory.channelByName("receivers")).rejects.toThrow(/ambiguous/);
-    expect((await directory.channelByName("receivers", [ChannelType.GUILD_TEXT]))?.id).toBe("201");
+    await expect(directory.channelByName("rx")).rejects.toThrow(/ambiguous/);
+    expect((await directory.channelByName("rx", [ChannelType.GUILD_TEXT]))?.id).toBe("201");
   });
 
   it("caches lists for the TTL and refetches after it or after invalidate()", async () => {

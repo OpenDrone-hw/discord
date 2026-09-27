@@ -117,20 +117,19 @@ describe("DiscordClient requests", () => {
     expect(read?.body).toBeUndefined();
   });
 
-  it("suppresses mentions in forum posts, follow-ups and edits", async () => {
+  it("suppresses mentions in follow-ups and edits, and sends thread starts as given", async () => {
     const { fetch, calls } = mockFetch(() => jsonResponse({ id: MESSAGE }));
     const client = new DiscordClient({ token: BOT_TOKEN, fetch });
-    await client.createForumPost(CHANNEL, { name: "OpenRX #12", message: { content: "by @someone" }, applied_tags: ["1"] });
+    await client.startThread(CHANNEL, MESSAGE, { name: "PR #12: by @someone", auto_archive_duration: 10080 }, "GitHub x");
     await client.followUp(APP, INTERACTION_TOKEN, { content: "<@123>" });
     await client.editOriginalResponse(APP, INTERACTION_TOKEN, { content: "<@&456>" });
     await client.editMessage(CHANNEL, MESSAGE, { content: "@here" });
     await client.executeWebhook(APP, INTERACTION_TOKEN, { content: "@everyone", thread_name: "x" });
     await client.createInteractionResponse(MESSAGE, INTERACTION_TOKEN, { type: 4, data: { content: "@everyone" } });
 
-    expect((calls[0]?.body as { message: unknown }).message).toEqual({
-      content: "by @someone",
-      allowed_mentions: { parse: [] },
-    });
+    expect(calls[0]?.url).toBe(`https://discord.com/api/v10/channels/${CHANNEL}/messages/${MESSAGE}/threads`);
+    expect(calls[0]?.body).toEqual({ name: "PR #12: by @someone", auto_archive_duration: 10080 });
+    expect(calls[0]?.headers["x-audit-log-reason"]).toBe("GitHub%20x");
     for (const call of calls.slice(1, 5)) {
       expect((call.body as { allowed_mentions: unknown }).allowed_mentions).toEqual({ parse: [] });
     }

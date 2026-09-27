@@ -11,7 +11,9 @@ only to unpin a message and to take a role off a member.
 from __future__ import annotations
 
 import argparse
+import json
 import re
+import subprocess
 import sys
 import time
 from datetime import datetime, timezone
@@ -23,6 +25,16 @@ AUDIT_REASON = "OpenDrone-hw/discord migrate.py"
 MARKER = "opendrone-migration"
 NOTICE_MARK = f"{MARKER}:notice-1"  # the archive notice the earlier notices step posted and pinned
 UNARCHIVE_MARK = f"{MARKER}:unarchive-1"  # the same message after unarchive edited it
+HUB_MARK = f"{MARKER}:hub-1"  # followed by the repository name: one pinned hub message per repository
+RULES_MARK = f"{MARKER}:rules-1"  # followed by the part number: the pinned rules text in #rules
+REPOS_JSON = dc.ROOT / "bot" / "config" / "repos.json"
+# Private repositories get no hub: nothing of theirs is posted to Discord. A repository GitHub reports
+# as private or answers 404 for is skipped as well.
+PRIVATE_REPOS = ("OpenFC", "OpenGPS", "OpenFrame-3F", "OpenFrame-5F")
+LIFECYCLE_TOPICS = ("status-planned", "status-in-progress", "status-alpha", "status-beta", "status-launched")
+HUB_FOOTER = "Discuss changes in threads: the bot opens one per pull request; link an existing thread with /link."
+MESSAGE_LIMIT = 2000
+SUPPRESS_EMBEDS = 1 << 2
 WRITE_DELAY = 0.5  # seconds after every write, on top of the client's 429 and bucket handling
 PAGE = 100  # Discord's maximum for GET /channels/{id}/messages and the audit log
 NOTICE_PAGES = 5  # how far back unarchive looks for a notice that is no longer pinned
@@ -37,31 +49,29 @@ UNDO_PATHS = (re.compile(r"/channels/\d+/pins/\d+"), re.compile(r"/guilds/\d+/me
 # backfill give the matching "user" role instead; firmware-roles moves members over.
 FIRMWARE_ROLES = {"Betaflight": "Betaflight user", "AM32": "AM32 user", "ExpressLRS": "ExpressLRS user"}
 
-# Channel id -> (name before the migration, name in server.json, what the chat is for, the forum of the
-# same topic or CUSTOMIZE or None, unit of one forum post, ping role). The archive notice in each is
-# rewritten by unarchive; backfill grants the ping role to recent authors. Tests check the names against
-# server.json and each ping role against the onboarding option that adds its forum.
+# Channel id -> (name before the Archive migration, name in server.json, what the chat is for, ping role).
+# The archive notice in each is rewritten by unarchive; backfill grants the ping role to recent authors.
+# Tests check the names against server.json and each ping role against the onboarding option that
+# points at the channel.
 CHATS = {
-    "1494780931498705057": ("roles", "roles", None, CUSTOMIZE, None, None),
-    "1494033189532860707": ("proposals", "proposal-chat", "proposals", "proposals", "idea", None),
-    "1494782854117326969": ("builds", "build-chat", "builds", "builds", "build", None),
-    "1497547403140530237": ("support", "support-chat", "support", "help", "problem", None),
-    "1494783056026796262": ("fc", "fc", "flight controllers", "flight-controllers", "change", "FC dev"),
-    "1538618173354414190": ("aio", "aio", "AIO boards", "flight-controllers", "change", "FC dev"),
-    "1494782966302507118": ("esc", "esc", "ESCs", "escs", "change", "ESC dev"),
-    "1494758332903456969": ("rx", "rx", "receivers", "receivers", "change", "RX dev"),
-    "1494758396577058900": ("vtx", "vtx", "video transmitters", "video", "change", "Video dev"),
-    "1494803018770809065": ("digital-vtx", "digital-vtx", "digital video", "video", "change", "Video dev"),
-    "1494758377010757682": ("remote-id", "remote-id", "Remote ID", "remote-id-gps", "change", "RemoteID-GPS dev"),
-    "1550883307246461033": ("gps", "gps", "GPS", "remote-id-gps", "change", "RemoteID-GPS dev"),
-    "1494758355825328158": ("frame", "frame", "frames", "frames", "change", "Frame dev"),
-    "1550884618322972693": ("charger", "charger", "chargers", "power", "change", "Power dev"),
-    "1550883427220197396": ("motors", "motors", "motors", None, None, None),  # no OpenDrone motor product line
-    "1494758297885212832": ("esc-am32", "esc-am32", "AM32", "firmware", "change", "AM32 user"),
-    "1494783023114096821": ("fc-betaflight", "fc-betaflight", "Betaflight", "firmware", "change", "Betaflight user"),
-    "1550882869839134810": ("rx-expresslrs", "rx-expresslrs", "ExpressLRS", "firmware", "change", "ExpressLRS user"),
-    "1494796004615131237": ("opendrone-web", "opendrone-web", "opendrone.be and the web tools", "web-and-tools",
-                            "change", "Web-Tools dev"),
+    "1494780931498705057": ("roles", "roles", None, None),
+    "1494033189532860707": ("proposals", "proposals", "proposals for new products and changes", None),
+    "1494782854117326969": ("builds", "builds", "builds", None),
+    "1494783056026796262": ("fc", "fc", "flight controllers", "FC dev"),
+    "1538618173354414190": ("aio", "aio", "AIO boards", "FC dev"),
+    "1494782966302507118": ("esc", "esc", "ESCs", "ESC dev"),
+    "1494758332903456969": ("rx", "rx", "receivers", "RX dev"),
+    "1494758396577058900": ("vtx", "vtx", "video transmitters", "Video dev"),
+    "1494803018770809065": ("digital-vtx", "digital-vtx", "digital video", "Video dev"),
+    "1494758377010757682": ("remote-id", "remote-id", "Remote ID", "RemoteID-GPS dev"),
+    "1550883307246461033": ("gps", "gps", "GPS", "RemoteID-GPS dev"),
+    "1494758355825328158": ("frame", "frame", "frames", "Frame dev"),
+    "1550884618322972693": ("charger", "charger", "chargers", "Power dev"),
+    "1550883427220197396": ("motors", "motors", "motors", None),  # no OpenDrone motor product line
+    "1494758297885212832": ("esc-am32", "esc-am32", "AM32", "AM32 user"),
+    "1494783023114096821": ("fc-betaflight", "fc-betaflight", "Betaflight", "Betaflight user"),
+    "1550882869839134810": ("rx-expresslrs", "rx-expresslrs", "ExpressLRS", "ExpressLRS user"),
+    "1494796004615131237": ("opendrone-web", "opendrone-web", "opendrone.be and the web tools", "Web-Tools dev"),
 }
 
 SERVER_GUIDE = """\
@@ -73,21 +83,26 @@ New member to-dos (title / channel / description)
   1. Read the rules / #rules / Short, and they apply everywhere
   2. Say hi / #introduce-yourself / What you fly and what you build
   3. Pick what you follow / Channels & Roles / Product lines, what you fly, firmware
-  4. Show your build / builds / A photo and the parts list
+  4. Show your build / #builds / A photo and the parts list
   5. Ask for help / help / Product, revision, firmware and what you tried
 
 Resource pages
   #rules, #announcements, help"""
 
 
-def chat_text(line: str | None, forum: str | None, unit: str | None) -> str:
-    """forum is a channel mention such as <#123>, CUSTOMIZE for #roles, or None."""
-    if forum == CUSTOMIZE:
+def load_repos(path: Path = REPOS_JSON) -> dict:
+    """bot/config/repos.json: the organisation, lifecycle names and repository -> product channel."""
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def chat_text(line: str | None, product: bool) -> str:
+    """line None is #roles; product is True for a channel repos.json maps repositories to."""
+    if line is None:
         body = f"Roles are picked in {CUSTOMIZE} (Channels & Roles)."
-    elif forum is None:
-        body = f"Chat for {line}."
+    elif product:
+        body = f"Chat for {line}. Pull requests in the public repositories of this line get a thread here."
     else:
-        body = f"Chat for {line}. Structured posts, one per {unit}, go in {forum}."
+        body = f"Chat for {line}."
     return f"{body}\n-# {UNARCHIVE_MARK}"
 
 
@@ -97,11 +112,12 @@ def chat_text(line: str | None, forum: str | None, unit: str | None) -> str:
 class Server:
     """Live channels and roles resolved against server.json, plus the writes this tool makes."""
 
-    def __init__(self, api, desired: dict, sleep=None, clock=None):
+    def __init__(self, api, desired: dict, sleep=None, clock=None, fetch=None):
         self.api, self.desired = api, desired
         self.gid = desired["guild_id"]
         self.sleep = sleep or time.sleep
         self.clock = clock or time.time
+        self.fetch = fetch or gh_fetch  # GitHub REST GET: path -> JSON, None for 404
         self.bot_id = api.request("GET", "/users/@me")["id"]
         self.channels = api.request("GET", f"/guilds/{self.gid}/channels")
         self.by_id = {c["id"]: c for c in self.channels}
@@ -171,6 +187,27 @@ class Server:
                 return msg
         return next((msg for msg in self.history(cid, pages=NOTICE_PAGES) if mine(msg)), None)
 
+    def marked(self, cid: str, marks: list[str]) -> dict[str, dict]:
+        """The bot's messages carrying one of `marks` on its last line: pins first, then the newest
+        NOTICE_PAGES pages of history. {mark: message}, the first message found per mark."""
+        found: dict[str, dict] = {}
+
+        def take(msg):
+            text = msg.get("content") or ""
+            if msg.get("author", {}).get("id") != self.bot_id:
+                return
+            last = text.rsplit("\n", 1)[-1]
+            for mark in marks:
+                if last == f"-# {mark}" and mark not in found:
+                    found[mark] = msg
+
+        for msg in self.api.request("GET", f"/channels/{cid}/pins") or []:
+            take(msg)
+        if len(found) < len(marks):
+            for msg in self.history(cid, pages=NOTICE_PAGES):
+                take(msg)
+        return found
+
     def write(self, method: str, path: str, body=None):
         result = self.api.request(method, path, body)
         self.sleep(WRITE_DELAY)
@@ -219,20 +256,14 @@ def show(text: str) -> None:
 
 
 def cmd_unarchive(args, server: Server) -> None:
+    product = {entry["channel"] for entry in load_repos()["repos"].values()}
     ready, blocked = [], []
-    for cid, (_old, name, line, forum, unit, _role) in CHATS.items():
+    for cid, (_old, name, line, _role) in CHATS.items():
         why = server.placed(cid)
         if why:
             blocked.append(f"#{name}: {why}")
             continue
-        target = forum
-        if forum not in (None, CUSTOMIZE):
-            ch = server.managed(forum)
-            if ch is None:
-                blocked.append(f"#{name}: forum {forum} does not exist")
-                continue
-            target = f"<#{ch['id']}>"
-        ready.append((cid, name, chat_text(line, target, unit)))
+        ready.append((cid, name, chat_text(line, name in product)))
     for line in blocked:
         print(f"  blocked {line}")
     if blocked and args.yes:
@@ -259,11 +290,179 @@ def cmd_unarchive(args, server: Server) -> None:
                 server.write("DELETE", f"/channels/{cid}/pins/{msg['id']}")
     print(f"\nunarchive: {todo} to update, {done} done, {missing} without a notice, {len(blocked)} blocked")
     if not args.yes:
-        fc = next((text for cid, _name, text in ready if cid == "1494783056026796262"), None)
         print("\nNew text in #fc:\n")
-        show(fc or chat_text("flight controllers", "#flight-controllers", "change"))
+        show(chat_text(CHATS["1494783056026796262"][2], True))
     if todo:
         dry_run_footer(args.yes, "edit and unpin them")
+
+
+# --- pinned messages: repository hubs and the rules --------------------------
+
+
+def gh_fetch(path: str) -> dict | None:
+    """GitHub REST GET through the gh CLI and its own login; None for 404."""
+    try:
+        run = subprocess.run(["gh", "api", path], capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise dc.ConfigError(f"gh api {path}: {exc}") from exc
+    if run.returncode != 0:
+        if "HTTP 404" in run.stderr or "Not Found" in run.stderr:
+            return None
+        raise dc.ConfigError(f"gh api {path}: {run.stderr.strip()[:200]}")
+    return json.loads(run.stdout)
+
+
+def one_line(text: str) -> str:
+    """Collapsed whitespace, no em dashes, no leading quote marker."""
+    clean = re.sub(r"\s+", " ", text).strip().replace(" \u2014 ", ", ").replace("\u2014", "-")
+    return clean.lstrip("> ").strip()
+
+
+def lifecycle(topics: list[str], labels: dict[str, str]) -> str | None:
+    """Name of the most advanced status-* topic, or None."""
+    status = None
+    for topic in LIFECYCLE_TOPICS:
+        if topic in topics:
+            status = topic
+    return labels.get(status, status) if status else None
+
+
+def hub_text(org: str, repo: str, meta: dict, labels: dict[str, str]) -> str:
+    url = f"https://github.com/{org}/{repo}"
+    status = lifecycle(meta.get("topics") or [], labels)
+    lines = [f"## [{repo}]({url})"]
+    description = one_line(meta.get("description") or "")
+    if description:
+        lines.append(description[:300])
+    lines += [f"Lifecycle: {status or 'not set'}", f"Releases: {url}/releases", HUB_FOOTER, f"-# {HUB_MARK} {repo}"]
+    return "\n".join(lines)
+
+
+def sync_pinned(server: Server, cid: str, wanted: list[tuple[str, str]], yes: bool) -> dict[str, int]:
+    """Post, edit and pin the bot messages `wanted` [(mark, text)] in one channel, in order.
+    Returns counts: post, edit, pin, done."""
+    counts = {"post": 0, "edit": 0, "pin": 0, "done": 0}
+    have = server.marked(cid, [mark for mark, _ in wanted])
+    for mark, text in wanted:
+        msg = have.get(mark)
+        body = {"content": text, "allowed_mentions": {"parse": []}, "flags": SUPPRESS_EMBEDS}
+        if msg is None:
+            counts["post"] += 1
+            counts["pin"] += 1
+            if yes:
+                posted = server.write("POST", f"/channels/{cid}/messages", body)
+                server.write("PUT", f"/channels/{cid}/pins/{posted['id']}")
+            continue
+        edit, pin = msg.get("content") != text, not msg.get("pinned")
+        counts["edit"] += edit
+        counts["pin"] += pin
+        counts["done"] += not (edit or pin)
+        if yes and edit:
+            server.write("PATCH", f"/channels/{cid}/messages/{msg['id']}", body)
+        if yes and pin:
+            server.write("PUT", f"/channels/{cid}/pins/{msg['id']}")
+    return counts
+
+
+def cmd_hubs(args, server: Server) -> None:
+    repos = load_repos(args.repos)
+    org, labels = repos["org"], repos.get("lifecycle", {})
+    by_channel: dict[str, list[tuple[str, str]]] = {}
+    private = missing = 0
+    sample = None
+    for repo, entry in repos["repos"].items():
+        if repo in PRIVATE_REPOS:
+            private += 1
+            continue
+        meta = server.fetch(f"repos/{org}/{repo}")
+        if meta is None:
+            missing += 1
+            continue
+        if meta.get("private") is not False:
+            private += 1
+            continue
+        text = hub_text(org, repo, meta, labels)
+        if len(text) > MESSAGE_LIMIT:
+            raise dc.ConfigError(f"hub for {repo}: {len(text)} characters, over Discord's {MESSAGE_LIMIT}")
+        sample = sample or text
+        by_channel.setdefault(entry["channel"], []).append((f"{HUB_MARK} {repo}", text))
+    ready, blocked = [], []
+    for name, wanted in by_channel.items():
+        ch = server.managed(name)
+        (ready if ch else blocked).append((name, ch, wanted))
+    for name, _ch, wanted in blocked:
+        print(f"  blocked #{name}: the channel does not exist yet (apply server.json first), {plural(len(wanted), 'hub')}")
+    if blocked and args.yes:
+        raise dc.ConfigError(f"{len(blocked)} channel(s) missing. Apply server.json first; nothing was written")
+    total = {"post": 0, "edit": 0, "pin": 0, "done": 0}
+    for name, ch, wanted in ready:
+        counts = sync_pinned(server, ch["id"], wanted, args.yes)
+        for key in total:
+            total[key] += counts[key]
+        print(f"  #{name}: {plural(len(wanted), 'hub')}, {counts['post']} to post, {counts['edit']} to edit, "
+              f"{counts['pin']} to pin, {counts['done']} done")
+    print(f"\nhubs: {total['post']} to post, {total['edit']} to edit, {total['pin']} to pin, {total['done']} done; "
+          f"{private} private skipped, {missing} not found on GitHub, {len(blocked)} channel(s) blocked")
+    if not args.yes and sample:
+        print("\nFirst hub:\n")
+        show(sample)
+    if total["post"] or total["edit"] or total["pin"]:
+        dry_run_footer(args.yes, "post, edit and pin them")
+
+
+def rules_section(markdown: str) -> str:
+    """The text of the section headed "4. #rules": the fenced block in it when there is one."""
+    lines = markdown.splitlines()
+    start = next((i for i, line in enumerate(lines) if re.fullmatch(r"#{1,6}\s*4\.\s*#rules\s*", line.strip())), None)
+    if start is None:
+        raise dc.ConfigError('--rules-file: no heading "4. #rules"')
+    level = len(lines[start]) - len(lines[start].lstrip("#"))
+    body = []
+    for line in lines[start + 1:]:
+        heading = re.match(r"(#{1,6})\s", line)
+        if heading and len(heading.group(1)) <= level:
+            break
+        body.append(line)
+    text = "\n".join(body)
+    fence = re.search(r"^```[^\n]*\n(.*?)^```", text, re.S | re.M)
+    text = fence.group(1) if fence else re.sub(r"^\s*---\s*$", "", text, flags=re.M)
+    text = text.strip()
+    if not text:
+        raise dc.ConfigError('--rules-file: the "4. #rules" section is empty')
+    if "\u2014" in text or re.search(r"^>", text, re.M):
+        raise dc.ConfigError("--rules-file: the rules text holds an em dash or a blockquote; fix the source first")
+    return text
+
+
+def split_parts(text: str, room: int) -> list[str]:
+    """Paragraph-aligned parts of at most `room` characters."""
+    parts, current = [], ""
+    for para in text.split("\n\n"):
+        if len(para) > room:
+            raise dc.ConfigError(f"--rules-file: a paragraph of {len(para)} characters does not fit one message")
+        joined = f"{current}\n\n{para}" if current else para
+        if len(joined) > room:
+            parts.append(current)
+            joined = para
+        current = joined
+    return parts + [current]
+
+
+def cmd_rules(args, server: Server) -> None:
+    text = rules_section(args.rules_file.read_text(encoding="utf-8"))
+    room = MESSAGE_LIMIT - len(f"\n-# {RULES_MARK} 99")
+    wanted = [(f"{RULES_MARK} {i}", f"{part}\n-# {RULES_MARK} {i}") for i, part in enumerate(split_parts(text, room), 1)]
+    ch = server.managed("rules")
+    if ch is None:
+        raise dc.ConfigError("#rules does not exist")
+    counts = sync_pinned(server, ch["id"], wanted, args.yes)
+    print(f"rules: {plural(len(wanted), 'message')} ({len(text)} characters), {counts['post']} to post, "
+          f"{counts['edit']} to edit, {counts['pin']} to pin, {counts['done']} done")
+    if not args.yes:
+        print("\nText:\n")
+        show(text)
+    if counts["post"] or counts["edit"] or counts["pin"]:
+        dry_run_footer(args.yes, "post, edit and pin it")
 
 
 def parse_since(value: str) -> int:
@@ -362,7 +561,7 @@ def cmd_firmware_roles(args, server: Server) -> None:
 
 def backfill_channels(server: Server, only: list[str]) -> list[tuple[str, str]]:
     """(channel id, ping role name) for each development chat with a ping role, limited by --channel."""
-    mapped = [(cid, chat[5]) for cid, chat in CHATS.items() if chat[5]]
+    mapped = [(cid, chat[3]) for cid, chat in CHATS.items() if chat[3]]
     if not only:
         return mapped
     picked = []
@@ -457,8 +656,17 @@ def cmd_checklist(args) -> None:
     steps = [
         ("Apply the layout",
          ["python3 discord_config.py plan", "python3 discord_config.py apply --yes   # only after the plan was seen"]),
+        ("Delete the retired empty channels by hand: right-click the channel > Delete Channel",
+         ["The forums the plan lists as unmanaged (builds and proposals forums, flight-controllers, escs,",
+          "receivers, video, remote-id-gps, frames, power, library, firmware, web-and-tools) and #support-chat.",
+          "Check each has no member posts first. The tools never delete; never touch #web-support or",
+          "#web-support-admin. Then discord_config.py plan lists only those two as unmanaged."]),
         ("Paste the Server Guide copy: Server Settings > Onboarding > Server Guide",
          ["Copy below. Discord has no API for the Server Guide."]),
+        ("Post and pin the rules in #rules",
+         ["python3 migrate.py rules --rules-file <copy.md>", "python3 migrate.py rules --rules-file <copy.md> --yes"]),
+        ("Post and pin one hub message per public repository in its product channel",
+         ["python3 migrate.py hubs", "python3 migrate.py hubs --yes"]),
         ("Rewrite and unpin the archive notices in the restored chats",
          ["python3 migrate.py unarchive", "python3 migrate.py unarchive --yes"]),
         ("Move self-picked firmware team roles to the user roles",
@@ -489,7 +697,7 @@ def cmd_checklist(args) -> None:
 # --- entry point -----------------------------------------------------------
 
 
-def main(argv=None, api=None, sleep=None, clock=None) -> int:
+def main(argv=None, api=None, sleep=None, clock=None, fetch=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--config", type=Path, default=dc.ROOT / "server.json")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -505,6 +713,12 @@ def main(argv=None, api=None, sleep=None, clock=None) -> int:
     p.add_argument("--only-user", metavar="ID", help="grant only to this one member (test mode)")
     p.add_argument("--channel", action="append", default=[], metavar="NAME_OR_ID",
                    help="limit to this development chat; repeatable")
+    p = sub.add_parser("hubs", help="post and pin one hub message per public repository in its product channel")
+    p.add_argument("--yes", action="store_true")
+    p.add_argument("--repos", type=Path, default=REPOS_JSON, help="bot/config/repos.json")
+    p = sub.add_parser("rules", help='post and pin the "4. #rules" section of a markdown file in #rules')
+    p.add_argument("--yes", action="store_true")
+    p.add_argument("--rules-file", type=Path, required=True, metavar="MD")
     sub.add_parser("checklist", help="print the manual migration steps in order")
     args = parser.parse_args(argv)
     try:
@@ -518,11 +732,16 @@ def main(argv=None, api=None, sleep=None, clock=None) -> int:
                 raise dc.ConfigError("--only-user takes a numeric user id")
         if args.command == "firmware-roles":
             parse_since(args.since)
+        if args.command == "rules":
+            try:
+                rules_section(args.rules_file.read_text(encoding="utf-8"))
+            except OSError as exc:
+                raise dc.ConfigError(f"--rules-file: {exc.strerror}") from exc
         desired = dc.load_desired(args.config)
         api = api or client(dc.token())
-        server = Server(api, desired, sleep, clock)
-        {"unarchive": cmd_unarchive, "firmware-roles": cmd_firmware_roles,
-         "backfill": cmd_backfill}[args.command](args, server)
+        server = Server(api, desired, sleep, clock, fetch)
+        {"unarchive": cmd_unarchive, "firmware-roles": cmd_firmware_roles, "backfill": cmd_backfill,
+         "hubs": cmd_hubs, "rules": cmd_rules}[args.command](args, server)
     except dc.ConfigError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

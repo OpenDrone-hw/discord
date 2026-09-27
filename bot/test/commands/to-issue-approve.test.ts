@@ -28,9 +28,8 @@ import {
   ROLE_DEVELOPER,
   ROLE_MEMBER,
   ROLE_REVIEWER,
+  OLD_FORUM_RX,
   rxThread,
-  TAG_LITE,
-  TAG_OPENRX,
   text,
   THREAD,
   type Handler,
@@ -47,7 +46,7 @@ const bobMessage = {
 type Modal = { type: number; data: { custom_id: string; title: string; components: Array<Record<string, any>> } };
 
 describe("To GitHub issue: modal", () => {
-  it("opens a modal prefilled from the message with the tagged repository preselected", async () => {
+  it("opens a modal prefilled from the message with the repository the thread names preselected", async () => {
     const h = await harness();
     const response = (await toIssueCommand.execute(h.ctx(messageCommand("To GitHub issue", bobMessage)))) as unknown as Modal;
     expect(response.type).toBe(InteractionResponseType.MODAL);
@@ -67,14 +66,14 @@ describe("To GitHub issue: modal", () => {
     expect(h.calls.some((c) => c.url.startsWith("https://api.github.com"))).toBe(false);
   });
 
-  it("offers only the tagged repositories when several are tagged, none preselected", async () => {
+  it("offers only the named repositories when the thread names several, none preselected", async () => {
     const h = await harness();
-    const channel = rxThread({ applied_tags: [TAG_OPENRX, TAG_LITE] });
+    const channel = rxThread({ name: "OpenRX and OpenRX-Lite: shared UART" });
     const response = (await toIssueCommand.execute(h.ctx(messageCommand("To GitHub issue", bobMessage, { channel })))) as unknown as Modal;
     const options = response.data.components[0]?.component.options;
     expect(options).toEqual([
-      { label: "OpenRX", value: "OpenRX", default: false },
       { label: "OpenRX-Lite", value: "OpenRX-Lite", default: false },
+      { label: "OpenRX", value: "OpenRX", default: false },
     ]);
   });
 
@@ -87,7 +86,7 @@ describe("To GitHub issue: modal", () => {
     expect(response.data.components[2]?.component.value).toBeUndefined();
   });
 
-  it("refuses non-members and messages outside development forums", async () => {
+  it("refuses non-members and messages outside product channel threads", async () => {
     const h = await harness();
     const notMember = await toIssueCommand.execute(h.ctx(messageCommand("To GitHub issue", bobMessage, { member: { roles: [] } })));
     expect(text(notMember)).toBe(NOT_MEMBER);
@@ -96,6 +95,10 @@ describe("To GitHub issue: modal", () => {
       h.ctx(messageCommand("To GitHub issue", bobMessage, { channel: { id: GEN_CHAT, type: 0 } })),
     );
     expect(text(outside)).toBe(NOT_THREAD);
+    const retired = await toIssueCommand.execute(
+      h.ctx(messageCommand("To GitHub issue", bobMessage, { channel: rxThread({ parent_id: OLD_FORUM_RX }) })),
+    );
+    expect(text(retired)).toBe(NOT_THREAD);
   });
 
   it("answers within the time budget when Discord is slow", async () => {
@@ -187,11 +190,11 @@ describe("To GitHub issue: submit", () => {
     expect(text(h.lastEdit())).toContain("Created OpenRX#41");
   });
 
-  it("refuses a repository outside the thread's forum, an empty title and non-members", async () => {
+  it("refuses a repository outside the thread's channel, an empty title and non-members", async () => {
     const h = await harness(github);
     await toIssueModal.handle(h.ctx(submission({ repo: "Charger", title: "T" })));
     await h.settle();
-    expect(text(h.lastEdit())).toBe("Charger is not discussed in #receivers.");
+    expect(text(h.lastEdit())).toBe("Charger is not discussed in #rx.");
     await toIssueModal.handle(h.ctx(submission({ repo: "OpenRX", title: "   " })));
     await h.settle();
     expect(text(h.lastEdit())).toBe("The issue needs a title.");

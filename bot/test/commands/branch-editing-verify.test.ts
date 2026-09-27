@@ -2,10 +2,9 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { branchCommand, branchInstructions } from "../../src/commands/branch.ts";
 import { editingCommand, formatEditing, MAX_PULLS } from "../../src/commands/editing.ts";
 import { clearVerificationUrlCache, verifyCommand, verifyMessage } from "../../src/commands/verify.ts";
-import { config, Directory, DirectoryCache } from "../../src/config.ts";
 import { InteractionResponseType, MessageFlags } from "../../src/types.ts";
 import { jsonResponse } from "../helpers.ts";
-import { FORUM_POWER, GEN_CHAT, GUILD, harness, ROLE_DEVELOPER, rxThread, slash, TAG_LITE, TAG_OPENRX, text, THREAD, type Handler } from "./fixtures.ts";
+import { CHANNEL_CHARGER, GEN_CHAT, GUILD, harness, OLD_FORUM_RX, ROLE_DEVELOPER, rxThread, slash, text, THREAD, type Handler } from "./fixtures.ts";
 
 const EPHEMERAL_DEFER = { type: InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE, data: { flags: MessageFlags.EPHEMERAL } };
 
@@ -18,61 +17,52 @@ describe("/branch", () => {
     return { h, response, reply: text(h.lastEdit()) };
   }
 
-  it("uses the thread's product tag and title", async () => {
+  it("uses the repository the thread name names, and the title", async () => {
     const { response, reply, h } = await run([]);
     expect(response).toEqual(EPHEMERAL_DEFER);
     const threadLink = `https://discord.com/channels/${GUILD}/${THREAD}`;
-    expect(reply).toBe(branchInstructions("OpenDrone-hw", "OpenRX", "fix-uart-pinout-on-v2-rev-b", threadLink));
+    expect(reply).toBe(branchInstructions("OpenDrone-hw", "OpenRX", "openrx-fix-uart-pinout-on-v2-rev-b", threadLink));
     expect(reply).toContain(`\nDiscussion: ${threadLink}\n`);
     expect(reply.length).toBeLessThanOrEqual(2000);
     expect(reply).toContain("gh repo fork OpenDrone-hw/OpenRX --clone");
-    expect(reply).toContain("git switch -c fix-uart-pinout-on-v2-rev-b");
+    expect(reply).toContain("git switch -c openrx-fix-uart-pinout-on-v2-rev-b");
+    expect(reply).toContain("the bot starts a separate thread");
+    expect(reply).not.toContain("forum");
     expect(reply).toContain("/editing repo:OpenRX");
     expect(h.calls.some((c) => c.url.startsWith("https://api.github.com"))).toBe(false);
   });
 
   it("asks for a repository when the thread names none or several", async () => {
-    const none = await run([], rxThread({ applied_tags: [] }));
+    const none = await run([], rxThread({ name: "PR #12: move the antenna" }));
     expect(none.reply).toContain("OpenRX, OpenRX-Lite, OpenRX-Lite-UFL, OpenRX-Mono, OpenRX-Gemini");
-    const two = await run([], rxThread({ applied_tags: [TAG_OPENRX, TAG_LITE] }));
-    expect(two.reply).toBe("This thread does not name one product. Run /branch repo:<name> with one of: OpenRX, OpenRX-Lite.");
+    const two = await run([], rxThread({ name: "OpenRX and OpenRX-Lite: shared UART" }));
+    expect(two.reply).toBe("This thread does not name one product. Run /branch repo:<name> with one of: OpenRX-Lite, OpenRX.");
   });
 
-  it("takes the repo option, falls back to a single-repo forum, and uses the thread id for untitled threads", async () => {
-    expect((await run([{ name: "repo", value: "openrx-mono" }], rxThread({ applied_tags: [] }))).reply).toContain(
-      "gh repo fork OpenDrone-hw/OpenRX-Mono --clone",
-    );
-    const power = await run([], rxThread({ parent_id: FORUM_POWER, applied_tags: [], name: "!!!" }));
+  it("takes the repo option, falls back to a single-repo channel, and uses the thread id for untitled threads", async () => {
+    expect((await run([{ name: "repo", value: "openrx-mono" }])).reply).toContain("gh repo fork OpenDrone-hw/OpenRX-Mono --clone");
+    const power = await run([], rxThread({ parent_id: CHANNEL_CHARGER, name: "!!!" }));
     expect(power.reply).toContain("gh repo fork OpenDrone-hw/Charger --clone");
     expect(power.reply).toContain(`git switch -c thread-${rxThread().id}`);
   });
 
-  it("refuses a repository of another forum, so no Discussion line the GitHub module would reject is handed out", async () => {
+  it("refuses a repository of another channel, so no Discussion line the GitHub module would reject is handed out", async () => {
     const other = await run([{ name: "repo", value: "Charger" }]);
     expect(other.reply).toBe(
-      "Charger is discussed in #power, not #receivers; run /branch in a thread there. " +
-        "This forum covers: OpenRX, OpenRX-Lite, OpenRX-Lite-UFL, OpenRX-Mono, OpenRX-Gemini.",
+      "Charger is discussed in #charger, not #rx; run /branch in a thread there. " +
+        "This channel covers: OpenRX, OpenRX-Lite, OpenRX-Lite-UFL, OpenRX-Mono, OpenRX-Gemini.",
     );
     expect(other.reply).not.toContain("Discussion:");
     const unknown = await run([{ name: "repo", value: "Nope" }]);
     expect(unknown.reply).toBe(
-      "`Nope` is not a repository in bot/config/repos.json. This forum covers: OpenRX, OpenRX-Lite, OpenRX-Lite-UFL, OpenRX-Mono, OpenRX-Gemini.",
+      "`Nope` is not a repository in bot/config/repos.json. This channel covers: OpenRX, OpenRX-Lite, OpenRX-Lite-UFL, OpenRX-Mono, OpenRX-Gemini.",
     );
     expect(unknown.reply).not.toContain("Discussion:");
   });
 
-  it("refuses a development forum with no repository", async () => {
-    const h = await harness();
-    const cfg = { ...config, repos: Object.fromEntries(Object.entries(config.repos).filter(([, r]) => r.forum !== "power")) };
-    const services = { ...h.services, directory: new Directory(h.services.discord, GUILD, { config: cfg, cache: new DirectoryCache() }) };
-    const interaction = slash("branch", [{ name: "repo", value: "OpenRX" }], { channel: rxThread({ parent_id: FORUM_POWER, applied_tags: [] }) });
-    await branchCommand.execute({ interaction, services });
-    await h.settle();
-    expect(text(h.lastEdit())).toBe("#power has no repository in bot/config/repos.json.");
-  });
-
-  it("refuses outside development forum threads", async () => {
-    expect((await run([], { id: GEN_CHAT, type: 0 })).reply).toBe("Run /branch inside a thread of a development forum.");
+  it("refuses outside product channel threads, the retired forum included", async () => {
+    expect((await run([], { id: GEN_CHAT, type: 0 })).reply).toBe("Run /branch inside a thread of a product channel.");
+    expect((await run([], rxThread({ parent_id: OLD_FORUM_RX }))).reply).toBe("Run /branch inside a thread of a product channel.");
   });
 
   describe("autocomplete", () => {
@@ -83,9 +73,9 @@ describe("/branch", () => {
       return { h, values: result.map((c) => c.value) };
     }
 
-    it("offers only the repositories of the thread's forum, tagged ones first", async () => {
+    it("offers only the repositories of the thread's channel, named ones first", async () => {
       expect((await choices("")).values).toEqual(["OpenRX", "OpenRX-Lite", "OpenRX-Lite-UFL", "OpenRX-Mono", "OpenRX-Gemini"]);
-      expect((await choices("", rxThread({ applied_tags: [TAG_LITE] }))).values).toEqual([
+      expect((await choices("", rxThread({ name: "OpenRX-Lite: antenna" }))).values).toEqual([
         "OpenRX-Lite",
         "OpenRX",
         "OpenRX-Lite-UFL",
@@ -95,10 +85,10 @@ describe("/branch", () => {
       expect((await choices("mono")).values).toEqual(["OpenRX-Mono"]);
       expect((await choices("openesc")).values).toEqual([]);
       expect((await choices("char")).values).toEqual([]);
-      expect((await choices("", rxThread({ parent_id: FORUM_POWER, applied_tags: [] }))).values).toEqual(["Charger"]);
+      expect((await choices("", rxThread({ parent_id: CHANNEL_CHARGER }))).values).toEqual(["Charger"]);
     });
 
-    it("offers nothing outside a development forum thread", async () => {
+    it("offers nothing outside a product channel thread", async () => {
       expect((await choices("", { id: GEN_CHAT, type: 0 })).values).toEqual([]);
       expect((await choices("", null)).values).toEqual([]);
     });

@@ -1,8 +1,8 @@
 /**
- * Shared helpers for the commands module: option access, role checks, forum
- * thread context, GitHub calls as the App installation, and text formatting.
+ * Shared helpers for the commands module: option access, role checks, product
+ * channel thread context, GitHub calls as the App installation, and text formatting.
  */
-import { findRepo, type RepoMatch, type RoleKey } from "../config.ts";
+import { findRepo, productChannels, reposInChannel, type RepoMatch, type RoleKey } from "../config.ts";
 import type { InteractionContext } from "../registry.ts";
 import { ChannelType, type Channel, type Interaction } from "../types.ts";
 
@@ -89,15 +89,16 @@ export const MEMBER_ROLES: readonly RoleKey[] = ["member", "admin", "developer",
 /** Roles that may see private-repository work in Discord. */
 export const STAFF_ROLES: readonly RoleKey[] = ["admin", "developer"];
 
-// --- forum threads -------------------------------------------------------------
+// --- product channel threads -------------------------------------------------
 
 export interface ThreadContext {
   thread: Channel;
-  forum: Channel;
-  /** Repositories whose development forum is this thread's forum, in repos.json order. */
+  /** The product text channel the thread belongs to. */
+  channel: Channel;
+  /** Repositories mapped to this product channel, in repos.json order. */
   repos: RepoMatch[];
-  /** Of those, the repositories whose product tag is applied to the thread. */
-  tagged: RepoMatch[];
+  /** Of those, the repositories the thread name mentions, longest name first. */
+  named: RepoMatch[];
 }
 
 /**
@@ -108,16 +109,37 @@ function threadFromInteraction(interaction: Interaction, channelId: string): Cha
   const channel = interaction.channel;
   if (!isRecord(channel) || channel.id !== channelId || typeof channel.type !== "number") return undefined;
   if (!THREAD_TYPES.has(channel.type)) return null;
-  if (typeof channel.parent_id !== "string" || !Array.isArray(channel.applied_tags)) return undefined;
+  if (typeof channel.parent_id !== "string" || typeof channel.name !== "string") return undefined;
   return channel as unknown as Channel;
 }
 
+const NAME_CHAR = /[a-z0-9_-]/;
+
 /**
- * The development-forum thread `channelId` (default: where the interaction
- * happened) and the repositories mapped to its forum. Null when the channel
- * is not a thread in a forum listed in config/repos.json.
+ * Repositories whose name appears in a thread name as a whole word, case
+ * insensitive, longest name first: "OpenFC-Lite: move the USB connector"
+ * names OpenFC-Lite, not OpenFC.
  */
-export async function forumThread(ctx: InteractionContext, channelId?: string): Promise<ThreadContext | null> {
+export function namedRepos(threadName: string, repos: RepoMatch[]): RepoMatch[] {
+  const lower = threadName.toLowerCase();
+  const named = repos.filter((repo) => {
+    const name = repo.repo.toLowerCase();
+    for (let at = lower.indexOf(name); at !== -1; at = lower.indexOf(name, at + 1)) {
+      const before = lower[at - 1] ?? "";
+      const after = lower[at + name.length] ?? "";
+      if (!NAME_CHAR.test(before) && !NAME_CHAR.test(after)) return true;
+    }
+    return false;
+  });
+  return named.sort((a, b) => b.repo.length - a.repo.length);
+}
+
+/**
+ * The thread `channelId` (default: where the interaction happened) and the
+ * repositories mapped to its parent channel. Null when the channel is not a
+ * thread in a product text channel listed in config/repos.json.
+ */
+export async function productThread(ctx: InteractionContext, channelId?: string): Promise<ThreadContext | null> {
   const { interaction, services } = ctx;
   const id = channelId ?? interaction.channel_id;
   if (!id) return null;
@@ -125,51 +147,39 @@ export async function forumThread(ctx: InteractionContext, channelId?: string): 
   if (known === null) return null;
   const thread = known ?? (await services.discord.getChannel(id));
   if (!THREAD_TYPES.has(thread.type) || typeof thread.parent_id !== "string") return null;
-  const forum = (await services.directory.channels()).find((c) => c.id === thread.parent_id);
-  if (!forum || forum.type !== ChannelType.GUILD_FORUM || !forum.name) return null;
+  const channel = (await services.directory.channels()).find((c) => c.id === thread.parent_id);
+  if (!channel || channel.type !== ChannelType.GUILD_TEXT || !channel.name) return null;
   const cfg = services.directory.config;
-  if (!cfg.forums.includes(forum.name)) return null;
-  const repos = Object.entries(cfg.repos)
-    .filter(([, entry]) => entry.forum === forum.name)
-    .map(([repo, entry]) => ({ repo, ...entry }));
-  const applied = new Set(Array.isArray(thread.applied_tags) ? (thread.applied_tags as string[]) : []);
-  const tagged = repos.filter((r) => {
-    const tagId = services.directory.tagId(forum, r.tag);
-    return tagId !== null && applied.has(tagId);
-  });
-  return { thread, forum, repos, tagged };
+  if (!productChannels(cfg).includes(channel.name)) return null;
+  const repos = reposInChannel(channel.name, cfg);
+  return { thread, channel, repos, named: namedRepos(thread.name ?? "", repos) };
 }
 
 /**
- * Null when `repo` belongs to the thread's forum, else the refusal for
+ * Null when `repo` belongs to the thread's channel, else the refusal for
  * `command`. The GitHub module (src/github/thread-link.ts linkState) follows
- * a "Discussion:" line only to a thread in the repository's own forum, so a
- * link or line for any other repository would be ignored there.
+ * a "Discussion:" line only to a thread in the repository's own product
+ * channel, so a link or line for any other repository would be ignored there.
  */
-export function wrongForum(thread: ThreadContext, repo: RepoMatch, command: string): string | null {
-  if (repo.forum === thread.forum.name) return null;
-  const here = thread.repos.length > 0 ? ` This forum covers: ${thread.repos.map((r) => r.repo).join(", ")}.` : "";
-  return `${repo.repo} is discussed in #${repo.forum}, not #${thread.forum.name}; run ${command} in a thread there.${here}`;
-}
-
-/** Refusal for a development forum with no repository in config/repos.json. */
-export function emptyForum(thread: ThreadContext): string {
-  return `#${thread.forum.name} has no repository in bot/config/repos.json.`;
+export function wrongChannel(thread: ThreadContext, repo: RepoMatch, command: string): string | null {
+  if (repo.channel === thread.channel.name) return null;
+  const here = thread.repos.length > 0 ? ` This channel covers: ${thread.repos.map((r) => r.repo).join(", ")}.` : "";
+  return `${repo.repo} is discussed in #${repo.channel}, not #${thread.channel.name}; run ${command} in a thread there.${here}`;
 }
 
 /** Autocomplete stops waiting for Discord after this; Discord drops answers after 3 s. */
 export const AUTOCOMPLETE_TIMEOUT_MS = 2_200;
 
 /**
- * Autocomplete limited to the repositories of the thread's forum, the ones
- * tagged on the thread first. No choices outside a development forum thread
- * or when the thread cannot be read in time.
+ * Autocomplete limited to the repositories of the thread's product channel,
+ * the ones the thread name mentions first. No choices outside a product
+ * channel thread or when the thread cannot be read in time.
  */
 export async function threadRepoChoices(ctx: InteractionContext): Promise<Array<{ name: string; value: string }>> {
-  const thread = await within(forumThread(ctx), AUTOCOMPLETE_TIMEOUT_MS);
+  const thread = await within(productThread(ctx), AUTOCOMPLETE_TIMEOUT_MS);
   if (!thread) return [];
-  const tagged = new Set(thread.tagged.map((r) => r.repo));
-  const names = [...thread.tagged.map((r) => r.repo), ...thread.repos.map((r) => r.repo).filter((n) => !tagged.has(n))];
+  const named = new Set(thread.named.map((r) => r.repo));
+  const names = [...thread.named.map((r) => r.repo), ...thread.repos.map((r) => r.repo).filter((n) => !named.has(n))];
   return repoChoices(ctx, names);
 }
 

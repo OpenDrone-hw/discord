@@ -343,14 +343,27 @@ class Planner:
             return (emoji["id"], emoji["name"])
         return (None, spec)
 
+    def final_names(self) -> dict:
+        """{channel id: (name, type)} after the plan: planned names over live ones."""
+        final = {c["id"]: (c["name"], c["type"]) for c in self.live_channels.values()}
+        final.update({e["id"]: (e["name"], e["type"]) for e in self.entries + self.archived})
+        return final
+
     def label(self, cid) -> str:
-        for e in self.entries + self.archived:
-            if e["id"] == cid:
-                return ("" if e["type"] == 4 else "#") + e["name"]
-        ch = self.live_channels.get(cid)
-        if ch:
-            return ("" if ch["type"] == 4 else "#") + ch["name"]
-        return str(cid)
+        """'#name' or 'Category'. When another channel carries the same name after the plan (a renamed
+        channel next to one still waiting to be deleted by hand), the type or the id is added."""
+        final = self.final_names()
+        if cid not in final:
+            return str(cid)
+        name, ctype = final[cid]
+        if ctype == 4:
+            return name
+        twins = [t for other, (n, t) in final.items() if other != cid and n == name and t != 4]
+        if not twins:
+            return "#" + name
+        if ctype not in twins:
+            return f"#{name} ({TYPE_NAMES.get(ctype, ctype)})"
+        return f"#{name} ({'new' if is_placeholder(cid) else cid})"
 
     def live_parent_name(self, ch: dict) -> str | None:
         parent = self.live_channels.get(ch.get("parent_id") or "")
@@ -582,6 +595,7 @@ class Planner:
         want = self.channel_want(spec, entry, where)
         live = entry["live"]
         tname = TYPE_NAMES[entry["type"]]
+        plain = ("" if entry["type"] == 4 else "#") + entry["name"]  # op labels carry the type or id already
         if live is None:
             body = {"name": entry["name"], "type": entry["type"],
                     "permission_overwrites": overwrite_body(None, entry["overwrites"])}
@@ -598,7 +612,7 @@ class Planner:
             where_in = f" in {entry['parent_name']}" if entry.get("parent_name") else ""
             summary = [f"{tname}{where_in}, access: {len(entry['overwrites'])} role overwrite(s)"]
             summary += [f"{k}: {self.display(k, v)!r}" for k, v in want.items()]
-            self.add(phase, {"action": "create", "label": f"{self.label(entry['id'])} ({tname})", "method": "POST",
+            self.add(phase, {"action": "create", "label": f"{plain} ({tname})", "method": "POST",
                              "path": f"/guilds/{self.gid}/channels", "body": body, "summary": summary,
                              "after_create": after})
             return
@@ -626,7 +640,7 @@ class Planner:
         if ow:
             body["permission_overwrites"] = overwrite_body(live, entry["overwrites"])
         if body:
-            self.add(phase, {"action": "update", "label": f"{self.label(entry['id'])} ({entry['id']})",
+            self.add(phase, {"action": "update", "label": f"{plain} ({entry['id']})",
                              "method": "PATCH", "path": f"/channels/{entry['id']}", "body": body,
                              "diff": diff, "overwrites": ow})
 
@@ -714,7 +728,18 @@ class Planner:
                 self.add("archive", {"action": "update", "label": f"#{a['name']} ({a['id']})", "method": "PATCH",
                                      "path": f"/channels/{a['id']}", "body": body, "diff": diff, "overwrites": ow})
         claimed = {e["id"] for e in self.entries} | {a["id"] for a in self.archived}
-        self.unmanaged["channels"] = sorted(c["name"] for c in self.live_channels.values() if c["id"] not in claimed)
+        self.unmanaged["channels"] = sorted(self.label(c["id"]).removeprefix("#")
+                                            for c in self.live_channels.values() if c["id"] not in claimed)
+        for e in self.entries:
+            live = e["live"]
+            if e["type"] == 4 or live is None or live["name"] == e["name"]:
+                continue
+            twins = sorted(c["id"] for c in self.live_channels.values()
+                           if c["id"] not in claimed and c["name"] == e["name"] and c["type"] != 4)
+            if twins:
+                self.notes.append(f"#{e['name']} ({e['id']}) is renamed to a name unmanaged channel(s) {', '.join(twins)} "
+                                  f"still carry; server.json refers to it by id, so both can exist until those are "
+                                  f"deleted by hand")
 
     def resolve_archive(self, ref, arc: dict, managed_ids: set) -> str:
         where = f"archive: {ref!r}"

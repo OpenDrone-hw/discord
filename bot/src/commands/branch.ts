@@ -1,12 +1,12 @@
 /**
- * /branch [repo]: run inside a development forum thread. Replies (only to the
+ * /branch [repo]: run inside a thread of a product channel. Replies (only to the
  * invoker) with the commands to fork the repository and start a branch named
  * after the thread title, and the "Discussion:" line to put in the pull
  * request description so its activity comes to this thread.
  *
- * Only repositories mapped to the thread's forum are accepted or offered by
+ * Only repositories mapped to the thread's channel are accepted or offered by
  * autocomplete: the GitHub module ignores a "Discussion:" line that points at
- * a thread in another forum.
+ * a thread in another channel.
  */
 import { defer } from "../interactions.ts";
 import type { Command, InteractionContext } from "../registry.ts";
@@ -14,8 +14,7 @@ import { ApplicationCommandType } from "../types.ts";
 import {
   branchSlug,
   code,
-  emptyForum,
-  forumThread,
+  productThread,
   guildOnly,
   MEMBER_PERMISSIONS,
   resolveRepoName,
@@ -23,7 +22,7 @@ import {
   threadRepoChoices,
   threadUrl,
   truncate,
-  wrongForum,
+  wrongChannel,
 } from "./util.ts";
 
 export function branchInstructions(org: string, repo: string, branch: string, threadLink: string): string {
@@ -42,7 +41,7 @@ export function branchInstructions(org: string, repo: string, branch: string, th
     `git switch -c ${branch}`,
     "```",
     `KiCad boards and schematics cannot be merged: run \`/editing repo:${repo}\` first to see which open pull requests change them.`,
-    "When you open the pull request, put this line in its description so its activity is posted here (without it the bot starts a separate forum post):",
+    "When you open the pull request, put this line in its description so its activity is posted here (without it the bot starts a separate thread):",
     "```",
     `Discussion: ${threadLink}`,
     "```",
@@ -52,25 +51,24 @@ export function branchInstructions(org: string, repo: string, branch: string, th
 
 async function branch(ctx: InteractionContext, repoOption: string | undefined): Promise<string> {
   const cfg = ctx.services.directory.config;
-  const thread = await forumThread(ctx);
-  if (!thread) return "Run /branch inside a thread of a development forum.";
-  if (thread.repos.length === 0) return emptyForum(thread);
+  const thread = await productThread(ctx);
+  if (!thread) return "Run /branch inside a thread of a product channel.";
 
   let repo = null;
   if (repoOption) {
     repo = resolveRepoName(ctx, repoOption);
     if (!repo) {
-      return `${code(truncate(repoOption, 100))} is not a repository in bot/config/repos.json. This forum covers: ${thread.repos.map((r) => r.repo).join(", ")}.`;
+      return `${code(truncate(repoOption, 100))} is not a repository in bot/config/repos.json. This channel covers: ${thread.repos.map((r) => r.repo).join(", ")}.`;
     }
-    const refusal = wrongForum(thread, repo, "/branch");
+    const refusal = wrongChannel(thread, repo, "/branch");
     if (refusal) return refusal;
-  } else if (thread.tagged.length === 1) {
-    repo = thread.tagged[0] ?? null;
+  } else if (thread.named.length === 1) {
+    repo = thread.named[0] ?? null;
   } else if (thread.repos.length === 1) {
     repo = thread.repos[0] ?? null;
   }
   if (!repo) {
-    const options = (thread.tagged.length > 1 ? thread.tagged : thread.repos).map((r) => r.repo);
+    const options = (thread.named.length > 1 ? thread.named : thread.repos).map((r) => r.repo);
     return `This thread does not name one product. Run /branch repo:<name> with one of: ${options.join(", ")}.`;
   }
   const slug = branchSlug(thread.thread.name ?? "", `thread-${thread.thread.id}`);
@@ -82,12 +80,12 @@ export const branchCommand: Command = {
   definition: {
     name: "branch",
     type: ApplicationCommandType.CHAT_INPUT,
-    description: "Fork and branch commands for this forum thread",
+    description: "Fork and branch commands for this thread",
     options: [
       {
         type: 3,
         name: "repo",
-        description: "Repository of this thread's forum, when the thread has no single product tag",
+        description: "Repository of this thread's channel, when the thread name does not name exactly one",
         required: false,
         autocomplete: true,
       },

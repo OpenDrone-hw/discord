@@ -82,7 +82,7 @@ export async function handleRepositoryEdited(ctx: GitHubEventContext): Promise<v
   const to = currentStatus(scope.repo.topics);
   // A removed status without a new one is not announced.
   if (!to || to === from) return;
-  const labels = scope.services.directory.config.lifecycleTags;
+  const labels = scope.services.directory.config.lifecycle;
   const repoLink = link(scope.repo.name, scope.repo.htmlUrl);
   const change = from
     ? `moved from **${escapeMarkdown(labels[from])}** to **${escapeMarkdown(labels[to])}**`

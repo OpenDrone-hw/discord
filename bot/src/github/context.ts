@@ -62,7 +62,7 @@ export async function postToChannel(services: Services, key: ChannelKey, message
 }
 
 /**
- * Posts into a linked forum thread. A thread that was deleted or that the bot
+ * Posts into a linked thread. A thread that was deleted or that the bot
  * cannot reach is logged and skipped; the PR keeps its link.
  */
 export async function postToThread(services: Services, threadId: string, message: MessagePayload): Promise<boolean> {
