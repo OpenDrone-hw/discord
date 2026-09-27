@@ -23,11 +23,12 @@ describe("escaping", () => {
       "Fix \\*\\*bold\\*\\* \\_it\\_ \\`code\\` \\~\\~x\\~\\~ \\|\\|spoiler\\|\\|",
     );
     expect(escapeMarkdown("[click](https://evil.example) <@123> <t:1:R>")).toBe(
-      "\\[click\\]\\(https://evil.example\\) \\<@123\\> \\<t:1:R\\>",
+      "\\[click\\](https://evil.example) \\<@123\\> \\<t:1:R\\>",
     );
     expect(escapeMarkdown("# big\nsecond line")).toBe("\\# big second line");
     expect(escapeMarkdown("-# small")).toBe("\\-# small");
     expect(escapeMarkdown("OpenRX-Lite v1.0")).toBe("OpenRX-Lite v1.0");
+    expect(escapeMarkdown("Test (do not merge)")).toBe("Test (do not merge)");
   });
 
   it("makes code spans without backticks", () => {

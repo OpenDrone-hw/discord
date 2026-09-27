@@ -44,10 +44,14 @@ export function truncate(text: string, max: number): string {
   return `${text.slice(0, Math.max(0, max - 3)).trimEnd()}...`;
 }
 
-/** Escapes Discord markdown in inline text (titles, logins, file names). */
+/**
+ * Escapes Discord markdown in inline text (titles, logins, file names).
+ * Parentheses stay as they are: Discord shows "\(" literally inside a masked
+ * link label, and with "[" and "]" escaped no link can form anyway.
+ */
 export function escapeMarkdown(text: string): string {
   return oneLine(text)
-    .replace(/[\\`*_~|[\]()<>]/g, "\\$&")
+    .replace(/[\\`*_~|[\]<>]/g, "\\$&")
     .replace(/^[#>-]/, "\\$&");
 }
 

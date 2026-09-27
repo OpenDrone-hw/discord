@@ -2,506 +2,150 @@
 
 Configuration as code for the [OpenDrone Discord server](https://discord.gg/v3sWmTcx3R).
 
-| Part | What it is | Guide |
-|---|---|---|
-| `server.json` + `discord_config.py` | Channels, categories, forums, roles, order, archive, onboarding, welcome screen, AutoMod and guild settings, planned and applied from Git | [Commands](#commands), [`server.json`](#serverjson) |
-| `migrate.py` | Member-facing steps after the layout is applied: pinned rules, one pinned hub message per public repository, the Server Guide resource pages and the #welcome message, rewrite the archive notices, move firmware team roles to user roles, follower-role backfill, manual checklist | [Migration](#migration-migratepy) |
-| `bot/` | Cloudflare Worker bot: GitHub activity into Discord, KiCad collision guard, commands, linked roles | [bot/README.md](bot/README.md) |
+| Part | What it is |
+|---|---|
+| `server.json` + `discord_config.py` | Channels, roles, permissions, onboarding, welcome screen, AutoMod and guild settings, planned and applied from Git |
+| `migrate.py` | Posts the bot-owned texts: #rules, #welcome, the Server Guide resource pages and one hub message per repository |
+| `bot/` | Cloudflare Worker: pull request threads, `#git-feed`, KiCad collision guard, commands, linked roles. See [bot/README.md](bot/README.md) |
+
+## Change the server
 
 ```mermaid
 flowchart LR
-  J[server.json] --> P[plan]
-  L[(live server)] -->|GET guild, channels, roles, emojis, onboarding, welcome screen, AutoMod| P
-  P -->|plan / apply| R[printed diff]
-  P -->|apply --yes| S[snapshot] --> A[apply phases: roles ... guild] --> B[read back: no diff]
-  S -.->|restore --yes| L
-  B --> M[migrate.py: resources, rules, hubs, unarchive, firmware-roles, backfill]
+  E[edit server.json] --> P[plan] --> R[review the diff] --> A[apply --yes] --> S[snapshot] --> W[write] --> B[read back: no diff]
 ```
 
-## Target layout
+```sh
+python3 discord_config.py plan          # diff against the live server, writes nothing
+python3 discord_config.py apply --yes   # snapshot, apply, read back
+python3 discord_config.py restore snapshots/<file>.json [--yes]
+```
 
-This is what `server.json` describes. `discord_config.py plan` shows how far the
-live server is from it.
+The token comes from `OPENDRONE_DISCORD_BOT_TOKEN`, else
+`~/.config/incutec/credentials.env`. Python 3.10+, standard library only.
+
+| Rule | Effect |
+|---|---|
+| Only listed things are managed | Channels, roles, prompts, options, tags and AutoMod rules not in `server.json` are reported as unmanaged and left alone |
+| Nothing is deleted | A channel leaves `server.json` or moves to `archive`; a person deletes it in the UI |
+| Snapshot and read back | Every `apply --yes` saves `snapshots/` (git-ignored) first and fails if the server still differs afterwards |
+| Lockout guard | Refuses a plan that hides a channel from `admin` or the bot, lets an onboarding option hand out a staff or privileged role, or breaks Discord's onboarding minimum (7 default channels, 5 writable) |
+
+## Layout
 
 ```mermaid
 flowchart LR
-  subgraph Start["Start: readonly"]
-    direction TB
-    welcome["#welcome"] --- rules["#rules"] --- ann["#announcements: announcement"] --- res["4 resource pages: #how-to-contribute ... #licence-and-ai"]
+  subgraph Start
+    s1["#welcome, #rules, #announcements"]
   end
-  subgraph Community["Community: open"]
-    direction TB
-    gen["#gen-chat"] --- intro["#introduce-yourself"] --- flying["#flying"] --- off["#off-topic"] --- builds["#builds"] --- props["#proposals"]
+  subgraph Community
+    c1["#gen-chat, #introduce-yourself, #flying, #off-topic, #builds, #proposals"]
   end
-  subgraph Support["Support: open"]
-    direction TB
-    help["help: forum"] --- chatfpv["#chatfpv"]
+  subgraph Support
+    h1["help (forum), #chatfpv"]
   end
-  subgraph Development["Development: open"]
-    direction TB
-    feed["#git-feed: announcement, GitHub feed role only"] --- alpha["alpha-testing: forum, testers only"]
+  subgraph Development
+    d1["#git-feed (GitHub feed role), alpha-testing (testers)"]
   end
-  subgraph Hardware["Hardware: open"]
-    direction TB
-    hw["12 product chats: #fc ... #motors, #kicad-library"]
+  subgraph Hardware
+    hw["one channel per product line"]
   end
-  subgraph Software["Software: open"]
-    direction TB
-    sw["4 firmware and web chats"]
+  subgraph Software
+    sw["#fc-betaflight, #esc-am32, #rx-expresslrs, #opendrone-web"]
   end
-  subgraph Voice["Voice: open"]
-    direction TB
-    gv["general"] --- tv["troubleshooting"] --- dc["dev-call: voice"] --- cc["community-call: stage"]
+  subgraph Voice
+    v1["general, troubleshooting, dev-call, community-call"]
   end
-  subgraph Staff["Staff: staff"]
-    direction TB
-    modlog["#mod-log"]
+  subgraph Staff
+    st["#mod-log, #web-support, #web-support-admin"]
   end
   Start --> Community --> Support --> Development --> Hardware --> Software --> Voice --> Staff
 ```
 
-One text channel per product. Pull requests of a product's public
-repositories get a thread in its channel (the bot starts it, see
-[bot/README.md](bot/README.md)), and a pinned hub message per repository links
-the repository, its releases and its lifecycle (`migrate.py hubs`).
-
-| Category | Channel | Type | Access | Onboarding default | Onboarding option that adds it |
-|---|---|---|---|---|---|
-| Start | welcome | text | readonly | yes | |
-| Start | rules | text | readonly | yes | |
-| Start | announcements | announcement | readonly | yes | |
-| Start | how-to-contribute, product-lifecycle, buying-and-support, licence-and-ai | text | readonly | | none: Server Guide resource pages |
-| Community | gen-chat, introduce-yourself, flying, off-topic | text | open | yes | |
-| Community | builds | text | open | yes | |
-| Community | proposals | text | open | yes | Proposals |
-| Support | help | forum | open | yes | |
-| Support | chatfpv | text | open | | Web and tools |
-| Development | git-feed | announcement | feed | | GitHub feed (role) |
-| Development | alpha-testing | forum | testers | | none |
-| Hardware | fc, aio, esc, rx, vtx, digital-vtx, remote-id, gps, frame, charger, motors, kicad-library | text | open | | the product line, see [Onboarding](#onboarding) |
-| Software | fc-betaflight, esc-am32, rx-expresslrs, opendrone-web | text | open | | Betaflight, AM32, ExpressLRS; Web and tools |
-| Voice | general, troubleshooting | voice (kept as live) | open | yes (category) | |
-| Voice | dev-call | voice | open | yes (category) | |
-| Voice | community-call | stage | open | yes (category) | |
-| Staff | mod-log | text | staff | | |
-| Staff | web-support, web-support-admin | forum, text | unmanaged | | |
-
-Text channel topics in `server.json` are one line. Every product channel's topic
-names the repositories `bot/config/repos.json` maps to it. The #welcome topic
-links #rules and #introduce-yourself as `<#id>` mentions. `#builds` and
-`#proposals` are the old chats with their history and ids, renamed back from
-`#build-chat` and `#proposal-chat`.
-
-The four resource channels are the Server Guide's resource pages: readable by
-`@everyone` (a Server Guide requirement) and read-only. `migrate.py resources`
-posts their text.
-
-`#web-support` and `#web-support-admin` belong to the storefront support bot:
-they are `guard.protected_channels`, so the tool refuses any plan that manages
-or archives them, and they are reported as unmanaged. Storefront tickets land
-in `#web-support`; both sit in Staff, which the tool leaves in place.
-
-Two channels are hidden from `@everyone` so members who did not ask for them
-see no unread badge. Discord has no server-side default mute, so hiding is the
-only lever:
-
-| Channel | Who sees it | How a member gets it |
-|---|---|---|
-| #git-feed | the `GitHub feed` role, admin, the bot | Pick GitHub feed in onboarding or Channels & Roles |
-| alpha-testing | `beta tester`, `developer`, admin | An admin gives `beta tester` with an alpha board |
-
-Channels that are no longer in `server.json` are reported as unmanaged and
-deleted by hand, never by the tool: the twelve empty forums of the previous
-layout (the `builds` and `proposals` forums, `flight-controllers`, `escs`,
-`receivers`, `video`, `remote-id-gps`, `frames`, `power`, `library`, `firmware`,
-`web-and-tools`), `#support-chat` and `#roles` (the dead carl-bot reaction roles;
-take it off the Server Guide first, Discord refuses to delete a guide channel). Until then two channels are named
-`builds` and two `proposals`; `server.json` lists the text channels by id, so
-names resolve to them, the plan labels each twin with its type (`#builds (text)`,
-`#builds (forum)`) and prints a note per rename.
-
-### Forums
-
-| Forum | Tags | Tag required |
-|---|---|---|
-| help | Product line, `question`, `bug`, `solved` | Yes |
-| alpha-testing | Product line, `report`, `bug`, `fixed` (moderated) | Yes |
-
-Moderated tags can only be set by members with Manage Threads.
-
-### Access profiles
-
-| Profile | `@everyone` | Other roles |
-|---|---|---|
-| `open` | View, send, history, reactions, attach, embed, create public threads, send in threads, use application commands; deny `MENTION_EVERYONE` and `CREATE_PRIVATE_THREADS` | none |
-| `readonly` | View, history, reactions; deny send, create threads, send in threads | `admin` and `OpenDrone Dev` post (the bot may also pin) |
-| `staff` | Deny view | `admin`, `Support` and `OpenDrone Dev` see and post |
-| `testers` | View, history, reactions, attach, embed, send in threads, use application commands; deny send (in a forum: create posts) and `MENTION_EVERYONE` | `beta tester`, `developer`, `admin` create posts |
-
-No profile names `Newbie` or `Member`, so `apply --yes` removes their
-overwrites from every managed and archived channel.
-
-## Gating model A
-
-Discord Onboarding is the gate. A new member cannot read or post until they
-answer the required prompt "Where are you from?". Every managed community
-channel then grants `@everyone` directly.
-
-```mermaid
-flowchart LR
-  J[Join] --> O{Onboarding: region answered?}
-  O -->|no| W[Waits in onboarding]
-  O -->|yes| R[Region role + Member] --> C[Every open channel via @everyone]
-  C --> P[Optional prompts: what you fly, product lines, firmware]
-```
-
-| Question | Answer |
+| What a member sees | How |
 |---|---|
-| Why not gate with roles? | 414 of 507 members hold `Newbie` (carl-bot gives it on join). A `Newbie` deny left on any channel locks all of them out, and a channel only `Member` unlocks hides it from everyone without `Member` |
-| What happens to `Newbie` and `Member`? | Both roles stay; they are never deleted. No channel overwrite uses them. The region options still give `Member`, and the bot's member-only commands (`/link`, To GitHub issue) read it. Nothing gives `Newbie` once carl-bot is removed |
-| What enforces it? | `guard.gating_roles` is `["Newbie", "Member"]`: the [lockout guard](#lockout-guard) refuses a plan in which holding any mix of them takes away a permission `@everyone` alone has. A test checks no managed channel has a `Newbie` or `Member` overwrite |
-| What keeps onboarding valid? | Ten default channels, six of them text channels `@everyone` can view and send in (#gen-chat, #introduce-yourself, #off-topic, #flying, #builds, #proposals), so Discord's minimum of 7 and 5 is met by the defaults alone, without relying on how it counts forums or option channels. The tool checks this before any write, see [Onboarding requirement check](#onboarding-requirement-check) |
+| Start, Community, help, Voice | Onboarding defaults |
+| A product or firmware channel | Picking it in onboarding or Channels & Roles |
+| #git-feed | Picking GitHub feed, which gives the `GitHub feed` role |
+| alpha-testing | `beta tester`, given by an admin with an alpha board |
+| Staff | `admin`, `Support`, the bot |
 
-## Onboarding
+Four read-only channels (#how-to-contribute, #product-lifecycle,
+#buying-and-support, #licence-and-ai) are the Server Guide resource pages and
+are not in the sidebar. `#web-support` (storefront tickets) and
+`#web-support-admin` belong to the storefront support bot: they are
+`guard.protected_channels`, so no plan touches them.
 
-Mode `advanced`. Onboarding replaces the carl-bot reaction roles in #roles;
-members change their answers later in Channels & Roles (`<id:customize>`).
+Access profiles in `server.json`: `open` (everyone reads and writes),
+`readonly` (admin and the bot post), `staff`, `testers` and `feed` (hidden
+except for their roles). No profile uses `Newbie` or `Member`: onboarding is the
+gate, and the region answer gives `Member`.
 
-| Prompt | Required | Options: roles given | Channels added |
-|---|---|---|---|
-| Where are you from? | Yes, single select | North America, Europe, Asia, South America, Oceania, Africa: that region role and `Member` | none |
-| What do you fly? | No | Plane, Camera ("Camera drones and cinematography"), FPV, Tinywhoop, Racing, Freestyle, Commercial, Long Range, Cinewhoop, Toothpick (custom server emojis): the role of the same name | none |
-| Follow OpenDrone development | No | A follower role: Flight controllers `FC follower`; ESCs `ESC follower`; Receivers `RX follower`; Video `Video follower`; Remote ID and GPS `RemoteID-GPS follower`; Frames `Frame follower`; Power `Power follower`; KiCad library `Library follower`; Web and tools `Web-Tools follower`; GitHub feed `GitHub feed`, which is what makes #git-feed visible; Proposals: no role | See below |
-| Which firmware do you use? | No | Betaflight, AM32, ExpressLRS: `Betaflight user`, `AM32 user`, `ExpressLRS user` | fc-betaflight, esc-am32, rx-expresslrs |
+## Onboarding and roles
 
-Option descriptions name the channels an option adds; none promises a ping,
-because the bot never pings a follower role. The firmware prompt was titled
-"Firmware"; `renamed_from` keeps its id.
-
-| Follow option | Channels it points at |
+| Prompt | Gives |
 |---|---|
-| Flight controllers | #fc, #aio |
-| ESCs | #esc |
-| Receivers | #rx |
-| Video | #vtx, #digital-vtx |
-| Remote ID and GPS | #remote-id, #gps |
-| Frames | #frame |
-| Power | #charger, #motors |
-| KiCad library | #kicad-library |
-| Web and tools | #opendrone-web, #chatfpv |
-| Proposals | #proposals |
-| GitHub feed | none: the `GitHub feed` role shows #git-feed |
+| Where are you from? (required) | Region role and `Member` |
+| What do you fly? | The role of the same name |
+| Follow OpenDrone development | `FC follower` ... `Web-Tools follower` and their channels; `GitHub feed`; #proposals |
+| Which firmware do you use? | `Betaflight user`, `AM32 user`, `ExpressLRS user` and their channels |
 
-Default channels: #welcome, #rules, #announcements, #gen-chat,
-#introduce-yourself, #off-topic, #flying, help, #builds, #proposals and the
-Voice category. The
-product channels are not defaults: a member sees the ones the options they
-picked add. In `advanced` mode a channel that is neither default nor added by a
-picked option is hidden from the member's sidebar and stays reachable through
-Browse Channels; the resource channels open from the Server Guide.
-Welcome screen: #rules, #announcements, help, #builds, #gen-chat.
-
-## Roles
-
-`server.json` creates or updates these; every other role is left alone.
-
-| Role | Given by | Onboarding may give it |
-|---|---|---|
-| `Maintainer` (hoisted) | Linked role: `maintainer` is true, see [bot/README.md](bot/README.md#linked-role-metadata) | No |
-| `Contributor` (hoisted) | Linked role: `merged_prs` at least 1 | No |
-| `Verified Owner` | Linked role: `owner` is true. Owner means any paid order on opendrone.be, preorders included; the storefront fills it, until then it is 0 for everyone | No |
-| `Verified Builder` (`#c27c0e`, apart from the green of `beta tester` and `Support`) | The bot's Approve build message command (reviewer or admin) | No |
-| `Support` (only its permissions are managed) | Moderators | No |
-| `Europe`, `North America`, `South America`, `Asia`, `Oceania`, `Africa` (only their colour is managed: none) | Onboarding "Where are you from?" | Yes |
-| `FC follower`, `ESC follower`, `RX follower`, `Video follower`, `RemoteID-GPS follower`, `Frame follower`, `Power follower`, `Library follower`, `Web-Tools follower` (renamed from `FC dev` ... `Web-Tools dev` through `renamed_from`, so members keep them) | Onboarding "Follow OpenDrone development"; `migrate.py backfill` | Yes |
-| `Betaflight user`, `AM32 user`, `ExpressLRS user` (no colour, not hoisted) | Onboarding "Which firmware do you use?"; `migrate.py backfill`; `migrate.py firmware-roles` | Yes |
-
-Only `Support` has permissions: its live moderation set (timeout, mute, move,
-nicknames) plus `MANAGE_MESSAGES` and `MANAGE_THREADS`, so support staff can
-delete spam, pin and close threads. It is in `guard.unassignable_roles`, so no
-onboarding option can give it. None of the other roles has a permission. `Betaflight`, `AM32` and `ExpressLRS` are the
-coloured, hoisted team roles of those projects' maintainers; `server.json` does
-not manage them and moderators give them by hand. `guard.unassignable_roles`
-lists `developer`, `beta tester`, `reviewer`, `Support`, `Maintainer`,
-`Contributor`, `Verified Owner`, `Verified Builder`, `Betaflight`, `AM32` and
-`ExpressLRS`, so no onboarding option can hand them out.
-
-## AutoMod
-
-| Rule | Trigger | Actions |
-|---|---|---|
-| Block Mention Spam (Discord's own rule, not managed) | At most 20 mentions per message, raid protection on | Block. The API answers 404 to edits of this system rule, so change it in Server Settings > AutoMod if needed |
-| Block Harmful Words | Keyword presets sexual content, slurs | Block, alert in #mod-log |
-| Block Spam | Spam | Block, alert in #mod-log |
-| Block Invite Links | Invite link patterns, except `discord.gg/v3sWmTcx3R` | Block with a message, alert in #mod-log |
-
-Every managed rule exempts `admin`, `Support`, `developer`, the `OpenDrone Support` and
-`OpenBrain` bot roles, and the two storefront support channels. Guild settings:
-the server description, rules channel #rules, community updates #mod-log,
-safety alerts #mod-log, and system channel flags that suppress join messages,
-sticker replies to them and server setup tips while boost messages stay on.
-
-## Commands
-
-The bot token is read from `OPENDRONE_DISCORD_BOT_TOKEN` in the environment, else
-from `~/.config/incutec/credentials.env`. Python 3.10+, standard library only.
-If Python has no CA store (python.org builds on macOS), `/etc/ssl/cert.pem` is used.
-
-| Command | Reads | Writes |
-|---|---|---|
-| `python3 discord_config.py plan` | Live server | Nothing; prints the diff |
-| `python3 discord_config.py plan --verbose` | Live server | Nothing; every permission and role name |
-| `python3 discord_config.py apply` | Live server | Nothing; same diff, then "Dry run" when there is a change |
-| `python3 discord_config.py apply --yes` | Live server | Snapshot, then phase by phase (roles, categories, channels, positions, archive, onboarding, welcome screen, AutoMod, guild) with a fresh fetch after each phase that wrote, then reads back |
-| `python3 discord_config.py audit` | Live server | Snapshot only |
-| `python3 discord_config.py restore snapshots/<file>.json` | Live server, the snapshot | Nothing; lists what would be restored |
-| `python3 discord_config.py restore snapshots/<file>.json --yes` | Live server, the snapshot | `before-restore` snapshot, then overwrites and category of managed and archived channels, onboarding and welcome screen from the snapshot, then reads back |
-
-"Live server" is the guild, channels, roles, emojis, onboarding, welcome screen
-and AutoMod rules. In compact output, permission lists longer than 4 show the
-privileged permissions by name and count the rest; identical overwrite changes
-are grouped. Privileged permissions are the ones that manage the server, act on
-other members or their messages, or ping everyone:
-
-| Privileged permissions |
-|---|
-| `ADMINISTRATOR`, `MANAGE_GUILD`, `MANAGE_ROLES`, `MANAGE_CHANNELS`, `MANAGE_WEBHOOKS`, `MENTION_EVERYONE`, `BAN_MEMBERS`, `KICK_MEMBERS`, `MODERATE_MEMBERS`, `MANAGE_MESSAGES`, `MANAGE_THREADS`, `MANAGE_GUILD_EXPRESSIONS`, `MANAGE_EVENTS`, `MANAGE_NICKNAMES`, `MUTE_MEMBERS`, `DEAFEN_MEMBERS`, `MOVE_MEMBERS`, `VIEW_AUDIT_LOG`, `PIN_MESSAGES` |
-
-A role create line lists the role's permissions and an update line the
-added and removed ones, in the same form. A new onboarding prompt or option is
-printed with the roles and channels each option gives, by name, for example
-`prompt 'Where are you from?': new option 'Asia': roles [Asia, Member]`.
-
-`--config <path>` (before the command) uses another file than `server.json`.
-Every write carries the audit log reason `OpenDrone-hw/discord discord_config.py`.
-
-## `server.json`
-
-| Key | Meaning |
+| Role | Given by |
 |---|---|
-| `guild_id` | The server |
-| `guard` | Lockout guard, see below |
-| `profiles` | Named sets of role overwrites: `{role name: {allow: [...], deny: [...]}}`. Permission names are Discord's flag names (`VIEW_CHANNEL`, `SEND_MESSAGES`, ...); `@everyone` is the everyone role |
-| `roles[]` | `name`, optional `renamed_from` (the role's former name: the live role of that name is renamed in place and keeps its members), `color` (`#rrggbb`), `hoist`, `mentionable`, `permissions`. Missing roles are created, listed ones updated, none deleted; integration-managed roles are skipped; a change to a role at or above the bot's role is refused. Role order is not managed: new roles are created at the bottom, so drag them into place in Server Settings > Roles |
-| `categories[]` | `name`, `access` (a profile or an inline overwrite set), optional `id` and `channels[]`. Without `id` a category is matched by name and created when missing. List order is category order; the archive category always comes last |
-| `channels[]` | Optional `id`, `name`, optional `type` (`text`, `announcement`, `voice`, `stage`, `forum`, `media`), `topic` (one line on a text channel; post guidelines on a forum), `slowmode`, `bitrate`, `user_limit`, `forum`, `access`. Without `access` a channel gets its category's. With `id` and no `type` the live type is kept. Without `id` it is matched by name and type (default `text`) inside its category and created when missing; a live channel of the same name but another type is left alone and noted. A live channel listed anywhere by `id` is never matched by name, so a text channel renamed in place frees its old name for a new forum. Only `text` and `announcement` convert into each other. Text, announcement, forum and media names must be lowercase without spaces, the form Discord stores; other names are refused. List order is channel order |
-| `forum` | `tags[]` (`name`, `emoji`, `moderated`; at most 20, live tags not listed are kept), `default_reaction`, `layout` (`list`, `gallery`), `sort` (`activity`, `creation`), `require_tag`, `post_slowmode` |
-| `archive` | `category` (created when missing), optional `id` of that category, `access`, `channels[]` (ids, `Category/name` or a unique name of channels not listed under `categories`): each listed channel moves into that category and gets its access; messages stay. Categories cannot be archived |
-| `onboarding` | `enabled`, `mode` (`default`, `advanced`), `default_channels[]`, `prompts[]` with `title`, optional `renamed_from` (a former title: that live prompt is retitled and keeps its id), `type` (`multiple_choice`, `dropdown`), `single_select`, `required`, `in_onboarding`, `options[]` (`title`, `description`, `emoji`, `roles[]`, `channels[]`), optional `retired_options[]` (titles of live options to remove). Prompts and options match by title; live ones not listed are kept, except a retired option |
-| `welcome_screen` | `enabled`, `description`, `channels[]` (at most 5: `channel`, `description`, `emoji`) |
-| `automod[]` | Rules matched by `name`: `trigger` (`keyword`, `spam`, `keyword_preset`, `mention_spam`, `member_profile`), optional `event`, `metadata`, `actions[]` (`block` with optional `message`, `alert` with `channel`, `timeout` with `seconds`, `block_interaction`), `enabled`, `exempt_roles[]`, `exempt_channels[]`. Live rules not listed are left alone; per-trigger caps are checked including them |
-| `guild` | `description`, `rules_channel`, `public_updates_channel`, `system_channel`, `safety_alerts_channel`, `system_channel_flags` (the flags to set, by Discord's names: `SUPPRESS_JOIN_NOTIFICATIONS`, `SUPPRESS_PREMIUM_SUBSCRIPTIONS`, `SUPPRESS_GUILD_REMINDER_NOTIFICATIONS`, `SUPPRESS_JOIN_NOTIFICATION_REPLIES` and the two role subscription flags; a known flag not listed is cleared, an unknown bit is kept) |
+| `Contributor` | Linked role: 1 or more merged PRs in OpenDrone-hw |
+| `Maintainer` | Linked role: member of the GitHub team `core` |
+| `Verified Owner` | Linked role: an order on opendrone.be (the storefront does not report it yet) |
+| `Verified Builder` | The bot's Approve build command |
+| `Support` | Moderators; the only managed role with permissions |
+| `Betaflight`, `AM32`, `ExpressLRS` | By hand, for those projects' maintainers |
 
-Only `guild_id`, `profiles` and `categories` are required; a missing optional key
-leaves that part of the server unmanaged. Roles are referenced by name; the tool
-refuses to run if two roles share a name. Channels are referenced by id,
-`Category/name` or a unique name. An emoji is a Unicode emoji or `:name:` for a
-custom server emoji. An unknown key, profile, role, permission or emoji, a
-permission both allowed and denied, or a channel listed twice stops the run
-before any request that writes.
+## `server.json` keys
 
-### Onboarding requirement check
-
-Discord refuses an enabled onboarding that does not have enough default
-channels. The tool refuses such a plan before any write, using its own
-conservative estimate of Discord's rule:
-
-| Counted | Rule |
+| Key | Holds |
 |---|---|
-| Channels | Default channels; a category counts as its channels; `advanced` mode adds the channels options grant |
-| At least 7 | Channels `@everyone` can view in the planned state |
-| At least 5 | Text or announcement channels `@everyone` can view and send in; forums, media, voice and stage never count here |
+| `guard` | `protected_roles`, `gating_roles`, `must_see`, `protected_channels`, `unassignable_roles` |
+| `profiles` | Named overwrite sets: `{role: {allow: [...], deny: [...]}}` with Discord flag names |
+| `roles[]` | `name`, `renamed_from`, `color`, `hoist`, `mentionable`, `permissions` |
+| `categories[]` | `name`, `access`, optional `id`, `channels[]`; list order is sidebar order |
+| `channels[]` | `name`, optional `id`, `type`, `topic`, `access`, `slowmode`, `forum` (`tags`, `default_reaction`, `layout`, `sort`, `require_tag`) |
+| `archive` | A category and the channels moved into it |
+| `onboarding` | `mode`, `default_channels`, `prompts[]` (`options[]`, `renamed_from`, `retired_options[]`) |
+| `welcome_screen`, `automod[]`, `guild` | As Discord names them |
 
-| Planned onboarding change | Live `below_requirements` | Check |
-|---|---|---|
-| `default_channels`, `mode` or `enabled` changes, onboarding ends enabled | any | Enforced |
-| Only prompts change, onboarding enabled | `true` or missing | Enforced |
-| Only prompts change, onboarding enabled | `false` | Skipped; the plan prints a note with the estimate |
-| Onboarding ends disabled, or nothing changes | any | Skipped |
+Roles are referenced by name, channels by id, `Category/name` or a unique name.
+An unknown key, role, permission or emoji stops the run before any write.
 
-### Lockout guard
+## Bot-owned texts (`migrate.py`)
 
-| `guard` key | Default | Rule |
-|---|---|---|
-| `protected_roles` | `["admin"]` | Never denied `VIEW_CHANNEL` by any planned overwrite and never lose `ADMINISTRATOR` or `VIEW_CHANNEL`; the bot's own role is always included |
-| `gating_roles` | `["Newbie", "Member"]` | Gating model A: onboarding is the gate, so holding any mix of these roles (none included) never takes a permission away; see below |
-| `must_see` | `["welcome", "rules"]` | Channels every gating mix must see |
-| `protected_channels` | `[]` | Ids of existing channels that are never managed or archived; a name or unknown id is refused |
-| `unassignable_roles` | `[]` | Roles no onboarding option may give; each must exist or be listed in `roles` |
+Each subcommand is a dry run without `--yes` and edits its message in place
+when the text changed; nothing is reposted or pinned twice.
 
-For each checked channel the guard works out, in the planned state, the
-effective permissions of a member holding `@everyone` plus each mix of gating
-roles (`@everyone` alone, `+ Newbie`, `+ Member`, `+ Newbie + Member`):
-
-| Channel | Checked | Rule |
-|---|---|---|
-| `must_see` channel, onboarding default channel, default category | Always | Every mix can view it |
-| Channel inside a default category, any category or channel managed or archived by `server.json` | Unless no mix can view it (staff and private channels) | Every mix can view it |
-| All of the above | As above | Every mix keeps every permission `@everyone` alone has there |
-
-So any leftover `Newbie` or `Member` deny that removes a permission `@everyone`
-alone has (`VIEW_CHANNEL`, `SEND_MESSAGES`, `READ_MESSAGE_HISTORY`,
-`SEND_MESSAGES_IN_THREADS`, or any other bit) is a violation, and so is a
-channel only `Member` unlocks (`@everyone` denied `VIEW_CHANNEL`, `Member`
-allowed), because a member without `Member` cannot see it. A channel no mix can
-view is skipped as a staff or private channel. A violation is refused when the
-channel is managed or archived by `server.json`, when the plan changes a gating
-role's permissions, or, for default channels, when the plan changes onboarding.
-A violation in an unmanaged channel the plan does not change is printed as a
-note instead.
-
-Onboarding options give their roles to any member who picks them. Every option
-in the planned onboarding, listed or kept from the live server, is refused when
-a role it gives is:
-
-| Role | Example |
+| Command | Posts |
 |---|---|
-| `@everyone` | |
-| A `protected_roles` role or the bot's role | `admin`, `OpenDrone Dev` |
-| Managed by an integration | `carl-bot`, `Server Booster` |
-| In `unassignable_roles` | `developer`, `reviewer` |
-| Holding a privileged permission (table above) after the plan | A role with `MANAGE_MESSAGES` or `MANAGE_THREADS` |
+| `python3 migrate.py resources` | #welcome and the four resource pages; texts are `RESOURCES` in `migrate.py` |
+| `python3 migrate.py rules --rules-file <md>` | #rules, pinned |
+| `python3 migrate.py hubs` | One pinned hub per public repository in its product channel: link, description, lifecycle, releases |
 
-The check is strict when the plan changes onboarding or that role's
-permissions; otherwise a live violation is printed as a note.
+`unarchive`, `firmware-roles`, `backfill` and `checklist` were one-off
+migration steps and have run.
 
-## Safety rules
+## Discord UI only
 
-| Rule | Effect |
+| Task | Where |
 |---|---|
-| Only listed things are managed | Channels, roles, prompts, options, forum tags and AutoMod rules not in `server.json` are reported as unmanaged and never touched |
-| Nothing is deleted | The REST client refuses DELETE; retiring a channel moves it to the `archive` category, or it leaves `server.json` and a person deletes it by hand. `migrate.py` allows DELETE on two routes only, neither of which deletes anything: unpinning a message and taking a role off a member |
-| Member overwrites are kept by apply | Only role overwrites are compared and written; `apply --yes` copies member overwrites into its PATCH unchanged |
-| Snapshot before every apply | `snapshots/` (git-ignored) holds guild, channels, roles, emojis, onboarding, welcome screen and AutoMod as fetched |
-| Read back after every apply | `apply --yes` fails if the server still differs from `server.json` |
-| Restore | `restore --yes` saves a `before-restore` snapshot, writes the snapshot's full overwrite list (member overwrites included) and category for managed and archived channels present in the snapshot, onboarding and the welcome screen, then reads back. Names, types, topics, forum settings, positions, roles, AutoMod and guild settings are not restored, and channels created after the snapshot are left alone. A restore after the layout apply therefore puts old permissions and categories back but does not remove the new channels or roles |
-| Audit log and rate limits | `X-Audit-Log-Reason` on every call; on 429 the tool waits `retry_after`, and it waits `X-RateLimit-Reset-After` when a bucket is empty; 6 attempts per request |
+| Server Guide: welcome sign, to-dos, resource pages | Server Settings > Onboarding > Server Guide |
+| Linked role requirements | Server Settings > Roles > the role > Links |
+| Delete a channel that left `server.json` | Right-click > Delete Channel |
+| Command visibility for Approve build and `/promote` | Server Settings > Integrations > OpenDrone Dev |
 
-## Migration (`migrate.py`)
-
-Run after `discord_config.py apply --yes`. Same token, `server.json` and 429 and
-bucket handling as `discord_config.py`; its client allows DELETE only on
-`/channels/{id}/pins/{id}` (unpin) and `/guilds/{id}/members/{id}/roles/{id}`
-(take a role off a member). Every write carries the audit log reason
-`OpenDrone-hw/discord migrate.py` and is followed by a 0.5 s pause. Every
-subcommand is a dry run unless `--yes`, and a rerun writes nothing that is
-already done. A rerun finds the bot's own messages by author (the bot user from
-`GET /users/@me`) and first line; no visible marker line is posted. Messages an
-earlier version posted end in a `-# opendrone-migration:...` line: they are
-still recognised by it, and a rerun edits the line away without posting a
-duplicate or pinning again. `python3 migrate.py checklist` prints the steps below and the
-Server Guide copy.
-
-```mermaid
-flowchart LR
-  A[1 plan, apply --yes] --> D[2 delete retired channels, UI] --> G[3 Server Guide, UI] --> RS[4 resources] --> R[5 rules] --> H[6 hubs] --> U[7 unarchive] --> F[8 firmware-roles] --> B[9 backfill] --> K[10 remove carl-bot, UI] --> L[11 linked roles, UI] --> T[12 2FA, UI]
-```
-
-| Step | Command or place | Done when |
-|---|---|---|
-| 1 Apply the layout | `python3 discord_config.py plan`, then `apply --yes` after the plan was seen | `apply` read-back reports no diff |
-| 2 Delete the retired channels | Right-click the channel, Delete Channel (UI only), for each unmanaged forum, `#support-chat` and `#roles` (after step 3 took it off the Server Guide), after checking it has no member posts | `plan` lists only `web-support` and `web-support-admin` as unmanaged |
-| 3 Paste the Server Guide copy | Server Settings, Onboarding, Server Guide (UI only): welcome sign, to-dos, and the four resource channels as resource pages; remove `#roles` from it | The guide shows the copy from `checklist` |
-| 4 Post the resource pages and the #welcome message | `python3 migrate.py resources`, then `--yes` | A rerun reports "0 to post, 0 to edit, 5 done" |
-| 5 Pin the rules | `python3 migrate.py rules --rules-file <copy.md>`, then `--yes` | A rerun reports "0 to post, 0 to edit, 0 to pin" |
-| 6 Pin the repository hubs | `python3 migrate.py hubs`, then `--yes` | A rerun reports "0 to post, 0 to edit, 0 to pin" |
-| 7 Rewrite the archive notices | `python3 migrate.py unarchive`, then `--yes` | "0 to update, 17 done" |
-| 8 Move firmware team roles | `python3 migrate.py firmware-roles`, then `--yes` | A rerun reports removed 0 and granted 0 for every role |
-| 9 Follower-role backfill | `python3 migrate.py backfill --only-user <your id>`, `--yes`, check that account's roles, then `backfill` and `--yes` | A second `backfill --yes` reports granted 0 for every role |
-| 10 Remove carl-bot | Server Settings, Integrations, carl-bot, Kick | carl-bot gone; `Newbie` and `Member` roles still exist |
-| 11 Attach linked roles | Server Settings, Roles, the role, Links, add `OpenDrone Dev`: Contributor `merged_prs` at least 1, Maintainer `maintainer` true, Verified Owner `owner` true | Each role shows its requirement |
-| 12 Re-enable 2FA for moderator actions | Server Settings, Safety Setup | Only after `OpenDrone Dev` moved to a Developer Team whose owner has 2FA; the bot still writes |
-
-carl-bot does two things, both replaced: it gives `Newbie` on join (onboarding
-is the gate now) and runs the reaction roles in #roles (the onboarding prompts).
-
-| Command | Reads | Writes with `--yes` | Rerun |
-|---|---|---|---|
-| `python3 migrate.py checklist` | Nothing | Nothing; prints the steps in order and the Server Guide copy | |
-| `python3 migrate.py resources` | Channels; pins and newest 500 messages of #welcome and the four resource channels | One message in each, never pinned (a pin posts a "pinned a message" notice): `## How to contribute`, `## Product lifecycle`, `## Buying and support`, `## Licence, names and AI`, and in #welcome `## Welcome to OpenDrone` with where to start, Channels & Roles (`<id:customize>`), the product channels, #git-feed and the order support page. The texts are `RESOURCES` in `migrate.py` | Finds each message by its first line; edits it when the text changed |
-| `python3 migrate.py rules --rules-file <md>` | The section headed `4. #rules` of the file (its fenced block when it has one), which must start with the line `**OpenDrone rules**`; pins and newest 500 messages of #rules | Posts the text in #rules (split at paragraphs into messages of at most 2000 characters) and pins it | Finds the first message by `**OpenDrone rules**` and a later part by its first line (or the old marker `opendrone-migration:rules-1 <part>`); edits a part whose text changed, pins an unpinned one |
-| `python3 migrate.py hubs` | `bot/config/repos.json`; `gh api repos/OpenDrone-hw/<repo>` for each mapped repository not in `PRIVATE_REPOS`; pins and newest 500 messages of each product channel | One message per public repository in its product channel, then pins it: repository link, the GitHub description, lifecycle from its `status-*` topic (no line when none is set), releases link, and "Discuss changes in threads: the bot opens one per pull request; link an existing thread with /link." | Finds each hub by its first line `## [<repo>](https://github.com/OpenDrone-hw/<repo>)` (or the old marker `opendrone-migration:hub-1 <repo>`); edits it when the text changed (a new lifecycle or description), pins it when unpinned |
-| `python3 migrate.py unarchive` | Channels, the pins and newest 500 messages of each of the 17 restored channels | Edits the bot's archive notice (old marker `opendrone-migration:notice-1` or `unarchive-1`, or the text's first line) to a short text naming what the chat is for, then unpins it | Nothing to do when the text matches and it is unpinned |
-| `python3 migrate.py firmware-roles` | Roles, the audit log (member role updates since `--since`) | For each member who added `Betaflight`, `AM32` or `ExpressLRS` themselves (onboarding, Channels & Roles) or got it from `backfill`: grants the matching `* user` role, then takes the team role off | `GET` each member first; members who left or already have the result are skipped |
-| `python3 migrate.py backfill` | Channels, roles, message history of the development chats | The mapped follower role for each member who posted there in the window | `GET` each member first; members who hold the role or left are skipped |
-
-Every message the bot posts or edits goes out with `allowed_mentions: {parse: []}`.
-In the texts `resources` and `rules` post, `{#name}` becomes the channel link
-`<#id>`, resolved at run time: the `server.json` channel of that name, else the
-one live channel of that name. An unknown name, or a bare `#name` of an existing
-channel (it would not be a link), stops the run before any write.
-`unarchive`, `hubs` and `resources` refuse `--yes` until every channel they
-write to has its `server.json` name and category. `rules` refuses a text with an em dash or a
-blockquote line. `hubs` skips `PRIVATE_REPOS` (OpenFC, OpenGPS, OpenFrame-3F,
-OpenFrame-5F) without asking GitHub, and any repository GitHub reports as
-private or answers 404 for; its output is counts per channel and one sample hub.
-Tests replace the `gh` fetcher; they never reach GitHub or Discord.
-
-`firmware-roles` flags: `--since <ISO 8601>` (default `2026-09-27T16:40:00Z`, when
-the Firmware onboarding prompt went live). A team role a moderator or other bot
-code added in that window is left alone and counted. It refuses `--yes` while a
-`* user` role is missing, managed, protected, unassignable or privileged. Output
-is counts per role, never user ids or names.
-
-`backfill` flags: `--days N` (default 90), `--only-user <id>` (grant only to
-that member; use it on one test account first), `--channel <name or id>`
-(repeatable; the old or the current name). Only default and reply messages
-count; bots, webhooks and system messages do not; thread messages are not read.
-Message content is not needed, only the author. Output is counts per channel and
-role, never user ids or names. It refuses to grant a role that is missing,
-integration-managed, protected, in `guard.unassignable_roles` or holds a
-privileged permission.
-
-| Channel | Category | Public repositories: hub and pull request threads | Follower role granted by `backfill` |
-|---|---|---|---|
-| #fc | Hardware | OpenFC-Lite, OpenFC-Lite-Mini (OpenFC is private) | FC follower |
-| #aio | Hardware | OpenAIO, OpenAIO-Whoop | FC follower |
-| #esc | Hardware | OpenESC-20x20, OpenESC-30x30 | ESC follower |
-| #rx | Hardware | OpenRX, OpenRX-Lite, OpenRX-Lite-UFL, OpenRX-Mono, OpenRX-Gemini | RX follower |
-| #vtx | Hardware | OpenVTX | Video follower |
-| #digital-vtx | Hardware | none | Video follower |
-| #remote-id | Hardware | OpenRemoteID | RemoteID-GPS follower |
-| #gps | Hardware | none (OpenGPS is private) | RemoteID-GPS follower |
-| #frame | Hardware | none (OpenFrame-3F and OpenFrame-5F are private) | Frame follower |
-| #charger | Hardware | Charger | Power follower |
-| #motors | Hardware | none (no motor product line) | none |
-| #kicad-library | Hardware | KiCad-Library, hardware-template, OpenDrone-Fixtures | none (a new channel without history) |
-| #fc-betaflight | Software | betaflight | Betaflight user |
-| #esc-am32 | Software | AM32 | AM32 user |
-| #rx-expresslrs | Software | ExpressLRS | ExpressLRS user |
-| #opendrone-web | Software | OpenDrone-Web, OpenDrone-Brand, .github, discord | Web-Tools follower |
-| #builds, #proposals | Community | none | none |
-
-The repository mapping is `bot/config/repos.json`; the chat mapping is `CHATS`
-in `migrate.py`, keyed by channel id. Tests check `CHATS` covers exactly the 17
-restored channels with their `server.json` names and that each follower role is
-given by an onboarding option pointing at that channel.
-
-## Manual steps (Discord UI only)
-
-These have no API, or are outside what the scripts manage.
-
-| Step | Where | Why |
-|---|---|---|
-| Server Guide: welcome sign, new member to-dos, resource pages | Server Settings, Onboarding, Server Guide | Discord has no API for the Server Guide. The copy is in `migrate.py checklist` |
-| Delete channels that left `server.json` | Right-click the channel, Delete Channel | The tools never delete. Check the channel has no member posts first; never delete `#web-support` or `#web-support-admin` |
-| Remove carl-bot | Server Settings, Integrations | `migrate.py` never deletes or kicks |
-| Attach linked roles to a role | Server Settings, Roles, the role, Links | No API; the metadata comes from the bot, see [bot/README.md](bot/README.md) |
-| Re-enable "Require 2FA for moderator actions" | Server Settings, Safety Setup | It is off so the bot can write. Turn it on again after the `OpenDrone Dev` application moves to a Developer Team whose owner has 2FA, then check the bot still writes |
-| Command permission overrides | Server Settings, Integrations, OpenDrone Dev | Approve build and `/promote` are visible to Administrators only until an override is added |
-| Bot setup: D1, GitHub App, secrets, deploy, Developer Portal, command and metadata registration | See [bot/README.md, Setup](bot/README.md#setup) | Each needs an explicit request; none runs from this repository's tests |
-
-## Bot application
-
-`OpenDrone Dev` (application id `1553826696673759344`) is private and owned by the server owner's
-Discord account: only that account can install it or change its settings. `discord_config.py` and the Worker in `bot/` use the same
-application. Its role must stay above every role it assigns, and it holds
-Administrator while the layout is built.
+The bot application `OpenDrone Dev` (id `1553826696673759344`) is used by
+both the scripts and the Worker. It holds Administrator because the config tool
+can only grant permissions the bot itself has.
 
 ## Validation
 
 ```sh
-python3 -m unittest discover -s tests       # config tool, offline
+python3 -m unittest discover -s tests
 cd bot && npm ci && npm test && npx tsc --noEmit
 ```
 

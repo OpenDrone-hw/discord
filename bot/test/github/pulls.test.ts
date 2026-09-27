@@ -129,7 +129,7 @@ describe("pull_request opened", () => {
     const { world, deliver } = await harness();
     const pull = world.addPull("OpenRX", pullJson("OpenRX", 4, { draft: true }));
     await deliver("pull_request", prEvent("opened", { ...pull }));
-    expect(FakeWorld.text(world.messagesIn(CHANNEL_RX)[0])).toMatch(/^Draft pull request \*\*OpenRX\*\* #4/);
+    expect(FakeWorld.text(world.messagesIn(CHANNEL_RX)[0])).toMatch(/^Pull request \*\*OpenRX\*\* #4/);
     expect(FakeWorld.text(world.messagesIn(world.threads[0]!.id)[0])).toContain("opened a draft pull request");
     expect(FakeWorld.text(world.messagesIn(FEED)[0])).toContain("#4 opened a draft by alice");
   });
