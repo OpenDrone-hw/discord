@@ -80,9 +80,9 @@ the repository, its releases and its lifecycle (`migrate.py hubs`).
 | Development | alpha-testing | forum | testers | | none |
 | Hardware | fc, aio, esc, rx, vtx, digital-vtx, remote-id, gps, frame, charger, motors, kicad-library | text | open | | the product line, see [Onboarding](#onboarding) |
 | Software | fc-betaflight, esc-am32, rx-expresslrs, opendrone-web | text | open | | Betaflight, AM32, ExpressLRS; Web and tools |
-| Voice | general, troubleshooting | voice (kept as live) | open | | |
-| Voice | dev-call | voice | open | | |
-| Voice | community-call | stage | open | | |
+| Voice | general, troubleshooting | voice (kept as live) | open | yes (category) | |
+| Voice | dev-call | voice | open | yes (category) | |
+| Voice | community-call | stage | open | yes (category) | |
 | Staff | mod-log | text | staff | | |
 | Staff | web-support, web-support-admin | forum, text | unmanaged | | |
 
@@ -193,7 +193,8 @@ because the bot never pings a follower role. The firmware prompt was titled
 | GitHub feed | none: the `GitHub feed` role shows #git-feed |
 
 Default channels: #welcome, #rules, #announcements, #gen-chat,
-#introduce-yourself, #off-topic, #flying, help, #builds and #proposals. The
+#introduce-yourself, #off-topic, #flying, help, #builds, #proposals and the
+Voice category. The
 product channels are not defaults: a member sees the ones the options they
 picked add. In `advanced` mode a channel that is neither default nor added by a
 picked option is hidden from the member's sidebar and stays reachable through
