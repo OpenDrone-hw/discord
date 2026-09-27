@@ -64,10 +64,10 @@ that writes.
 |---|---|
 | Only listed channels are managed | Anything not in `server.json` is printed as unmanaged and never touched |
 | Nothing is deleted | Channels are changed in place; the tool has no delete call |
-| Member overwrites are kept | Only role overwrites are compared and written; member overwrites are copied into every PATCH unchanged |
+| Member overwrites are kept by apply | Only role overwrites are compared and written; `apply --yes` copies member overwrites into its PATCH unchanged |
 | Snapshot before every apply | `snapshots/` (git-ignored) holds channels, roles and onboarding as fetched |
 | Read back after every apply | `apply --yes` fails if the server still differs from `server.json` |
-| Restore is overwrites only | `restore` puts back permission overwrites of managed channels; names, topics, parents, roles and onboarding in the snapshot are not restored |
+| Restore is overwrites only | `restore --yes` writes the snapshot's full overwrite list, member overwrites included, for managed channels present in the snapshot; member overwrites added after the snapshot are dropped. Names, topics, parents, roles and onboarding in the snapshot are not restored |
 | Rate limits | On 429 the tool waits `retry_after` and retries, 5 attempts per request |
 
 ## Manual steps (Discord UI only)
@@ -77,7 +77,8 @@ These have no API, or are outside what `discord_config.py` manages.
 | Step | Where | Why |
 |---|---|---|
 | Server Guide: welcome sign, new member to-dos, resource pages | Server Settings, Onboarding, Server Guide | Discord has no API for the Server Guide |
-| Onboarding prompts and default channels (the self-assign role picker) | Server Settings, Onboarding | `discord_config.py` snapshots onboarding but does not change it |
+| Self-assign role picker in #roles | carl-bot dashboard, reaction roles | The picker is carl-bot reaction roles; `discord_config.py` does not manage it. Replacing it with onboarding prompts includes turning off the carl-bot reaction roles as a separate manual step |
+| Onboarding prompts and default channels | Server Settings, Onboarding | `discord_config.py` snapshots onboarding but does not change it. Joining gives Newbie, which is denied everywhere; the required "Where are you from?" prompt grants a region role plus Member, the only grant that unlocks the server. Every region option must keep granting Member |
 | Attach linked roles to a role | Server Settings, Roles, the role, Links: add `OpenDrone Dev` and set its requirements | No API; the metadata comes from the bot, see [bot/README.md](bot/README.md) |
 | Re-enable "Require 2FA for moderator actions" | Server Settings, Safety Setup | It is off so the bot can write. Turn it on again after the `OpenDrone Dev` application moves to a Developer Team whose owner has 2FA, then check the bot still writes |
 
