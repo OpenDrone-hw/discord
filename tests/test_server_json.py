@@ -140,9 +140,13 @@ class ServerJson(ToolCase):
         self.assertEqual(self.plan_["unmanaged"]["onboarding prompts"], [])
 
     def test_plan_never_touches_the_storefront_channels(self):
+        # An AutoMod exemption names the storefront channels without changing them; nothing else may.
         for phase, ops in self.plan_["ops"].items():
             for op in ops:
-                self.assertFalse(any(cid in json.dumps(op["body"]) for cid in PROTECTED if phase != "positions"),
+                body = op["body"]
+                if phase == "automod":
+                    body = {k: v for k, v in body.items() if k != "exempt_channels"}
+                self.assertFalse(any(cid in json.dumps(body) for cid in PROTECTED if phase != "positions"),
                                  op["label"])
                 if phase == "positions":
                     self.assertFalse({i["id"] for i in op["body"]} & PROTECTED, op["label"])
@@ -268,6 +272,17 @@ class ServerJson(ToolCase):
         self.assertEqual(mention[0]["trigger_metadata"]["mention_total_limit"], 5)
         for trigger, cap in dc.AUTOMOD_CAPS.items():
             self.assertLessEqual(len([r for r in fake.automod if r["trigger_type"] == trigger]), cap)
+
+    def test_automod_never_blocks_the_bots_or_the_storefront_channels(self):
+        # AutoMod rules are server-wide: the storefront support bot relays customer text word for word
+        # into #web-support threads and OpenBrain quotes users in #chatfpv, so a blocked POST loses a message.
+        fake = self.applied()
+        roles = {r["name"]: r["id"] for r in fake.roles}
+        bots = {roles["OpenDrone Support"], roles["OpenBrain"]}
+        self.assertEqual(len(fake.automod), 4)
+        for rule in fake.automod:
+            self.assertLessEqual(bots, set(rule["exempt_roles"]), rule["name"])
+            self.assertLessEqual(PROTECTED, set(rule["exempt_channels"]), rule["name"])
 
     def test_staff_and_linked_roles_are_never_self_assignable(self):
         self.assertLessEqual({"developer", "beta tester", "reviewer", "Support", "Maintainer", "Contributor",
