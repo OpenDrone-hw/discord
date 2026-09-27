@@ -1,6 +1,6 @@
 /**
- * Offline fixtures for the commands module: a fake guild (forums, tags,
- * roles), a routed fetch mock shared by the Discord and GitHub clients, and
+ * Offline fixtures for the commands module: a fake guild (product channels,
+ * the retired forum, roles), a routed fetch mock shared by the Discord and GitHub clients, and
  * interaction builders.
  */
 import { Directory, DirectoryCache } from "../../src/config.ts";
@@ -15,16 +15,14 @@ import { fakeContext, jsonResponse, makeEnv, mockFetch, type RecordedCall } from
 export const GUILD = "1494019459822653512";
 export const APP = "1553826696673759344";
 
-export const FORUM_RX = "1700000000000000001";
-export const FORUM_POWER = "1700000000000000002";
+export const CHANNEL_RX = "1700000000000000001";
+export const CHANNEL_CHARGER = "1700000000000000002";
 export const GEN_CHAT = "1700000000000000003";
+/** The retired #receivers development forum, still on the server until it is deleted by hand. */
+export const OLD_FORUM_RX = "1700000000000000004";
 export const THREAD = "1700000000000000010";
 export const THREAD_POWER = "1700000000000000011";
 export const MESSAGE = "1700000000000000020";
-
-export const TAG_OPENRX = "1710000000000000001";
-export const TAG_LITE = "1710000000000000002";
-export const TAG_CHARGER = "1710000000000000003";
 
 export const ROLE_ADMIN = "1720000000000000001";
 export const ROLE_REVIEWER = "1720000000000000002";
@@ -40,17 +38,9 @@ export const GH_TOKEN = "ghs_installation_token_value";
 
 export const guildChannels = [
   { id: GEN_CHAT, type: 0, name: "gen-chat" },
-  {
-    id: FORUM_RX,
-    type: 15,
-    name: "receivers",
-    available_tags: [
-      { id: TAG_OPENRX, name: "OpenRX" },
-      { id: TAG_LITE, name: "OpenRX-Lite" },
-      { id: "1710000000000000009", name: "alpha" },
-    ],
-  },
-  { id: FORUM_POWER, type: 15, name: "power", available_tags: [{ id: TAG_CHARGER, name: "Charger" }] },
+  { id: CHANNEL_RX, type: 0, name: "rx" },
+  { id: CHANNEL_CHARGER, type: 0, name: "charger" },
+  { id: OLD_FORUM_RX, type: 15, name: "receivers", available_tags: [{ id: "1710000000000000001", name: "OpenRX" }] },
 ];
 
 export const guildRoles = [
@@ -66,9 +56,8 @@ export function rxThread(overrides: Record<string, unknown> = {}) {
   return {
     id: THREAD,
     type: 11,
-    name: "Fix UART pinout on v2 (Rev. B)",
-    parent_id: FORUM_RX,
-    applied_tags: [TAG_OPENRX],
+    name: "OpenRX: Fix UART pinout on v2 (Rev. B)",
+    parent_id: CHANNEL_RX,
     ...overrides,
   };
 }

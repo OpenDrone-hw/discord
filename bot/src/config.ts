@@ -1,16 +1,14 @@
 /**
  * Bot configuration: bot/config/repos.json maps every OpenDrone-hw repository
- * to its development forum and product tag, and names the channels and roles
- * the bot uses. Everything is referenced by name; ids are resolved at runtime
- * through the Discord API (Directory) and cached per isolate, so the file
- * holds no channel, role or tag ids.
+ * to its product text channel, and names the channels and roles the bot uses.
+ * Everything is referenced by name; ids are resolved at runtime through the
+ * Discord API (Directory) and cached per isolate, so the file holds no
+ * channel or role ids.
  */
 import raw from "../config/repos.json" with { type: "json" };
 import type { DiscordClient } from "./discord.ts";
 import { ChannelType, type Channel, type Role } from "./types.ts";
 
-export const MAX_FORUM_TAGS = 20;
-export const MAX_TAG_NAME = 20;
 const CHANNEL_NAME = /^[a-z0-9_-]{1,100}$/;
 
 export const CHANNEL_KEYS = ["gitFeed", "announcements", "modLog"] as const;
@@ -38,19 +36,16 @@ export type RoleKey = (typeof ROLE_KEYS)[number];
 export type LifecycleTopic = (typeof LIFECYCLE_TOPICS)[number];
 
 export interface RepoEntry {
-  /** Development forum channel name. */
-  forum: string;
-  /** Product tag name in that forum. */
-  tag: string;
+  /** Product text channel name: pull request threads start there. */
+  channel: string;
 }
 
 export interface BotConfig {
   org: string;
   channels: Record<ChannelKey, string>;
   roles: Record<RoleKey, string>;
-  /** Repository topic -> lifecycle tag name, present in every development forum. */
-  lifecycleTags: Record<LifecycleTopic, string>;
-  forums: string[];
+  /** Repository topic -> lifecycle name shown in #announcements and #git-feed. */
+  lifecycle: Record<LifecycleTopic, string>;
   repos: Record<string, RepoEntry>;
 }
 
@@ -78,9 +73,14 @@ function channelName(value: unknown, where: string): string {
   return name;
 }
 
+const TOP_KEYS = new Set(["org", "channels", "roles", "lifecycle", "repos"]);
+
 /** Validates repos.json. Throws ConfigError naming the first problem. */
 export function parseConfig(value: unknown): BotConfig {
   if (!isRecord(value)) throw new ConfigError("repos.json: expected an object");
+  for (const key of Object.keys(value)) {
+    if (!TOP_KEYS.has(key)) throw new ConfigError(`repos.json: unknown key ${key}`);
+  }
   const org = nonEmpty(value.org, "org");
 
   const channelsIn = isRecord(value.channels) ? value.channels : {};
@@ -91,43 +91,31 @@ export function parseConfig(value: unknown): BotConfig {
   const roles = {} as Record<RoleKey, string>;
   for (const key of ROLE_KEYS) roles[key] = nonEmpty(rolesIn[key], `roles.${key}`);
 
-  const lifecycleIn = isRecord(value.lifecycleTags) ? value.lifecycleTags : {};
-  const lifecycleTags = {} as Record<LifecycleTopic, string>;
-  for (const topic of LIFECYCLE_TOPICS) {
-    lifecycleTags[topic] = nonEmpty(lifecycleIn[topic], `lifecycleTags.${topic}`, MAX_TAG_NAME);
-  }
+  const lifecycleIn = isRecord(value.lifecycle) ? value.lifecycle : {};
+  const lifecycle = {} as Record<LifecycleTopic, string>;
+  for (const topic of LIFECYCLE_TOPICS) lifecycle[topic] = nonEmpty(lifecycleIn[topic], `lifecycle.${topic}`);
   for (const key of Object.keys(lifecycleIn)) {
-    if (!(LIFECYCLE_TOPICS as readonly string[]).includes(key)) throw new ConfigError(`lifecycleTags: unknown topic ${key}`);
+    if (!(LIFECYCLE_TOPICS as readonly string[]).includes(key)) throw new ConfigError(`lifecycle: unknown topic ${key}`);
   }
-
-  if (!Array.isArray(value.forums) || value.forums.length === 0) throw new ConfigError("forums: expected a list");
-  const forums = value.forums.map((f, i) => channelName(f, `forums[${i}]`));
-  if (new Set(forums).size !== forums.length) throw new ConfigError("forums: duplicate name");
 
   if (!isRecord(value.repos)) throw new ConfigError("repos: expected an object");
   const repos: Record<string, RepoEntry> = {};
   const seenRepos = new Set<string>();
-  const tagsByForum = new Map<string, Set<string>>(forums.map((f) => [f, new Set<string>()]));
+  const shared = new Set<string>(Object.values(channels));
   for (const [repo, entry] of Object.entries(value.repos)) {
     if (!/^[A-Za-z0-9._-]{1,100}$/.test(repo)) throw new ConfigError(`repos: ${JSON.stringify(repo)} is not a repository name`);
     if (seenRepos.has(repo.toLowerCase())) throw new ConfigError(`repos: ${repo} is listed twice`);
     seenRepos.add(repo.toLowerCase());
     if (!isRecord(entry)) throw new ConfigError(`repos.${repo}: expected an object`);
-    const forum = channelName(entry.forum, `repos.${repo}.forum`);
-    const tag = nonEmpty(entry.tag, `repos.${repo}.tag`, MAX_TAG_NAME);
-    const tags = tagsByForum.get(forum);
-    if (!tags) throw new ConfigError(`repos.${repo}.forum: ${forum} is not in forums`);
-    if (tags.has(tag.toLowerCase())) throw new ConfigError(`repos.${repo}.tag: ${tag} is already used in ${forum}`);
-    tags.add(tag.toLowerCase());
-    repos[repo] = { forum, tag };
-  }
-  for (const [forum, tags] of tagsByForum) {
-    const total = tags.size + LIFECYCLE_TOPICS.length;
-    if (total > MAX_FORUM_TAGS) {
-      throw new ConfigError(`${forum}: ${total} product and lifecycle tags exceed Discord's ${MAX_FORUM_TAGS}`);
+    for (const key of Object.keys(entry)) {
+      if (key !== "channel") throw new ConfigError(`repos.${repo}: unknown key ${key}`);
     }
+    const channel = channelName(entry.channel, `repos.${repo}.channel`);
+    if (shared.has(channel)) throw new ConfigError(`repos.${repo}.channel: ${channel} is a bot channel, not a product channel`);
+    repos[repo] = { channel };
   }
-  return { org, channels, roles, lifecycleTags, forums, repos };
+  if (Object.keys(repos).length === 0) throw new ConfigError("repos: expected at least one repository");
+  return { org, channels, roles, lifecycle, repos };
 }
 
 export const config: BotConfig = parseConfig(raw);
@@ -153,6 +141,18 @@ export function findRepo(fullName: string, cfg: BotConfig = config): RepoMatch |
   return null;
 }
 
+/** Product channel names in repos.json order, each once. */
+export function productChannels(cfg: BotConfig = config): string[] {
+  return [...new Set(Object.values(cfg.repos).map((entry) => entry.channel))];
+}
+
+/** Repositories mapped to one product channel, in repos.json order. */
+export function reposInChannel(channel: string, cfg: BotConfig = config): RepoMatch[] {
+  return Object.entries(cfg.repos)
+    .filter(([, entry]) => entry.channel === channel)
+    .map(([repo, entry]) => ({ repo, ...entry }));
+}
+
 // --- runtime name -> id resolution -------------------------------------------
 
 interface Cached<T> {
@@ -174,9 +174,7 @@ export class DirectoryCache {
 export const sharedDirectoryCache = new DirectoryCache();
 
 export interface ResolvedRepo extends RepoMatch {
-  forumId: string;
-  /** null when the forum has no tag with the configured name. */
-  tagId: string | null;
+  channelId: string;
 }
 
 export interface DirectoryOptions {
@@ -255,30 +253,20 @@ export class Directory {
     return (await this.roleByName(this.config.roles[key]))?.id ?? null;
   }
 
-  async forum(name: string): Promise<Channel | null> {
-    return this.channelByName(name, [ChannelType.GUILD_FORUM, ChannelType.GUILD_MEDIA]);
-  }
-
-  /** Tag id by name, case-insensitive. */
-  tagId(forum: Channel, tagName: string): string | null {
-    const lower = tagName.toLowerCase();
-    return forum.available_tags?.find((t) => t.name.toLowerCase() === lower)?.id ?? null;
+  /** A product text channel by name. */
+  async productChannel(name: string): Promise<Channel | null> {
+    return this.channelByName(name, [ChannelType.GUILD_TEXT]);
   }
 
   /**
-   * Forum and product tag for a repository. Returns null for a repository not
-   * in repos.json; throws ConfigError when its forum is missing on the server.
+   * Product channel of a repository. Returns null for a repository not in
+   * repos.json; throws ConfigError when its channel is missing on the server.
    */
   async resolveRepo(fullName: string): Promise<ResolvedRepo | null> {
     const match = findRepo(fullName, this.config);
     if (!match) return null;
-    const forum = await this.forum(match.forum);
-    if (!forum) throw new ConfigError(`forum ${match.forum} for ${match.repo} does not exist on the server`);
-    return { ...match, forumId: forum.id, tagId: this.tagId(forum, match.tag) };
-  }
-
-  /** Lifecycle tag id in a forum for a status-* repository topic. */
-  lifecycleTagId(forum: Channel, topic: LifecycleTopic): string | null {
-    return this.tagId(forum, this.config.lifecycleTags[topic]);
+    const channel = await this.productChannel(match.channel);
+    if (!channel) throw new ConfigError(`text channel ${match.channel} for ${match.repo} does not exist on the server`);
+    return { ...match, channelId: channel.id };
   }
 }

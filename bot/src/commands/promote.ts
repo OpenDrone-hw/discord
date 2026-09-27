@@ -78,7 +78,7 @@ async function promote(ctx: InteractionContext, name: string, summary: string, i
     : `but setting topic ${INITIAL_TOPIC} failed; add it on GitHub`;
   return [
     `Created ${isPrivate ? "private" : "public"} repository ${repo.full_name} from ${TEMPLATE_REPO} ${topic}: <${repo.html_url}>`,
-    `Add ${name} to bot/config/repos.json with its forum and product tag so the bot maps it to a forum.`,
+    `Add ${name} to bot/config/repos.json with its product text channel so the bot starts pull request threads there.`,
   ].join("\n");
 }
 

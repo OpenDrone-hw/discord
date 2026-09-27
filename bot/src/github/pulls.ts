@@ -1,15 +1,16 @@
 /**
- * Pull request, review and check suite events: cards in the PR's forum
- * thread, compact lines in #git-feed.
+ * Pull request, review and check suite events: cards in the PR's thread
+ * in its product channel, compact lines in #git-feed. A missing thread is
+ * started from a one-line starter message in the product channel.
  *
  * | Event.action                   | Thread                          | #git-feed        |
  * |--------------------------------|---------------------------------|------------------|
- * | pull_request.opened            | created if missing, PR card     | yes              |
- * | pull_request.reopened          | created if missing, card        | yes              |
- * | pull_request.ready_for_review  | created if missing, card        | yes              |
- * | pull_request.synchronize       | created if missing, push line   | no               |
+ * | pull_request.opened            | started if missing, PR card     | yes              |
+ * | pull_request.reopened          | started if missing, card        | yes              |
+ * | pull_request.ready_for_review  | started if missing, card        | yes              |
+ * | pull_request.synchronize       | started if missing, push line   | no               |
  * | pull_request.closed            | card if linked (merged/closed)  | yes              |
- * | pull_request_review.submitted  | created if missing, review card | approve/changes  |
+ * | pull_request_review.submitted  | started if missing, review card | approve/changes  |
  * | check_suite.completed          | card if linked, PR head only    | default-branch   |
  * |                                |                                 | failures only    |
  *
@@ -96,18 +97,12 @@ export function describePullEvent(action: string, pull: PullRequest, sender: str
   }
 }
 
-/** Starter message of a new forum post: the PR as it is now. */
+/** Starter message in the product channel: one line; the thread started from it holds the cards. */
 export function pullStarter(scope: Scope, pull: PullRequest): MessagePayload {
-  return card({
-    color: pull.draft ? Colors.draft : Colors.open,
-    blocks: [
-      heading(scope, pull),
-      `**${escapeMarkdown(pull.author)}** ${pull.draft ? "opened a draft pull request" : "opened this pull request"}: ${code(pull.headRef)} into ${code(pull.baseRef)}`,
-      description(pull, 800),
-      stats(pull),
-    ],
-    button: { label: "Open on GitHub", url: pull.htmlUrl },
-  });
+  const kind = pull.draft ? "Draft pull request" : "Pull request";
+  return feedLine(
+    `${kind} **${escapeMarkdown(scope.repo.name)}** #${pull.number} by ${escapeMarkdown(pull.author)}: ${link(pull.title, pull.htmlUrl)}`,
+  );
 }
 
 function eventCard(scope: Scope, pull: PullRequest, event: PullEvent, withDetails: boolean): MessagePayload {
@@ -145,13 +140,9 @@ export async function handlePullRequest(ctx: GitHubEventContext): Promise<void> 
       });
       threadId = thread?.threadId ?? null;
       if (!thread) return;
-      // A post created for an opening event already shows the PR in its starter message. The
-      // step is still recorded, so a redelivery (which finds the thread through the PR body)
-      // does not post the card after all.
-      const skip = thread.created && OPENING.has(action);
-      await scope.once("card", async () =>
-        skip ? false : postToThread(scope.services, thread.threadId, eventCard(scope, pull, event, OPENING.has(action))),
-      );
+      // A thread started by this delivery shows the description and size even on a push.
+      const details = OPENING.has(action) || thread.created;
+      await scope.once("card", () => postToThread(scope.services, thread.threadId, eventCard(scope, pull, event, details)));
     });
     if (event.feed) {
       const verb = event.feed;

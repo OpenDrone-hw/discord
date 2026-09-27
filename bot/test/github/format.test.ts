@@ -210,7 +210,7 @@ describe("Discussion line", () => {
   });
 
   it("names threads within Discord's 100 characters", () => {
-    expect(threadName("OpenRX", { number: 12, title: "Fix\nantenna" })).toBe("OpenRX #12: Fix antenna");
-    expect(threadName("OpenRX", { number: 12, title: "x".repeat(200) })).toHaveLength(100);
+    expect(threadName({ number: 12, title: "Fix\nantenna" })).toBe("PR #12: Fix antenna");
+    expect(threadName({ number: 12, title: "x".repeat(200) })).toHaveLength(100);
   });
 });

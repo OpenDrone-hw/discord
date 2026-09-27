@@ -66,36 +66,58 @@ MANAGED_ROLES = ["carl-bot", "OpenDrone Support", "OpenBrain", "Server Booster"]
 EMOJIS = ["quad", "fpv", "tinywhoop", "freestyle", "commercial", "longrange", "cinewhoop", "toothpick", "camera",
           "planes", "racing"]
 HARDWARE, SOFTWARE = "1550880981592973433", "1550881887050928248"
-# Channel id -> (category, name in server.json) for every channel the archive held until it was emptied.
+BUILDS, PROPOSALS, SUPPORT_CHAT = "1494782854117326969", "1494033189532860707", "1497547403140530237"
+# Channel id -> (category, name in server.json) for every channel the archive held that server.json still
+# manages. The old support chat was archived too; it is retired with the empty forums.
 RESTORED = {
     "1494780931498705057": ("Start", "roles"),
-    "1494033189532860707": ("Community", "proposal-chat"),
-    "1494782854117326969": ("Community", "build-chat"),
-    "1497547403140530237": ("Support", "support-chat"),
+    PROPOSALS: ("Community", "proposals"),
+    BUILDS: ("Community", "builds"),
     **{cid: ("Hardware", name) for cid, name, _t, parent in CHANNELS if parent == HARDWARE},
     **{cid: ("Software", name) for cid, name, _t, parent in CHANNELS if parent == SOFTWARE and cid != CHATFPV},
 }
 FIRMWARE = {"Betaflight": "Betaflight user", "AM32": "AM32 user", "ExpressLRS": "ExpressLRS user"}
 REGIONS = [("North America", "\U0001F5FD"), ("Europe", "\U0001F1EA\U0001F1FA"), ("Asia", "\U0001F43C"),
            ("South America", "\U0001F1E7\U0001F1F7"), ("Oceania", "\U0001F998"), ("Africa", "\U0001F334")]
+PRODUCT_CHANNELS = list(dict.fromkeys(entry["channel"] for entry in REPOS["repos"].values()))
+# The empty forums the previous layout added, per category; deleted by hand after this layout is applied.
+RETIRED_FORUMS = {"Community": ["builds", "proposals"],
+                  "Development": ["flight-controllers", "escs", "receivers", "video", "remote-id-gps", "frames",
+                                  "power", "library", "firmware", "web-and-tools"]}
+# The "Follow OpenDrone development" options of the previous layout pointed at the forums.
+PREVIOUS_OPTION_CHANNELS = {
+    "Flight controllers": ["flight-controllers"], "ESCs": ["escs"], "Receivers": ["receivers"], "Video": ["video"],
+    "Remote ID and GPS": ["remote-id-gps"], "Frames": ["frames"], "Power": ["power"], "KiCad library": ["library"],
+    "Web and tools": ["web-and-tools"], "Proposals": ["proposals"], "Alpha testing": ["alpha-testing"],
+}
+NEW_TOPICS = ["welcome", "rules", "announcements", "gen-chat", "introduce-yourself", "charger", "builds", "proposals",
+              "kicad-library"]
 
 
-def previous_desired():
-    """The layout that was live before the archive was emptied: the 19 channels in a read-only Archive
-    category, Hardware and Software empty staff categories, the Firmware prompt giving the team roles."""
+def current_desired():
+    """The layout live before this one: every product twice, as an empty forum under Development and as the
+    old text chat (#build-chat and #proposal-chat renamed), plus #support-chat and no #kicad-library."""
     d = copy.deepcopy(DESIRED)
-    for cat in d["categories"]:
-        cat["channels"] = [ch for ch in cat.get("channels", []) if ch.get("id") not in RESTORED]
-    cats = [c for c in d["categories"] if c["name"] not in ("Hardware", "Software")]
-    d["categories"] = cats + [{"id": HARDWARE, "name": "Hardware", "access": "staff", "channels": []},
-                              {"id": SOFTWARE, "name": "Software", "access": "staff", "channels": []}]
-    d["archive"] = {"category": "Archive", "access": "readonly", "channels": list(RESTORED)}
-    d["onboarding"]["default_channels"] = ["welcome", "rules", "announcements", "gen-chat", "introduce-yourself",
-                                           "off-topic", "flying", "help", "builds"]
-    for option in next(p for p in d["onboarding"]["prompts"] if p["title"] == "Firmware")["options"]:
-        option["roles"] = [team for team, user in FIRMWARE.items() if option["roles"] == [user]]
-    d["guard"]["unassignable_roles"] = [r for r in d["guard"]["unassignable_roles"] if r not in FIRMWARE]
-    d["roles"] = [r for r in d["roles"] if r["name"] not in FIRMWARE.values()]
+    cats = {c["name"]: c for c in d["categories"]}
+    for ch in [ch for cat in d["categories"] for ch in cat["channels"]]:
+        if ch["name"] in NEW_TOPICS:
+            ch.pop("topic", None)
+        if ch.get("id") in (BUILDS, PROPOSALS):
+            ch["name"] = {BUILDS: "build-chat", PROPOSALS: "proposal-chat"}[ch["id"]]
+    for category, forums in RETIRED_FORUMS.items():
+        cats[category]["channels"] += [{"name": name, "type": "forum"} for name in forums]
+    cats["Support"]["channels"].insert(1, {"id": SUPPORT_CHAT, "name": "support-chat"})
+    cats["Hardware"]["channels"] = [ch for ch in cats["Hardware"]["channels"] if ch["name"] != "kicad-library"]
+    onboarding = d["onboarding"]
+    onboarding["default_channels"] = ["welcome", "rules", "announcements", "gen-chat", "introduce-yourself",
+                                      "off-topic", "flying", "help", "builds", "build-chat", "proposal-chat",
+                                      "support-chat", "Hardware", "Software"]
+    for prompt in onboarding["prompts"]:
+        for option in prompt["options"]:
+            if prompt["title"] == "Follow OpenDrone development":
+                option["channels"] = PREVIOUS_OPTION_CHANNELS[option["title"]]
+            elif prompt["title"] == "Firmware":
+                option["channels"] = ["firmware"]
     return d
 
 
@@ -172,7 +194,8 @@ class ServerJson(ToolCase):
 
     def test_plan_is_valid_and_has_no_notes(self):
         self.assertEqual(self.plan_["notes"], [])
-        self.assertEqual(sorted(self.plan_["unmanaged"]["channels"]), ["web-support", "web-support-admin"])
+        # The old support chat is no longer in server.json; it is deleted by hand with the empty forums.
+        self.assertEqual(sorted(self.plan_["unmanaged"]["channels"]), ["support", "web-support", "web-support-admin"])
         self.assertEqual(self.plan_["unmanaged"]["onboarding prompts"], [])
 
     def test_plan_never_touches_the_storefront_channels(self):
@@ -206,7 +229,7 @@ class ServerJson(ToolCase):
         fake = self.applied()
         gating = {r["id"] for r in fake.roles if r["name"] in ("Newbie", "Member")}
         for c in fake.channels:
-            if c["id"] in PROTECTED:
+            if c["id"] in PROTECTED | {SUPPORT_CHAT}:  # unmanaged
                 continue
             self.assertEqual({o["id"] for o in c["permission_overwrites"] if o["type"] == 0} & gating, set(), c["name"])
         for profile in DESIRED["profiles"].values():
@@ -222,7 +245,7 @@ class ServerJson(ToolCase):
         fake = self.applied()
         cats = {c["name"]: c["id"] for c in fake.channels if c["type"] == 4}
         self.assertNotIn("Archive", cats)
-        self.assertEqual(len(RESTORED), 19)
+        self.assertEqual(len(RESTORED), 18)
         self.assertNotIn(CHATFPV, RESTORED)
         for cid, (category, name) in RESTORED.items():
             ch = fake.chan(cid)
@@ -269,20 +292,27 @@ class ServerJson(ToolCase):
         self.assertEqual(fake.chan("1494032474626326548")["type"], 5)
         self.assertEqual(fake.by_name("git-feed")["type"], 5)
 
-    def test_development_forums_match_the_bot_mapping(self):
+    def test_one_text_channel_per_product_matches_the_bot_mapping(self):
         fake = self.applied()
-        dev = fake.by_name("Development")
-        forums = [c for c in sorted(fake.channels, key=lambda c: c["position"])
-                  if c["parent_id"] == dev["id"] and c["type"] == 15 and c["name"] != "alpha-testing"]
-        self.assertEqual([c["name"] for c in forums], REPOS["forums"])
-        lifecycle = set(REPOS["lifecycleTags"].values())
-        for forum in forums:
-            tags = {t["name"] for t in forum["available_tags"]}
-            products = {r["tag"] for r in REPOS["repos"].values() if r["forum"] == forum["name"]}
-            self.assertLessEqual(products | lifecycle | {"schematic", "layout", "bom", "firmware", "question", "bug"},
-                                 tags, forum["name"])
-            self.assertLessEqual(len(tags), dc.MAX_TAGS)
-            self.assertTrue(forum["flags"] & dc.REQUIRE_TAG, forum["name"])
+        cats = {c["id"]: c["name"] for c in fake.channels if c["type"] == 4}
+        self.assertNotIn("forums", REPOS)
+        self.assertEqual(len(PRODUCT_CHANNELS), 14)
+        for name in PRODUCT_CHANNELS:
+            ch = fake.by_name(name)
+            self.assertEqual(ch["type"], 0, name)
+            self.assertIn(cats[ch["parent_id"]], ("Hardware", "Software"), name)
+        dev = fake.by_name("Development")["id"]
+        self.assertEqual(sorted(c["name"] for c in fake.channels if c["parent_id"] == dev), ["alpha-testing", "git-feed"])
+        forums = sorted(ch["name"] for cat in DESIRED["categories"] for ch in cat["channels"] if ch.get("type") == "forum")
+        self.assertEqual(forums, ["alpha-testing", "help"])
+        self.assertEqual(fake.by_name("kicad-library")["topic"],
+                         "KiCad-Library parts, footprints, datasheets and hardware-template.")
+
+    def test_text_channels_get_one_line_topics(self):
+        fake = self.applied()
+        for name in NEW_TOPICS:
+            topic = fake.by_name(name)["topic"]
+            self.assertTrue(topic and "\n" not in topic and "\u2014" not in topic, name)
 
     def test_bot_channels_and_roles_exist_after_apply(self):
         fake = self.applied()
@@ -314,11 +344,20 @@ class ServerJson(ToolCase):
         granted = {by_id[c]["name"] for o in follow["options"] for c in o["channel_ids"]}
         firmware = next(p for p in ob["prompts"] if p["title"] == "Firmware")
         granted |= {by_id[c]["name"] for o in firmware["options"] for c in o["channel_ids"]}
-        self.assertLessEqual(set(REPOS["forums"]) | {"proposals", "alpha-testing"}, granted)
-        self.assertTrue(all(o["role_ids"] for o in follow["options"] if by_id[o["channel_ids"][0]]["name"]
-                            in REPOS["forums"]))
+        self.assertLessEqual(set(PRODUCT_CHANNELS) | {"proposals", "alpha-testing"}, granted)
+        self.assertFalse({c["type"] for o in follow["options"] for c in map(by_id.get, o["channel_ids"])
+                          if c["name"] not in ("alpha-testing",)} - {0})
+        ping = {r["id"] for r in fake.roles if r["name"].endswith(" dev")}
+        for option in follow["options"]:
+            self.assertLessEqual(set(option["role_ids"]), ping, option["title"])
+            self.assertLessEqual(len(option["description"]), 100, option["title"])
+            if {by_id[c]["name"] for c in option["channel_ids"]} & set(PRODUCT_CHANNELS):
+                self.assertTrue(option["role_ids"], option["title"])
         names = {by_id[c]["name"] for c in ob["default_channel_ids"]}
-        self.assertLessEqual({"Hardware", "Software", "build-chat", "proposal-chat", "support-chat"}, names)
+        self.assertEqual(names, {"welcome", "rules", "announcements", "gen-chat", "introduce-yourself", "off-topic",
+                                 "flying", "help", "builds", "proposals", "Hardware", "Software"})
+        self.assertIn(BUILDS, ob["default_channel_ids"])
+        self.assertIn(BUILDS, [c["channel_id"] for c in fake.welcome["welcome_channels"]])
         role_names = {r["id"]: r["name"] for r in fake.roles}
         given = [[role_names[r] for r in o["role_ids"]] for o in firmware["options"]]
         self.assertEqual(sorted(given), sorted([u] for u in FIRMWARE.values()))
@@ -366,55 +405,82 @@ class ServerJson(ToolCase):
         self.assertTrue(deny & P["MENTION_EVERYONE"])
 
 
-class FromThePreviousLayout(ToolCase):
-    """The live server before this layout: server.json as it was with the Archive category, applied."""
+class FromTheCurrentLayout(ToolCase):
+    """The live server before this layout: every product twice, as an empty forum and as the old text chat."""
 
     def setUp(self):
         super().setUp()
         self.fake = FakeDiscord(live_state())
-        self.apply(previous_desired())
+        self.apply(current_desired())
         self.before = copy.deepcopy(fake_state(self.fake))
 
     def plan(self, desired, fake=None):
         return dc.build_plan(desired, dc.fetch(fake or self.fake, GID))
 
-    def test_plan_moves_renames_creates_roles_and_changes_onboarding(self):
+    def forum(self, name):
+        return next(c["id"] for c in self.fake.channels if c["name"] == name and c["type"] == 15)
+
+    def test_plan_renames_back_creates_kicad_library_and_repoints_onboarding(self):
         plan = self.plan(DESIRED)
         ops = plan["ops"]
-        self.assertEqual(ops["archive"], [])
-        self.assertEqual(sorted(op["label"] for op in ops["roles"]), sorted(f"role {u}" for u in FIRMWARE.values()))
-        self.assertTrue(all(op["action"] == "create" for op in ops["roles"]))
-        moved = {op["path"].rsplit("/", 1)[1]: op for op in ops["channels"]}
-        self.assertEqual(set(moved), set(RESTORED))
-        renames = {cid: op["diff"]["name"] for cid, op in moved.items() if "name" in op["diff"]}
-        self.assertEqual(renames, {"1494782854117326969": ("builds", "build-chat"),
-                                   "1494033189532860707": ("proposals", "proposal-chat"),
-                                   "1497547403140530237": ("support", "support-chat")})
-        for cid, op in moved.items():
-            self.assertEqual(op["diff"]["parent"], ("Archive", RESTORED[cid][0]), cid)
-        self.assertEqual(sorted(op["label"] for op in ops["categories"]),
-                         [f"Hardware ({HARDWARE})", f"Software ({SOFTWARE})"])
+        self.assertEqual((ops["roles"], ops["categories"], ops["archive"]), ([], [], []))
+        updates = {op["path"].rsplit("/", 1)[1]: op for op in ops["channels"] if op["action"] == "update"}
+        renames = {cid: op["diff"]["name"] for cid, op in updates.items() if "name" in op["diff"]}
+        self.assertEqual(renames, {BUILDS: ("build-chat", "builds"), PROPOSALS: ("proposal-chat", "proposals")})
+        self.assertEqual(sorted(op["label"].split(" (")[0] for op in updates.values() if "topic" in op["diff"]),
+                         sorted(f"#{n}" for n in NEW_TOPICS if n != "kicad-library"))
+        self.assertFalse(any("parent" in op["diff"] or op.get("overwrites") for op in updates.values()))
+        self.assertEqual([op["label"] for op in ops["channels"] if op["action"] == "create"], ["#kicad-library (text)"])
         [onboarding] = ops["onboarding"]
         text = "\n".join(onboarding["summary"])
-        for team, user in FIRMWARE.items():
-            self.assertIn(f"option {team!r}: roles +[{user!r}] -[{team!r}]", text)
-        self.assertIn("default channels: +['#build-chat', '#proposal-chat', '#support-chat', 'Hardware', 'Software']",
-                      text)
-        self.assertEqual(plan["unmanaged"]["channels"], ["Archive", "web-support", "web-support-admin"])
-        self.assertEqual(plan["notes"], [])
+        self.assertIn("default channels: +[] -['#builds (forum)', '#support-chat']", text)
+        self.assertIn("option 'Proposals': channels +['#proposals (text)'] -['#proposals (forum)']", text)
+        self.assertIn("option 'Flight controllers': channels +['#fc', '#aio'] -['#flight-controllers']", text)
+        self.assertIn("option 'Betaflight': channels +['#fc-betaflight'] -['#firmware']", text)
+        [welcome] = ops["welcome_screen"]
+        self.assertIn("'#builds (forum)', '#gen-chat'] -> ['#rules', '#announcements', '#help', '#builds (text)'",
+                      "\n".join(welcome["summary"]))
+        retired = [f"{n} (forum)" if n in ("builds", "proposals") else n
+                   for names in RETIRED_FORUMS.values() for n in names]
+        self.assertEqual(plan["unmanaged"]["channels"],
+                         sorted(retired + ["support-chat", "web-support", "web-support-admin"]))
+        self.assertEqual(len(plan["notes"]), 2, plan["notes"])
+        self.assertIn(f"#builds ({BUILDS}) is renamed to a name unmanaged channel(s) {self.forum('builds')} still carry",
+                      plan["notes"][0])
+        self.assertIn(f"#proposals ({PROPOSALS}) is renamed", plan["notes"][1])
 
-    def test_apply_reads_back_deletes_nothing_and_leaves_the_archive_category_empty(self):
+    def test_twin_names_resolve_to_the_channel_server_json_lists_by_id(self):
+        planner = dc.Planner(DESIRED, dc.fetch(self.fake, GID))
+        planner.plan_roles()
+        planner.plan_layout()
+        self.assertEqual(planner.resolve_channel("builds", "x"), BUILDS)
+        self.assertEqual(planner.resolve_channel("proposals", "x"), PROPOSALS)
+        self.assertEqual(planner.label(BUILDS), "#builds (text)")
+        self.assertEqual(planner.label(self.forum("builds")), "#builds (forum)")
+        self.assertEqual(planner.label(SUPPORT_CHAT), "#support-chat")
+
+    def test_apply_reads_back_while_the_retired_forums_still_exist_and_deletes_nothing(self):
         self.apply(DESIRED)
         again = self.plan(DESIRED)
         self.assertEqual(again["total"], 0, "\n".join(dc.render_plan(again, True)))
         self.assertLessEqual({c["id"] for c in self.before["channels"]}, {c["id"] for c in self.fake.channels})
-        self.assertLessEqual({r["id"] for r in self.before["roles"]}, {r["id"] for r in self.fake.roles})
-        archive = self.fake.by_name("Archive")["id"]
-        self.assertEqual([c["name"] for c in self.fake.channels if c.get("parent_id") == archive], [])
-        for cid in PROTECTED:
+        self.assertEqual(sorted(c["type"] for c in self.fake.channels if c["name"] == "builds"), [0, 15])
+        self.assertEqual(sorted(c["type"] for c in self.fake.channels if c["name"] == "proposals"), [0, 15])
+        self.assertEqual(self.fake.chan(BUILDS)["name"], "builds")
+        for cid in PROTECTED | {SUPPORT_CHAT}:
             self.assertEqual(self.fake.chan(cid), next(c for c in self.before["channels"] if c["id"] == cid))
-        team = {r["id"] for r in self.fake.roles if r["name"] in FIRMWARE}
-        self.assertFalse(team & {r for p in self.fake.onboarding["prompts"] for o in p["options"] for r in o["role_ids"]})
+        onboarding_ids = set(self.fake.onboarding["default_channel_ids"]) | {
+            c for p in self.fake.onboarding["prompts"] for o in p["options"] for c in o["channel_ids"]}
+        self.assertFalse(onboarding_ids & {self.forum(n) for names in RETIRED_FORUMS.values() for n in names})
+        self.assertNotIn(SUPPORT_CHAT, onboarding_ids)
+
+    def test_once_the_retired_channels_are_deleted_only_the_storefront_channels_are_unmanaged(self):
+        self.apply(DESIRED)
+        retired = {self.forum(n) for names in RETIRED_FORUMS.values() for n in names} | {SUPPORT_CHAT}
+        self.fake.channels = [c for c in self.fake.channels if c["id"] not in retired]
+        plan = self.plan(DESIRED)
+        self.assertEqual(plan["total"], 0)
+        self.assertEqual((plan["unmanaged"]["channels"], plan["notes"]), (["web-support", "web-support-admin"], []))
 
 
 if __name__ == "__main__":

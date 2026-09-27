@@ -44,12 +44,12 @@ Any other path is 404; a known path with the wrong method is 405.
 
 ### GitHub events
 
-| Event.action | Forum thread of the PR's repository | `#git-feed` | `#announcements` |
+| Event.action | Thread of the PR in its product channel | `#git-feed` | `#announcements` |
 |---|---|---|---|
-| `pull_request.opened`, `reopened`, `ready_for_review` | Created if missing, card | One line | No |
-| `pull_request.synchronize` | Created if missing, push line | No | No |
+| `pull_request.opened`, `reopened`, `ready_for_review` | Started if missing, card with the description | One line | No |
+| `pull_request.synchronize` | Started if missing, push line (with the description when this event started the thread) | No | No |
 | `pull_request.closed` | Card if linked (merged or closed) | One line | No |
-| `pull_request_review.submitted` | Created if missing, review card | Approved or changes requested | No |
+| `pull_request_review.submitted` | Started if missing, review card | Approved or changes requested | No |
 | `check_suite.completed` | Card if linked, only for the PR head commit | Default-branch failures only | No |
 | `release.published` | No | One line | Release card with up to 10 asset links |
 | `repository.edited` (`changes.topics`) | No | One line | When the `status-*` topic changes |
@@ -69,16 +69,24 @@ on their pull requests.
 ```mermaid
 flowchart TD
   E[PR event] --> L{"Discussion: line in the PR body?"}
-  L -->|yes| V{Thread in this repo's forum?}
+  L -->|yes| V{Thread whose parent is this repo's product channel?}
   V -->|yes| P[Post in that thread]
-  V -->|no| X[Log, post nothing, create nothing]
+  V -->|no| X[Log, post nothing, start nothing]
   L -->|no| C{PR open, and event is not closed or check_suite?}
-  C -->|yes| N[Create forum post with product + lifecycle tag] --> A[Append Discussion: line to PR body] --> P
+  C -->|yes| M[One-line starter message in the product channel] --> N[Start a public thread from it] --> A[Append Discussion: line to PR body] --> P
   C -->|no| S[Skip thread]
 ```
 
+| Step | Discord call | Detail |
+|---|---|---|
+| Starter | `POST /channels/{channel}/messages` | "Pull request **OpenRX** #12 by alice: title" linking the PR; "Draft pull request" for a draft |
+| Thread | `POST /channels/{channel}/messages/{starter}/threads` | Name `PR #<n>: <title>` cut to 100 characters, `auto_archive_duration` 10080 (a week). The thread id is the starter's id; a retry that finds the thread already started (Discord code 160004) uses it |
+| Link | GitHub `PATCH` of the PR body | Read again right before writing so an edit made meanwhile is kept |
+
 The line is `Discussion: https://discord.com/channels/<guild>/<thread>`. It is
-the only record of the link; nothing about it is stored in D1.
+the only record of the link; nothing about it is stored in D1. There are no
+tags: a lifecycle change (`status-*` topic) is announced in `#git-feed` and
+`#announcements` only.
 
 ### KiCad collision guard
 
@@ -91,7 +99,7 @@ new file overlaps.
 
 ### Idempotency
 
-Every visible step (forum post, card, feed line) runs once per
+Every visible step (starter message, thread, card, feed line) runs once per
 `X-GitHub-Delivery` through the D1 table `github_deliveries`, created on first
 use and pruned after 7 days by the cron. A redelivery repeats only the steps
 that failed.
@@ -165,7 +173,7 @@ other account's metadata is emptied by the next cron run.
 | Mutating Discord calls carry the audit log reason `OpenDrone-hw/discord bot` unless given another | `src/discord.ts` |
 | A failing GitHub handler is logged and does not stop the others | `src/webhooks.ts` |
 | `defer()` work and GitHub handlers run in `ctx.waitUntil`, which Cloudflare cancels 30 s after the response | `src/interactions.ts`, `src/webhooks.ts` |
-| Channel, role and tag ids are resolved by name at runtime; no id is hard-coded | `src/config.ts` |
+| Channel and role ids are resolved by name at runtime; no id is hard-coded | `src/config.ts` |
 | A module conflict (same command, custom_id prefix or route) fails at startup | `src/registry.ts` |
 
 ## Commands
@@ -181,21 +189,27 @@ Settings, Integrations, OpenDrone Dev.
 
 | Command | Where | Who | What it does |
 |---|---|---|---|
-| `/link pr:<url>` | thread of the forum the PR's repository maps to | members; private repos: refused | Writes `Discussion: <thread url>` into the PR description; a repository of another forum is refused before any GitHub call. Replaces an existing line only when it points at a post the bot created or at a deleted thread, and leaves a "moved to" note in the replaced post |
-| `/branch [repo]` | development forum thread | anyone who can use it | Fork and branch commands, and the `Discussion:` line to put in the PR description. `repo` accepts and autocompletes only repositories mapped to the thread's forum (tagged ones first) |
+| `/link pr:<url>` | thread in the text channel the PR's repository maps to | members; private repos: refused | Writes `Discussion: <thread url>` into the PR description; a repository of another channel is refused before any GitHub call. Replaces an existing line only when it points at a thread the bot started or at a deleted thread, and leaves a "moved to" note in the replaced thread |
+| `/branch [repo]` | thread in a product channel | anyone who can use it | Fork and branch commands, and the `Discussion:` line to put in the PR description. `repo` accepts and autocompletes only repositories mapped to the thread's channel (the ones the thread name mentions first); without it, a thread name that names exactly one of them, or a channel with one repository, decides |
 | `/editing repo:<name>` | anywhere | anyone; private repos: staff | Open PRs that change `.kicad_pcb` or `.kicad_sch` files |
 | `/verify` | anywhere | anyone who can use it | Link to the Linked Roles verification page |
 | `/promote name summary [private]` | anywhere | admin | Creates a repository from `hardware-template` with topic `status-planned`. Refuses while `PROMOTE_ENABLED` is `"false"` |
-| To GitHub issue | message in a development forum thread | members; private repos: staff | Modal, then an issue with a link back to the message |
+| To GitHub issue | message in a thread of a product channel | members; private repos: staff | Modal offering the channel's repositories (the one the thread name mentions preselected), then an issue with a link back to the message |
 | Approve build | message | reviewer or admin | Grants Verified Builder to the message author |
 
 Approve build and `/promote` are visible to Administrators only until an
 override is added.
 
-The GitHub module follows a `Discussion:` line only to a thread in the
-repository's own forum (`linkState` in `src/github/thread-link.ts`), so
-`/link` and `/branch` refuse any other repository instead of writing or
-handing out a line it would ignore.
+The commands find the repository from the thread's parent channel: a thread
+whose parent is not a text channel named in `config/repos.json` (a forum, the
+retired development forums included, or any other channel) is refused. The
+GitHub module follows a `Discussion:` line only to a thread in the
+repository's own product channel (`linkState` in
+`src/github/thread-link.ts`), so `/link` and `/branch` refuse any other
+repository instead of writing or handing out a line it would ignore. A thread
+name mentions a repository when the name appears as a whole word, case
+insensitive: "OpenFC-Lite: move the USB connector" names OpenFC-Lite, not
+OpenFC.
 
 ## `config/repos.json`
 
@@ -204,13 +218,29 @@ handing out a line it would ignore.
 | `org` | GitHub organisation; repositories outside it are ignored |
 | `channels` | `gitFeed`, `announcements`, `modLog`: channel names |
 | `roles` | Role names by key (`admin`, `reviewer`, `verifiedBuilder`, ...) |
-| `lifecycleTags` | `status-*` repository topic to forum tag name |
-| `forums` | The development forum names |
-| `repos` | Repository name to `{forum, tag}`; `tag` is the product tag in that forum |
+| `lifecycle` | `status-*` repository topic to the name shown in `#announcements` and `#git-feed` (and in the pinned hubs, `migrate.py hubs`) |
+| `repos` | Repository name to `{channel}`: the product text channel its pull request threads start in. The product channels are the distinct `channel` values |
 
-Loading fails if a repository points at a forum not in `forums`, a tag repeats
-within a forum, a tag is longer than 20 characters, or a forum's product and
-lifecycle tags exceed Discord's 20.
+Loading fails on an unknown key (the old `forums`, `lifecycleTags` and `tag`
+included), a repository listed twice, a channel name Discord would change, or a
+product channel that is one of the `channels` above.
+
+| Product channel | Repositories |
+|---|---|
+| fc | OpenFC-Lite, OpenFC-Lite-Mini, OpenFC |
+| aio | OpenAIO, OpenAIO-Whoop |
+| esc | OpenESC-20x20, OpenESC-30x30 |
+| rx | OpenRX, OpenRX-Lite, OpenRX-Lite-UFL, OpenRX-Mono, OpenRX-Gemini |
+| vtx | OpenVTX |
+| remote-id | OpenRemoteID |
+| gps | OpenGPS |
+| frame | OpenFrame-3F, OpenFrame-5F |
+| charger | Charger |
+| kicad-library | KiCad-Library, hardware-template, OpenDrone-Fixtures |
+| fc-betaflight | betaflight |
+| esc-am32 | AM32 |
+| rx-expresslrs | ExpressLRS |
+| opendrone-web | OpenDrone-Web, OpenDrone-Brand, .github, discord |
 
 ### Server prerequisites
 
@@ -220,7 +250,7 @@ places:
 | Names | Source |
 |---|---|
 | Roles `admin`, `developer`, `beta tester`, `reviewer`, `Member`; channel `announcements` | Exist on the live server; `server.json` does not create them (`announcements` is matched by id) |
-| Channels `git-feed`, `mod-log`; the development forums with their product and lifecycle tags; roles `Verified Owner`, `Verified Builder`, `Contributor`, `Maintainer` | Created by the repository's `server.json` |
+| Channels `git-feed`, `mod-log`; the product text channels (listed by id in `server.json`; `kicad-library` is created by it); roles `Verified Owner`, `Verified Builder`, `Contributor`, `Maintainer` | Created or managed by the repository's `server.json` |
 
 `tests/test_server_json.py` checks that every name exists after
 `discord_config.py apply` (created by `server.json` or already live) and fails
@@ -230,9 +260,7 @@ when the two files drift apart. Until `apply --yes` has run, the names
 | Missing on the server | Effect |
 |---|---|
 | A channel in `channels` | The message is logged and dropped |
-| A forum in `forums` | Thread creation for that repository fails and is logged |
-| A product tag | The post is created without it, with a warning in the log |
-| A lifecycle tag | The post is created without it |
+| A product channel | Thread creation for that repository fails and is logged; the `#git-feed` line is still posted |
 
 ## Layout
 
@@ -250,7 +278,7 @@ when the two files drift apart. Until `apply --yes` has run, the names
 | `src/commands/` | Commands; table at the top of `src/commands/index.ts` |
 | `src/github/` | Webhook handlers; file table at the top of `src/github/index.ts` |
 | `src/linked-roles/` | Linked roles; file table at the top of `src/linked-roles/index.ts` |
-| `config/repos.json` | Repository to forum and product tag, channel and role names |
+| `config/repos.json` | Repository to product channel, channel, role and lifecycle names |
 | `migrations/` | D1 schema for `users` |
 | `scripts/` | `register-commands.ts`, `register-metadata.ts` |
 | `test/` | vitest suites, offline |
@@ -343,14 +371,13 @@ layout is built. Without Administrator the Worker needs:
 
 | Permission | Where | Used by |
 |---|---|---|
-| View Channels, Send Messages, Send Messages in Threads, Create Public Threads (forum posts) | Development forums (the `open` profile grants these to `@everyone`) | PR threads and cards, collision warnings |
-| Manage Threads | Development forums; grant it on the bot role itself (server level), because `discord_config.py apply` rewrites each managed channel's role overwrites to exactly what `server.json` lists and would drop a hand-made overwrite | Posts the bot creates carry the lifecycle tag, and every lifecycle tag in `server.json` is moderated: only a member with Manage Threads can apply it. Without it, post creation fails for every repository with a `status-*` topic |
+| View Channels, Send Messages, Create Public Threads, Send Messages in Threads | Product text channels (the `open` profile grants these to `@everyone`) | Starter messages, PR threads and cards, collision warnings |
 | View Channels, Send Messages | `#git-feed`, `#announcements` (the `readonly` profile allows the bot role explicitly) | Feed lines, release and lifecycle cards |
 | Manage Roles, role above Verified Builder | Server | Approve build |
 
 `discord_config.py` and `migrate.py` use the same application's token and need
-more (Manage Channels, Manage Roles, Manage Server, Pin Messages to unpin its
-notices, View Audit Log for firmware-roles), so the role keeps Administrator while the
+more (Manage Channels, Manage Roles, Manage Server, Pin Messages to pin the
+rules and hubs and unpin its notices, View Audit Log for firmware-roles), so the role keeps Administrator while the
 layout is applied and migrated.
 
 ### 3. Secrets

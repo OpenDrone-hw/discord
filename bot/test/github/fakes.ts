@@ -19,21 +19,21 @@ import { BOT_TOKEN, fakeContext, githubSignature, jsonResponse, makeEnv, type Re
 
 export const GUILD = "1494019459822653512";
 export const ORG = "OpenDrone-hw";
-export const FORUM_RX = "1600000000000000100";
-export const TAG_RX = "1600000000000000101";
-export const TAG_RX_LITE = "1600000000000000102";
-export const TAG_BETA = "1600000000000000103";
-export const TAG_PLANNED = "1600000000000000104";
+/** The #rx product text channel (config/repos.json maps the OpenRX repositories to it). */
+export const CHANNEL_RX = "1600000000000000100";
 export const FEED = "1600000000000000200";
 export const ANNOUNCEMENTS = "1600000000000000300";
 export const EXISTING_THREAD = "1600000000000000999";
 /** A forum that config/repos.json does not list, e.g. #web-support. */
 export const OTHER_FORUM = "1600000000000000400";
 export const OTHER_FORUM_THREAD = "1600000000000000401";
-/** A development forum assigned to other repositories (config/repos.json "flight-controllers"). */
-export const FORUM_FC = "1600000000000000500";
+/** A product channel assigned to other repositories (config/repos.json "fc"). */
+export const CHANNEL_FC = "1600000000000000500";
 export const FC_THREAD = "1600000000000000501";
 export const RULES = "1600000000000000600";
+/** The retired #receivers development forum, still on the server until it is deleted by hand. */
+export const OLD_FORUM_RX = "1600000000000000700";
+export const OLD_FORUM_THREAD = "1600000000000000701";
 
 /** D1 over an in-memory SQLite database; implements prepare().bind().run()/first(). */
 export function sqliteD1(db = new DatabaseSync(":memory:")): D1Database & { sqlite: DatabaseSync } {
@@ -133,34 +133,28 @@ export function pullJson(repo: string, number: number, overrides: Partial<FakePu
   };
 }
 
-function forumTags() {
-  return [
-    { id: TAG_RX, name: "OpenRX", moderated: false },
-    { id: TAG_RX_LITE, name: "OpenRX-Lite", moderated: false },
-    { id: TAG_BETA, name: "beta", moderated: false },
-    { id: TAG_PLANNED, name: "planned", moderated: false },
-  ];
-}
-
 export class FakeWorld {
   readonly calls: RecordedCall[] = [];
   channels: Channel[] = [
-    { id: FORUM_RX, type: ChannelType.GUILD_FORUM, name: "receivers", available_tags: forumTags() },
+    { id: CHANNEL_RX, type: ChannelType.GUILD_TEXT, name: "rx" },
     { id: FEED, type: ChannelType.GUILD_TEXT, name: "git-feed" },
     { id: ANNOUNCEMENTS, type: ChannelType.GUILD_ANNOUNCEMENT, name: "announcements" },
     { id: RULES, type: ChannelType.GUILD_TEXT, name: "rules" },
     { id: OTHER_FORUM, type: ChannelType.GUILD_FORUM, name: "web-support", available_tags: [] },
-    { id: FORUM_FC, type: ChannelType.GUILD_FORUM, name: "flight-controllers", available_tags: [] },
+    { id: CHANNEL_FC, type: ChannelType.GUILD_TEXT, name: "fc" },
+    { id: OLD_FORUM_RX, type: ChannelType.GUILD_FORUM, name: "receivers", available_tags: [] },
   ];
   /** Threads answered by GET /channels/{id}; guild channel lists do not include them. */
   readonly threadChannels = new Map<string, Channel>([
-    [EXISTING_THREAD, { id: EXISTING_THREAD, type: 11, parent_id: FORUM_RX }],
+    [EXISTING_THREAD, { id: EXISTING_THREAD, type: 11, parent_id: CHANNEL_RX }],
     [OTHER_FORUM_THREAD, { id: OTHER_FORUM_THREAD, type: 11, parent_id: OTHER_FORUM }],
-    [FC_THREAD, { id: FC_THREAD, type: 11, parent_id: FORUM_FC }],
+    [FC_THREAD, { id: FC_THREAD, type: 11, parent_id: CHANNEL_FC }],
+    [OLD_FORUM_THREAD, { id: OLD_FORUM_THREAD, type: 11, parent_id: OLD_FORUM_RX }],
   ]);
   /** Messages by channel or thread id. */
   readonly messages = new Map<string, Record<string, unknown>[]>();
-  readonly threads: Array<{ id: string; forumId: string; body: Record<string, unknown>; reason: string | undefined }> = [];
+  /** Threads the bot started from a message: the thread id is the starter message id. */
+  readonly threads: Array<{ id: string; channelId: string; body: Record<string, unknown>; reason: string | undefined }> = [];
   readonly pulls = new Map<string, FakePull>();
   readonly files = new Map<string, string[]>();
   readonly comments = new Map<string, FakeComment[]>();
@@ -261,20 +255,27 @@ export class FakeWorld {
       const channel = this.goneThreads.has(id) ? undefined : (this.threadChannels.get(id) ?? this.channels.find((c) => c.id === id));
       return channel ? jsonResponse(channel) : jsonResponse({ code: 10003, message: "Unknown Channel" }, 404);
     }
-    if (call.method === "POST" && (m = /^\/channels\/(\d+)\/threads$/.exec(path))) {
-      const id = this.#id();
-      this.threads.push({ id, forumId: m[1] as string, body, reason: call.headers["x-audit-log-reason"] });
-      this.messages.set(id, [body.message as Record<string, unknown>]);
-      this.threadChannels.set(id, { id, type: 11, parent_id: m[1] as string });
-      return jsonResponse({ id, type: 11, parent_id: m[1], message: { id } }, 201);
+    if (call.method === "POST" && (m = /^\/channels\/(\d+)\/messages\/(\d+)\/threads$/.exec(path))) {
+      const [channelId, messageId] = [m[1] as string, m[2] as string];
+      if (!this.messagesIn(channelId).some((msg) => msg.id === messageId)) {
+        return jsonResponse({ code: 10008, message: "Unknown Message" }, 404);
+      }
+      if (this.threadChannels.has(messageId)) {
+        return jsonResponse({ code: 160004, message: "A thread has already been created for this message" }, 400);
+      }
+      this.threads.push({ id: messageId, channelId, body, reason: call.headers["x-audit-log-reason"] });
+      this.threadChannels.set(messageId, { id: messageId, type: 11, parent_id: channelId, name: String(body.name) });
+      this.messages.set(messageId, []);
+      return jsonResponse({ id: messageId, type: 11, parent_id: channelId, name: body.name }, 201);
     }
     if (call.method === "POST" && (m = /^\/channels\/(\d+)\/messages$/.exec(path))) {
       const channel = m[1] as string;
       if (this.goneThreads.has(channel)) return jsonResponse({ code: 10003, message: "Unknown Channel" }, 404);
+      const id = this.#id();
       const list = this.messages.get(channel) ?? [];
-      list.push(body);
+      list.push({ ...body, id });
       this.messages.set(channel, list);
-      return jsonResponse({ id: this.#id(), channel_id: channel });
+      return jsonResponse({ id, channel_id: channel });
     }
     throw new Error(`unexpected Discord call ${call.method} ${path}`);
   }

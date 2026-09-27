@@ -1,8 +1,8 @@
 /**
  * Message context menu "To GitHub issue": members only, on a message in a
- * development forum thread. Opens a modal prefilled with the message text;
- * on submit it creates an issue in the repository mapped from the forum (the
- * thread's product tag preselects it) with a link back to the message, and
+ * thread of a product channel. Opens a modal prefilled with the message text;
+ * on submit it creates an issue in a repository mapped to that channel (the
+ * one the thread name mentions is preselected) with a link back to the message, and
  * replies to the message with the issue link. Private repositories are
  * refused on submit unless the invoker is staff (admin or developer).
  *
@@ -14,13 +14,13 @@ import { defer, ephemeral, errorText } from "../interactions.ts";
 import type { Command, ComponentHandler, InteractionContext } from "../registry.ts";
 import { ApplicationCommandType, InteractionResponseType, type InteractionResponse } from "../types.ts";
 import {
-  forumThread,
   guildOnly,
   hasRole,
   invokerName,
   MEMBER_PERMISSIONS,
   MEMBER_ROLES,
   messageUrl,
+  productThread,
   repoRequest,
   STAFF_ROLES,
   truncate,
@@ -36,7 +36,7 @@ export const BODY_MAX = 4_000;
 const SNOWFLAKE = /^\d{15,25}$/;
 
 export const NOT_MEMBER = "Only members can file GitHub issues.";
-export const NOT_THREAD = "Use this on a message in a thread of a development forum.";
+export const NOT_THREAD = "Use this on a message in a thread of a product channel.";
 export const privateRefusal = (repo: string) => `${repo} is private; only developers can file issues in it.`;
 export const SLOW = "Discord was slow to answer. Try again in a moment.";
 
@@ -81,8 +81,8 @@ export function issueModal(
   message: TargetMessage,
   thread: ThreadContext,
 ): InteractionResponse {
-  const preselected = thread.tagged.length === 1 ? thread.tagged[0]?.repo : undefined;
-  const candidates = thread.tagged.length > 1 ? thread.tagged : thread.repos;
+  const preselected = thread.named.length === 1 ? thread.named[0]?.repo : undefined;
+  const candidates = thread.named.length > 1 ? thread.named : thread.repos;
   const title = suggestedTitle(message.content ?? "");
   const body = suggestedBody(message);
   const titleInput: Record<string, unknown> = {
@@ -148,7 +148,7 @@ export function issueBody(text: string, link: string, author: string, filer: str
 }
 
 async function prepare(ctx: InteractionContext): Promise<{ member: boolean; thread: ThreadContext | null }> {
-  const [member, thread] = await Promise.all([hasRole(ctx, MEMBER_ROLES), forumThread(ctx)]);
+  const [member, thread] = await Promise.all([hasRole(ctx, MEMBER_ROLES), productThread(ctx)]);
   return { member, thread };
 }
 
@@ -159,7 +159,7 @@ async function execute(ctx: InteractionContext): Promise<InteractionResponse> {
   const prepared = await within(prepare(ctx), PREPARE_TIMEOUT_MS);
   if (!prepared) return ephemeral(SLOW);
   if (!prepared.member) return ephemeral(NOT_MEMBER);
-  if (!prepared.thread || prepared.thread.repos.length === 0) return ephemeral(NOT_THREAD);
+  if (!prepared.thread) return ephemeral(NOT_THREAD);
   const customId = `${PREFIX}:${channelId}:${message.id}:${message.author?.id ?? "0"}`;
   return issueModal(customId, message, prepared.thread);
 }
@@ -179,13 +179,13 @@ async function submit(ctx: InteractionContext, channelId: string, messageId: str
   const { interaction, services } = ctx;
   const cfg = services.directory.config;
   if (!(await hasRole(ctx, MEMBER_ROLES))) return NOT_MEMBER;
-  const thread = await forumThread(ctx, channelId);
+  const thread = await productThread(ctx, channelId);
   if (!thread) return NOT_THREAD;
 
   const values = modalValues(interaction.data?.components);
   const repoName = values.get("repo")?.[0] ?? "";
   const repo = thread.repos.find((r) => r.repo === repoName);
-  if (!repo) return `${repoName || "That repository"} is not discussed in #${thread.forum.name ?? "this forum"}.`;
+  if (!repo) return `${repoName || "That repository"} is not discussed in #${thread.channel.name ?? "this channel"}.`;
   const title = (values.get("title")?.[0] ?? "").trim().slice(0, TITLE_MAX);
   if (!title) return "The issue needs a title.";
   const text = (values.get("body")?.[0] ?? "").slice(0, BODY_MAX);

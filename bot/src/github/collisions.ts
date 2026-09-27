@@ -8,7 +8,7 @@
  * compares this PR's KiCad files with every other open PR in the repository.
  *
  * For each overlapping pair it posts one PR comment on the PR that triggered
- * the check and a warning card in both PRs' forum threads. The comment ends
+ * the check and a warning card in both PRs' threads. The comment ends
  * with a hidden marker naming the pair and the files:
  *
  *   <!-- opendrone-kicad-collision pair=12,15 files=board%2Fmain.kicad_pcb -->
@@ -114,7 +114,7 @@ function warningCard(scope: Scope, other: PullRequest, overlap: readonly string[
 
 /**
  * Compares `pull` with the other open PRs and warns about new overlaps.
- * `threadId` is this PR's verified forum thread when the caller already has
+ * `threadId` is this PR's verified thread when the caller already has
  * it; otherwise the PR body's link is verified here. The other PR's link is
  * always verified (linkedThread) before anything is posted to it.
  */

@@ -3,7 +3,7 @@
  *
  * GitHub gives every delivery an X-GitHub-Delivery GUID and keeps it when a
  * delivery is redelivered (Redeliver button or API, possible for 3 days).
- * Each externally visible step of a handler (create a forum post, post a
+ * Each externally visible step of a handler (start a thread, post a
  * card, post a feed line) runs through `once(step)`, keyed on
  * "<delivery>:<step>" in the D1 table github_deliveries:
  *

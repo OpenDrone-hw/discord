@@ -6,7 +6,7 @@ import {
   pairKey,
   warnedFiles,
 } from "../../src/github/collisions.ts";
-import { EXISTING_THREAD, FORUM_RX, FakeWorld, GUILD, OTHER_FORUM_THREAD, RULES, harness, pullJson, repoPayload } from "./fakes.ts";
+import { EXISTING_THREAD, CHANNEL_RX, FakeWorld, GUILD, OTHER_FORUM_THREAD, RULES, harness, pullJson, repoPayload } from "./fakes.ts";
 
 const OTHER_THREAD = "1600000000000000888";
 const link = (thread: string) => `Discussion: https://discord.com/channels/${GUILD}/${thread}`;
@@ -27,7 +27,7 @@ function event(action: string, pull: object, repository = repoPayload()) {
 async function twoPulls(mine: string[], theirs: string[]) {
   const world = new FakeWorld();
   world.messages.set(OTHER_THREAD, []);
-  world.threadChannels.set(OTHER_THREAD, { id: OTHER_THREAD, type: 11, parent_id: FORUM_RX });
+  world.threadChannels.set(OTHER_THREAD, { id: OTHER_THREAD, type: 11, parent_id: CHANNEL_RX });
   const h = await harness({ world });
   const other = world.addPull("OpenRX", pullJson("OpenRX", 10, { body: link(OTHER_THREAD), title: "Rework power" }), theirs);
   const pull = world.addPull("OpenRX", pullJson("OpenRX", 12, { body: link(EXISTING_THREAD), title: "Move antenna" }), mine);
@@ -96,7 +96,7 @@ describe("KiCad collision guard", () => {
     expect(world.messagesIn(OTHER_THREAD).filter((m) => FakeWorld.text(m).includes("KiCad collision"))).toHaveLength(1);
   });
 
-  it("does not post into the other PR's Discussion target unless it is a thread in this repository's forum", async () => {
+  it("does not post into the other PR's Discussion target unless it is a thread in this repository's product channel", async () => {
     for (const target of [RULES, OTHER_FORUM_THREAD]) {
       const { world, deliver, pull, other } = await twoPulls([PCB], [PCB]);
       world.messages.set(target, []);
@@ -152,7 +152,7 @@ describe("KiCad collision guard", () => {
   it("also runs on opened, after the new thread exists", async () => {
     const world = new FakeWorld();
     world.messages.set(OTHER_THREAD, []);
-    world.threadChannels.set(OTHER_THREAD, { id: OTHER_THREAD, type: 11, parent_id: FORUM_RX });
+    world.threadChannels.set(OTHER_THREAD, { id: OTHER_THREAD, type: 11, parent_id: CHANNEL_RX });
     const { deliver } = await harness({ world });
     world.addPull("OpenRX", pullJson("OpenRX", 10, { body: link(OTHER_THREAD) }), [PCB]);
     const pull = world.addPull("OpenRX", pullJson("OpenRX", 12), [PCB]);

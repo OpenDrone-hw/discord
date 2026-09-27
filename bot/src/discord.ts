@@ -170,10 +170,9 @@ interface BucketState {
   resetAt: number;
 }
 
-export interface ForumPost {
+export interface ThreadStart {
   name: string;
-  message: MessagePayload;
-  applied_tags?: string[];
+  /** Minutes of inactivity before Discord archives the thread: 60, 1440, 4320 or 10080. */
   auto_archive_duration?: number;
 }
 
@@ -312,7 +311,7 @@ export class DiscordClient {
     return this.request("GET", `/guilds/${guildId}/threads/active`);
   }
 
-  // --- messages and forum posts --------------------------------------------
+  // --- messages and threads ------------------------------------------------
 
   sendMessage(channelId: string, message: MessagePayload): Promise<{ id: string }> {
     return this.request("POST", `/channels/${channelId}/messages`, { body: message });
@@ -322,14 +321,14 @@ export class DiscordClient {
     return this.request("PATCH", `/channels/${channelId}/messages/${messageId}`, { body: message });
   }
 
-  /** Creates a post (thread plus starter message) in a forum or media channel. */
-  createForumPost(forumId: string, post: ForumPost, reason?: string): Promise<Channel & { message?: { id: string } }> {
-    const options: RequestOptions = { body: post };
+  /** Starts a public thread from a message in a text channel; the thread id equals the message id. */
+  startThread(channelId: string, messageId: string, thread: ThreadStart, reason?: string): Promise<Channel> {
+    const options: RequestOptions = { body: thread };
     if (reason !== undefined) options.reason = reason;
-    return this.request("POST", `/channels/${forumId}/threads`, options);
+    return this.request("POST", `/channels/${channelId}/messages/${messageId}/threads`, options);
   }
 
-  /** Channel or thread settings, e.g. {applied_tags} on a forum post. */
+  /** Channel or thread settings. */
   editChannel(channelId: string, patch: Record<string, unknown>, reason?: string): Promise<Channel> {
     const options: RequestOptions = { body: patch };
     if (reason !== undefined) options.reason = reason;

@@ -1,7 +1,7 @@
 /**
  * GitHub webhook module: pull requests, reviews, checks, releases, pushes and
- * repository topic changes, posted into the Discord forums and channels named
- * in config/repos.json, plus the KiCad collision guard and the linked-role
+ * repository topic changes, posted into the Discord product channels, their
+ * pull request threads and the channels named in config/repos.json, plus the KiCad collision guard and the linked-role
  * refresh after merges and organisation or team membership changes.
  *
  * | File              | Content                                                   |
@@ -9,7 +9,7 @@
  * | pulls.ts          | pull_request, pull_request_review, check_suite            |
  * | collisions.ts     | KiCad collision guard (.kicad_pcb, .kicad_sch)            |
  * | repository.ts     | release, repository (status-* topics), push               |
- * | thread-link.ts    | "Discussion:" line in PR bodies, forum post creation      |
+ * | thread-link.ts    | "Discussion:" line in PR bodies, thread creation          |
  * | deliveries.ts     | redelivery idempotency on X-GitHub-Delivery (D1)          |
  * | context.ts        | per-delivery scope, posting to channels and threads       |
  * | api.ts            | GitHub REST calls as the installation                     |
@@ -18,7 +18,7 @@
  * | linked-roles.ts   | linked-role refresh on merges and membership changes      |
  *
  * Handlers run in waitUntil after the 202 reply and are cancelled 30 s after
- * it. Channel and tag ids come from services.directory, never from constants.
+ * it. Channel ids come from services.directory, never from constants.
  * Private repositories never post to Discord; the collision guard still
  * comments on their pull requests.
  *
