@@ -148,7 +148,7 @@ describe("pull request thread names", () => {
     const name = threadName("OpenRX-Lite", { number: 12, title: "Port the OpenRX fix" });
     expect(parsePullThreadName(name)).toEqual({ repo: "OpenRX-Lite", number: 12, title: "Port the OpenRX fix" });
     expect(parsePullThreadName(".github #3: CI")).toEqual({ repo: ".github", number: 3, title: "CI" });
-    expect(parsePullThreadName("PR #12: move the antenna")).toEqual({ repo: "PR", number: 12, title: "move the antenna" });
+    expect(parsePullThreadName("PR #12: move the antenna")).toBeNull();
     expect(parsePullThreadName("OpenRX and OpenRX-Lite: shared UART")).toBeNull();
   });
 
