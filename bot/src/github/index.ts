@@ -20,30 +20,8 @@
  * Private repositories never post to Discord; the collision guard still
  * comments on their pull requests.
  *
- * GitHub App settings this module needs
- * --------------------------------------
- *
- * | Repository permission | Access         | Used for                                          |
- * |-----------------------|----------------|---------------------------------------------------|
- * | Metadata              | Read           | Required; the repository event                    |
- * | Pull requests         | Read and write | Read PRs and their files, list open PRs, append   |
- * |                       |                | the "Discussion:" line to a PR body, post the     |
- * |                       |                | collision comment (issue comments API on a PR)    |
- * | Checks                | Read           | check_suite events                                |
- * | Contents              | Read           | push and release events                           |
- *
- * | Webhook event         | Actions handled                                        |
- * |-----------------------|--------------------------------------------------------|
- * | Pull request          | opened, reopened, ready_for_review, synchronize, closed|
- * | Pull request review   | submitted                                              |
- * | Check suite           | completed                                              |
- * | Release               | published                                              |
- * | Repository            | edited (only changes.topics is read)                   |
- * | Push                  | every push; only the default branch is posted          |
- *
- * Discord permissions (the bot role): View Channels, Send Messages, Send
- * Messages in Threads, Create Public Threads (forum posts) in the development
- * forums, #git-feed and #announcements.
+ * GitHub App permissions, webhook events and the bot role's Discord
+ * permissions: bot/README.md, "2. GitHub App".
  *
  * D1: the binding DB holds the github_deliveries table (deliveries.ts,
  * TABLE_SQL), created on first use; scheduled() prunes rows older than 7 days.

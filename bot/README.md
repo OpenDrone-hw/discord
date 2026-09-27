@@ -10,64 +10,111 @@ flowchart LR
   D[Discord] -->|POST /interactions, Ed25519| W[Worker src/index.ts]
   G[GitHub App] -->|POST /github, HMAC-SHA256| W
   B[Member browser] -->|GET /linked-roles/*| W
-  C[Cron trigger] -->|scheduled| W
+  C[Cron every 6 h] -->|scheduled| W
   W --> R[Registry src/registry.ts]
-  R --> M1[src/commands]
+  R --> M1[src/commands: empty]
   R --> M2[src/github]
   R --> M3[src/linked-roles]
   M1 & M2 & M3 -->|src/discord.ts| DA[Discord API]
-  M1 & M2 & M3 -->|src/github.ts| GA[GitHub API]
-  M3 --> DB[(D1: users)]
+  M2 & M3 -->|src/github.ts, App installation| GA[GitHub API]
+  M2 --> DB[(D1)]
+  M3 --> DB
 ```
 
-## State
+## Endpoints
 
-| Part | State |
+| Route | Handler | Answer |
+|---|---|---|
+| `POST /interactions` | `src/interactions.ts` | 401 on a bad or missing Ed25519 signature or an interaction older than 300 s; PING gets PONG; any guild other than `GUILD_ID` gets an ephemeral refusal |
+| `POST /github` | `src/webhooks.ts` | 401 on a bad `X-Hub-Signature-256`; `ping` gets 200; otherwise 202 and the matching handlers run in `ctx.waitUntil` |
+| `GET /linked-roles` | `src/linked-roles/routes.ts` | 302 to Discord OAuth (`identify role_connections.write`) |
+| `GET /linked-roles/discord/callback` | same | Stores the sealed Discord refresh token, 302 to GitHub OAuth |
+| `GET /linked-roles/github/callback` | same | Stores the login and sealed GitHub refresh token, PUTs the role connection, 200 result page |
+| `scheduled()` | every module's `scheduled` | Cron `17 */6 * * *` (`wrangler.toml`) |
+
+Any other path is 404; a known path with the wrong method is 405.
+
+## What each module does
+
+| Module | Does |
 |---|---|
-| Signature checks, PING, routing, 404 and 405 | Working |
-| Discord REST client: rate limits, mention suppression, token redaction | Working |
-| GitHub App auth: RS256 JWT, installation token cache | Working |
-| `config/repos.json` loader and runtime name-to-id resolution | Working |
-| `src/github/` webhook handlers | Working: pull_request, pull_request_review, check_suite, release, repository (status-* topics), push; KiCad collision guard |
-| `src/commands/` commands | Stub: none registered, `register-commands` has nothing to send |
-| `src/linked-roles/` routes | Working: `GET /linked-roles` runs Discord then GitHub OAuth and PUTs the role connection with metadata `merged_prs`, `org_member`, `maintainer`, `owner` |
-| `src/linked-roles/` storage | Working: D1 `users`, Discord and GitHub refresh tokens stored only AES-GCM sealed with a key derived from `SESSION_SECRET` |
-| `src/linked-roles/` refresh | Working: `refreshLinkedUser(services, login)` for the github module (`src/github/` does not call it); the cron refreshes 6 users per run whose last refresh is older than 24 h, oldest first (4 runs a day, so at most 24 users a day); a per-user lease in D1 runs overlapping refreshes of one user one after the other |
-| `owner` metadata | Always 0: nothing in this repository writes `users.owner` |
+| `src/commands/` | Registers nothing: no slash or context-menu command exists |
+| `src/github/` | Posts GitHub activity into Discord and runs the KiCad collision guard (tables below) |
+| `src/linked-roles/` | Discord + GitHub OAuth, role connection metadata, D1 storage of sealed refresh tokens, cron refresh |
 
-## Layout
+### GitHub events
 
-| Path | Content |
-|---|---|
-| `src/index.ts` | Entry point and route table |
-| `src/registry.ts` | The `BotModule` contract every module implements, and its dispatch rules |
-| `src/interactions.ts` | `POST /interactions` and the reply helpers `messageResponse`, `ephemeral`, `defer` |
-| `src/webhooks.ts` | `POST /github` |
-| `src/verify.ts` | Ed25519 and HMAC-SHA256 checks |
-| `src/discord.ts` | Discord REST client |
-| `src/github.ts` | GitHub App client |
-| `src/config.ts` | `config/repos.json` validation, `findRepo`, `Directory` (name to id, cached per isolate) |
-| `src/services.ts` | Per-request bundle of env, clients and directory |
-| `config/repos.json` | Repository to forum and product tag, channel and role names |
-| `migrations/` | D1 schema |
-| `scripts/` | `register-commands.ts`, `register-metadata.ts` |
-| `test/` | vitest suites, offline |
+| Event.action | Forum thread of the PR's repository | `#git-feed` | `#announcements` |
+|---|---|---|---|
+| `pull_request.opened`, `reopened`, `ready_for_review` | Created if missing, card | One line | No |
+| `pull_request.synchronize` | Created if missing, push line | No | No |
+| `pull_request.closed` | Card if linked (merged or closed) | One line | No |
+| `pull_request_review.submitted` | Created if missing, review card | Approved or changes requested | No |
+| `check_suite.completed` | Card if linked, only for the PR head commit | Default-branch failures only | No |
+| `release.published` | No | One line | Release card with up to 10 asset links |
+| `repository.edited` (`changes.topics`) | No | One line | When the `status-*` topic changes |
+| `push` | No | Default branch only, not PR merges | No |
+
+Private repositories post nothing to Discord; the collision guard still comments
+on their pull requests.
+
+### PR to thread link
+
+```mermaid
+flowchart TD
+  E[PR event] --> L{"Discussion: line in the PR body?"}
+  L -->|yes| V{Thread in this repo's forum?}
+  V -->|yes| P[Post in that thread]
+  V -->|no| X[Log, post nothing, create nothing]
+  L -->|no| C{PR open, and event is not closed or check_suite?}
+  C -->|yes| N[Create forum post with product + lifecycle tag] --> A[Append Discussion: line to PR body] --> P
+  C -->|no| S[Skip thread]
+```
+
+The line is `Discussion: https://discord.com/channels/<guild>/<thread>`. It is
+the only record of the link; nothing about it is stored in D1.
+
+### KiCad collision guard
+
+On `pull_request` opened, reopened, ready_for_review and synchronize, the PR's
+`.kicad_pcb` and `.kicad_sch` files are compared with up to 25 other open PRs in
+the same repository. For each overlapping pair the bot posts one PR comment on
+the triggering PR and a warning card in both PRs' threads. A hidden marker in
+the comment records the pair and files, so a pair is warned again only when a
+new file overlaps.
+
+### Idempotency
+
+Every visible step (forum post, card, feed line) runs once per
+`X-GitHub-Delivery` through the D1 table `github_deliveries`, created on first
+use and pruned after 7 days by the cron. A redelivery repeats only the steps
+that failed.
+
+### Linked-role metadata
+
+| Key | Type | Source |
+|---|---|---|
+| `merged_prs` | Integer, greater than or equal | GitHub search `is:pr is:merged org:OpenDrone-hw author:<login>` |
+| `org_member` | Boolean | `GET /orgs/OpenDrone-hw/members/<login>` |
+| `maintainer` | Boolean | Active member of the team `GITHUB_MAINTAINER_TEAM` (default `maintainers`) |
+| `owner` | Boolean | `users.owner` in D1; nothing in this repository writes it, so it is 0 |
+
+The cron refreshes 6 users per run whose last refresh is older than 24 h, oldest
+first (4 runs a day, at most 24 users a day). A per-user lease in D1 serialises
+overlapping refreshes of one user.
 
 ## Behaviour every module inherits
 
 | Rule | Where |
 |---|---|
-| A request with a bad or missing signature gets 401 | `src/verify.ts` |
-| Interactions older than 300 s are rejected | `src/verify.ts` |
-| Interactions from any guild other than `GUILD_ID` get an ephemeral refusal | `src/interactions.ts` |
 | Every message the bot sends carries `allowed_mentions: {parse: []}` unless the caller sets `allowed_mentions` explicitly | `src/discord.ts`, `src/interactions.ts` |
 | On 429 the client waits `retry_after` and retries (3 times); rate-limit waits share a 5 s budget per call, beyond it the call throws `RateLimitError` | `src/discord.ts` |
 | Tokens in `/webhooks/{id}/{token}` and `/interactions/{id}/{token}` paths are redacted from errors | `src/discord.ts` |
 | Mutating Discord calls carry the audit log reason `OpenDrone-hw/discord bot` unless given another | `src/discord.ts` |
-| GitHub handlers run after the 202 reply; a failing handler is logged and does not stop the others | `src/webhooks.ts` |
-| `defer()` work and GitHub handlers run in `ctx.waitUntil`, which Cloudflare cancels 30 s after the response; a cancelled `defer()` never replaces its "thinking..." placeholder | `src/interactions.ts`, `src/webhooks.ts` |
-| Work that can take longer than 30 s needs a Cloudflare Queue (none is configured) or the cron trigger (every 6 h, 15 min per invocation) | `wrangler.toml`, `src/registry.ts` |
+| A failing GitHub handler is logged and does not stop the others | `src/webhooks.ts` |
+| `defer()` work and GitHub handlers run in `ctx.waitUntil`, which Cloudflare cancels 30 s after the response | `src/interactions.ts`, `src/webhooks.ts` |
 | Channel, role and tag ids are resolved by name at runtime; no id is hard-coded | `src/config.ts` |
+| A module conflict (same command, custom_id prefix or route) fails at startup | `src/registry.ts` |
 
 ## `config/repos.json`
 
@@ -84,6 +131,38 @@ Loading fails if a repository points at a forum not in `forums`, a tag repeats
 within a forum, a tag is longer than 20 characters, or a forum's product and
 lifecycle tags exceed Discord's 20.
 
+### Server prerequisites
+
+The names in `config/repos.json` must exist on the server; `server.json` on this
+branch does not create them.
+
+| Missing on the server | Effect |
+|---|---|
+| A channel in `channels` | The message is logged and dropped |
+| A forum in `forums` | Thread creation for that repository fails and is logged |
+| A product tag | The post is created without it, with a warning in the log |
+| A lifecycle tag | The post is created without it |
+
+## Layout
+
+| Path | Content |
+|---|---|
+| `src/index.ts` | Entry point and route table |
+| `src/registry.ts` | The `BotModule` contract, dispatch rules and time budgets |
+| `src/interactions.ts` | `POST /interactions` and the reply helpers `messageResponse`, `ephemeral`, `defer` |
+| `src/webhooks.ts` | `POST /github` |
+| `src/verify.ts` | Ed25519 and HMAC-SHA256 checks |
+| `src/discord.ts` | Discord REST client |
+| `src/github.ts` | GitHub App client: RS256 JWT via WebCrypto, installation token cache |
+| `src/config.ts` | `config/repos.json` validation, `findRepo`, `Directory` (name to id, cached per isolate) |
+| `src/services.ts` | Per-request bundle of env, clients and directory |
+| `src/github/` | Webhook handlers; file table at the top of `src/github/index.ts` |
+| `src/linked-roles/` | Linked roles; file table at the top of `src/linked-roles/index.ts` |
+| `config/repos.json` | Repository to forum and product tag, channel and role names |
+| `migrations/` | D1 schema for `users` |
+| `scripts/` | `register-commands.ts`, `register-metadata.ts` |
+| `test/` | vitest suites, offline |
+
 ## Check
 
 Node 23.6 or newer (the scripts run TypeScript directly).
@@ -91,7 +170,8 @@ Node 23.6 or newer (the scripts run TypeScript directly).
 ```sh
 cd bot
 npm ci
-npm run check    # tsc --noEmit, then vitest run
+npm test            # vitest run
+npx tsc --noEmit
 ```
 
 Tests replace `fetch` and fail on any network access.
@@ -100,6 +180,11 @@ Tests replace `fetch` and fail on any network access.
 
 Replace `<worker>` below with the Worker's URL, for example
 `opendrone-discord-bot.<account>.workers.dev`. Every step is manual.
+
+```mermaid
+flowchart LR
+  A[1 D1] --> B[2 GitHub App] --> C[3 Secrets] --> D[4 Deploy] --> E[5 Developer Portal] --> F[6 Register metadata] --> G[7 Attach linked roles]
+```
 
 ### 1. D1 database
 
@@ -122,32 +207,37 @@ New GitHub App.
 | Webhook | Active, URL `https://<worker>/github`, secret = `GITHUB_WEBHOOK_SECRET` |
 | Where can this GitHub App be installed | Only on this account |
 
+These are the permissions and events the merged code uses. Grant nothing more.
+
 | Repository permission | Access | Used for |
 |---|---|---|
-| Metadata | Read | Required by GitHub |
-| Pull requests | Read and write | PR events, the `Discussion:` line in PR bodies, collision warnings |
-| Contents | Read and write | Changed files, release assets, `/branch` |
-| Issues | Read and write | "To GitHub issue" |
-| Checks | Read | Check results |
-| Commit statuses | Read | Status results |
-| Administration | No access | Nothing. Without it the bot cannot create, delete, rename or transfer repositories, change repository settings or change branch protection |
+| Metadata | Read | Required; the repository event |
+| Pull requests | Read and write | Read PRs and their files, list open PRs, append the `Discussion:` line to a PR body, post the collision comment (issue comments API on a PR) |
+| Checks | Read | `check_suite` events |
+| Contents | Read | `push` and `release` events |
+| Administration | No access | Without it the App cannot create, delete, rename or transfer repositories or change settings and branch protection |
 
 | Organization permission | Access | Used for |
 |---|---|---|
 | Members | Read | `org_member` and `maintainer` linked-role metadata |
 
-Do not grant Administration now: `/promote` is not implemented and
-`PROMOTE_ENABLED` is `"false"`. Grant "Administration: Read and write" only
-when `/promote` is implemented and `PROMOTE_ENABLED` is set to `"true"`,
-preferably through a second GitHub App installed only on the repositories that
-need it, so the main App key never carries it.
-
-Events: Pull request, Pull request review, Check suite, Status, Release,
-Repository, Push, Organization, Membership.
+| Webhook event | Actions handled |
+|---|---|
+| Pull request | opened, reopened, ready_for_review, synchronize, closed |
+| Pull request review | submitted |
+| Check suite | completed |
+| Release | published |
+| Repository | edited (only `changes.topics` is read) |
+| Push | every push; only the default branch is posted |
 
 After creating it: generate a private key and a client secret, then install the
-App on OpenDrone-hw. The private key can stay in the PKCS#1 form GitHub
-issues; the Worker converts it.
+App on OpenDrone-hw. The private key can stay in the PKCS#1 form GitHub issues;
+the Worker converts it.
+
+### Discord permissions of the bot role
+
+View Channels, Send Messages, Send Messages in Threads and Create Public Threads
+(forum posts) in the development forums, `#git-feed` and `#announcements`.
 
 ### 3. Secrets
 
@@ -164,12 +254,15 @@ issues; the Worker converts it.
 | `GITHUB_WEBHOOK_SECRET` | The webhook secret chosen in step 2 |
 | `GITHUB_OAUTH_CLIENT_ID` | GitHub App page, Client ID |
 | `GITHUB_OAUTH_CLIENT_SECRET` | GitHub App page, generated client secret |
-| `SESSION_SECRET` | `openssl rand -base64 32` |
+| `SESSION_SECRET` | `openssl rand -base64 32`; seals refresh tokens and the session cookie. Rotating it makes stored tokens unreadable: those users must link again |
 
-Vars (`GUILD_ID`, `APPLICATION_ID`, `PROMOTE_ENABLED`) are in `wrangler.toml`.
-The optional var `GITHUB_MAINTAINER_TEAM` names the OpenDrone-hw team whose
-active members get `maintainer` = 1; unset, it is `maintainers`. That team must
-exist on GitHub, otherwise `maintainer` is 0 for everyone.
+| Var (`wrangler.toml`) | Value |
+|---|---|
+| `GUILD_ID` | `1494019459822653512` |
+| `APPLICATION_ID` | `1553748824470851644` |
+| `PROMOTE_ENABLED` | `"false"`; read only by `promoteEnabled()` in `src/env.ts`, which nothing calls |
+| `GITHUB_MAINTAINER_TEAM` | Optional team slug for `maintainer`; unset means `maintainers`. The team must exist, otherwise `maintainer` is 0 for everyone |
+
 For `npm run dev`, copy `.dev.vars.example` to `.dev.vars` (git-ignored).
 
 ### 4. Deploy
@@ -193,19 +286,20 @@ signature, so the Worker must be deployed with `DISCORD_PUBLIC_KEY` first.
 With an endpoint URL set, all of this application's interactions go to the
 Worker; a gateway process on the same application stops receiving them.
 
-### 6. Register commands and metadata
+### 6. Register metadata (and commands)
 
 Both scripts print what they would send and stop; `--yes` sends it. Each
-replaces the whole list on Discord, so an empty list is refused. They read
-`APPLICATION_ID` and `GUILD_ID` from the environment or `wrangler.toml`, and the
-token from `DISCORD_BOT_TOKEN`, else `OPENDRONE_DISCORD_BOT_TOKEN` from the
-environment or `~/.config/incutec/credentials.env`.
+replaces the whole list on Discord, so an empty list is refused.
+`register-metadata` also refuses a schema Discord would reject, and
+`--dry-run` wins over `--yes`. They read `APPLICATION_ID` and `GUILD_ID` from
+the environment or `wrangler.toml`, and the token from `DISCORD_BOT_TOKEN`,
+else `OPENDRONE_DISCORD_BOT_TOKEN` from the environment or
+`~/.config/incutec/credentials.env`. The token is never printed.
 
 ```sh
-npm run register-commands
-npm run register-commands -- --yes
 npm run register-metadata
 npm run register-metadata -- --yes
+npm run register-commands          # prints "No module registers a command."
 ```
 
 ### 7. Attach linked roles
@@ -213,12 +307,23 @@ npm run register-metadata -- --yes
 Discord: Server Settings, Roles, the role, Links, add `OpenDrone Dev` and set
 its requirements. This has no API.
 
+## Not implemented
+
+| Item | State in this branch |
+|---|---|
+| Commands `/link`, `/branch`, `/editing`, `/verify`, `/promote`, context menus "To GitHub issue" and "Approve build" | Absent; `src/commands/` registers nothing and `register-commands` has nothing to send |
+| Metadata refresh on GitHub events | `refreshLinkedUser(services, login)` exists in `src/linked-roles/index.ts`; `src/github/` does not call it. Refresh happens only in the browser flow and the cron |
+| `owner` metadata | Always 0: nothing writes `users.owner` |
+| `status`, `organization`, `membership` webhooks | No handler; do not subscribe |
+| Message, reaction and member events | Need a gateway connection; the Worker has none |
+| Work longer than 30 s | No Cloudflare Queue is configured; only the cron (15 min per invocation) runs longer |
+| `channels.modLog`, `roles` in `config/repos.json` | Validated and resolvable, used by no handler |
+
 ## Adding to a module
 
 Each module's `index.ts` exports one `BotModule`; the contract, the dispatch
 table and the time budgets are documented in `src/registry.ts`, with an example
-at the top of each stub. A conflict between modules (same command, custom_id
-prefix or route) fails at startup.
+at the top of `src/commands/index.ts`.
 
 ## Licence
 
