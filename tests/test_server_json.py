@@ -19,6 +19,8 @@ BOT_USER = "1553826696673759344"
 REPOS = json.loads((ROOT / "bot" / "config" / "repos.json").read_text(encoding="utf-8"))
 PROTECTED = set(DESIRED["guard"]["protected_channels"])
 CHATFPV = "1510002456849813595"
+TICKETS = "1495130821835624610"
+TICKET_META = "1497547194159599778"
 
 MEMBER_ALLOW = P["VIEW_CHANNEL"] | P["SEND_MESSAGES"] | P["READ_MESSAGE_HISTORY"]
 NEWBIE_DENY = P["VIEW_CHANNEL"] | P["SEND_MESSAGES"]
@@ -238,20 +240,25 @@ class ServerJson(ToolCase):
         self.assertEqual(self.plan_["notes"], [])
         # The old support chat and #roles are no longer in server.json; a person deletes them by hand.
         self.assertEqual(sorted(self.plan_["unmanaged"]["channels"]),
-                         ["roles", "support", "web-support", "web-support-admin"])
+                         ["roles", "support"])
         self.assertEqual(self.plan_["unmanaged"]["onboarding prompts"], [])
 
-    def test_plan_never_touches_the_storefront_channels(self):
-        # An AutoMod exemption names the storefront channels without changing them; nothing else may.
-        for phase, ops in self.plan_["ops"].items():
-            for op in ops:
-                body = op["body"]
-                if phase == "automod":
-                    body = {k: v for k, v in body.items() if k != "exempt_channels"}
-                self.assertFalse(any(cid in json.dumps(body) for cid in PROTECTED if phase != "positions"),
-                                 op["label"])
-                if phase == "positions":
-                    self.assertFalse({i["id"] for i in op["body"]} & PROTECTED, op["label"])
+    def test_only_admin_support_and_the_storefront_bot_see_tickets(self):
+        # The ticket card pings Support, so Support must see the posts; nobody else reads customer tickets.
+        fake = self.applied()
+        names = {r["id"]: r["name"] for r in fake.roles} | {GID: "@everyone"}
+        for cid in (TICKETS, TICKET_META):
+            ows = {names[o["id"]]: (int(o["allow"]), int(o["deny"]))
+                   for o in fake.chan(cid)["permission_overwrites"] if o["type"] == 0}
+            seeing = sorted(n for n, (allow, _d) in ows.items() if allow & P["VIEW_CHANNEL"])
+            self.assertEqual(seeing, ["OpenDrone Support", "Support", "admin"], cid)
+            self.assertTrue(ows["@everyone"][1] & P["VIEW_CHANNEL"], cid)
+        ows = {names.get(o["id"]): int(o["allow"]) for o in fake.chan(TICKETS)["permission_overwrites"] if o["type"] == 0}
+        support, bot = ows["Support"], ows["OpenDrone Support"]
+        for perm in ("SEND_MESSAGES_IN_THREADS", "ADD_REACTIONS", "READ_MESSAGE_HISTORY"):
+            self.assertTrue(support & P[perm], perm)
+        for perm in ("SEND_MESSAGES", "SEND_MESSAGES_IN_THREADS", "MANAGE_THREADS", "ATTACH_FILES", "ADD_REACTIONS"):
+            self.assertTrue(bot & P[perm], perm)
 
     def test_apply_reads_back_and_is_idempotent(self):
         fake = self.applied()
@@ -313,17 +320,18 @@ class ServerJson(ToolCase):
             self.assertEqual((dc.role_color(r), r["hoist"], r["mentionable"], int(r["permissions"])),
                              (0, False, False, 0), user)
 
-    def test_chatfpv_stays_open_for_members_and_bots(self):
-        # ChatFPV (OpenBrain) and the storefront support bot post in #chatfpv through their role permissions
+    def test_chatfpv_is_a_staff_channel_the_chatfpv_bot_can_post_in(self):
+        # ChatFPV runs on the OpenDrone Support application; #chatfpv is its test and alert channel.
         fake = self.applied()
         ch = fake.chan(CHATFPV)
         self.assertEqual(ch["type"], 0)
-        self.assertEqual(ch["parent_id"], "1497547320131190864")
-        ows = {o["id"]: (int(o["allow"]), int(o["deny"])) for o in ch["permission_overwrites"] if o["type"] == 0}
-        allow, deny = ows[GID]
-        for perm in ("VIEW_CHANNEL", "SEND_MESSAGES", "READ_MESSAGE_HISTORY", "SEND_MESSAGES_IN_THREADS"):
-            self.assertTrue(allow & P[perm], perm)
-        self.assertEqual(sum(d & (P["VIEW_CHANNEL"] | P["SEND_MESSAGES"]) for _, d in ows.values()), 0)
+        self.assertEqual(ch["parent_id"], fake.by_name("Staff")["id"])
+        names = {r["id"]: r["name"] for r in fake.roles} | {GID: "@everyone"}
+        ows = {names[o["id"]]: (int(o["allow"]), int(o["deny"])) for o in ch["permission_overwrites"] if o["type"] == 0}
+        self.assertTrue(ows["@everyone"][1] & P["VIEW_CHANNEL"])
+        for perm in ("VIEW_CHANNEL", "SEND_MESSAGES", "CREATE_PUBLIC_THREADS", "SEND_MESSAGES_IN_THREADS"):
+            self.assertTrue(ows["OpenDrone Support"][0] & P[perm], perm)
+        self.assertNotIn(CHATFPV, {c for p in fake.onboarding["prompts"] for o in p["options"] for c in o["channel_ids"]})
 
     def test_announcement_channels(self):
         fake = self.applied()
@@ -342,7 +350,7 @@ class ServerJson(ToolCase):
         dev = fake.by_name("Development")["id"]
         self.assertEqual(sorted(c["name"] for c in fake.channels if c["parent_id"] == dev), ["alpha-testing", "git-feed"])
         forums = sorted(ch["name"] for cat in DESIRED["categories"] for ch in cat["channels"] if ch.get("type") == "forum")
-        self.assertEqual(forums, ["alpha-testing", "help"])
+        self.assertEqual(forums, ["alpha-testing", "help", "web-support"])
         self.assertEqual(fake.by_name("kicad-library")["topic"], "KiCad-Library parts and footprints, hardware-template "
                          "and OpenDrone-Fixtures. One thread per pull request.")
         for name in PRODUCT_CHANNELS + ["digital-vtx", "motors", "chatfpv"]:
@@ -495,7 +503,7 @@ class FromTheCurrentLayout(ToolCase):
         retired = [f"{n} (forum)" if n in ("builds", "proposals") else n
                    for names in RETIRED_FORUMS.values() for n in names]
         self.assertEqual(plan["unmanaged"]["channels"],
-                         sorted(retired + ["support-chat", "web-support", "web-support-admin"]))
+                         sorted(retired + ["support-chat"]))
         self.assertNotIn("roles", plan["unmanaged"]["channels"])
         self.assertEqual(len(plan["notes"]), 2, plan["notes"])
         self.assertIn(f"#builds ({BUILDS}) is renamed to a name unmanaged channel(s) {self.forum('builds')} still carry",
@@ -527,13 +535,13 @@ class FromTheCurrentLayout(ToolCase):
         self.assertFalse(onboarding_ids & {self.forum(n) for names in RETIRED_FORUMS.values() for n in names})
         self.assertNotIn(SUPPORT_CHAT, onboarding_ids)
 
-    def test_once_the_retired_channels_are_deleted_only_the_storefront_channels_are_unmanaged(self):
+    def test_once_the_retired_channels_are_deleted_nothing_is_unmanaged(self):
         self.apply(DESIRED)
         retired = {self.forum(n) for names in RETIRED_FORUMS.values() for n in names} | {SUPPORT_CHAT, ROLES_CH}
         self.fake.channels = [c for c in self.fake.channels if c["id"] not in retired]
         plan = self.plan(DESIRED)
         self.assertEqual(plan["total"], 0)
-        self.assertEqual((plan["unmanaged"]["channels"], plan["notes"]), (["web-support", "web-support-admin"], []))
+        self.assertEqual((plan["unmanaged"]["channels"], plan["notes"]), ([], []))
 
 
 class FromThePreviousLayout(ToolCase):

@@ -80,8 +80,9 @@ The products are sold at https://opendrone.be. Incutec handles production, quali
 Alpha boards may be offered as a preorder against a funding target. The first production batch is built once the target is met.
 
 Where to go:
-- Order, payment or shipping: https://opendrone.be/support
-- Technical questions about a board: {#help}, or that board's channel under Hardware
+- Order, payment, shipping, warranty or returns: a ticket at https://opendrone.be/support. Only the Incutec team reads it, and no Discord account is needed.
+- A board that does not work: {#help}, where other pilots and the team answer in public and the answer stays findable. Anything with your order or personal details goes in a ticket instead.
+- Design questions about a board: that board's channel under Hardware
 - Firmware: Betaflight, AM32 and ExpressLRS are upstream open source projects. OpenDrone boards run them unchanged where possible. Use the channels under Software.
 - Anything that should be findable later: a GitHub issue on the relevant repo""",
     "licence-and-ai": """\
@@ -106,7 +107,7 @@ This server is where OpenDrone, a fully open source FPV stack, is developed, tes
 Start with {{#rules}}, say hi in {{#introduce-yourself}}, ask board questions in {{#help}} and propose products or changes in {{#proposals}}.
 Pick the product channels you follow in Channels & Roles: {CUSTOMIZE}
 Development happens in the product channels, one thread per pull request. For every GitHub pull request, merge and release in one channel, pick GitHub feed in Channels & Roles.
-Orders, payment and shipping: https://opendrone.be/support""",
+Orders, payment, shipping and warranty: a private ticket at https://opendrone.be/support""",
 }
 
 

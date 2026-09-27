@@ -24,7 +24,7 @@ through `gh api`, and tests pass a fake fetcher instead.
 | Gating model A | Onboarding is the gate. Never add a `Newbie` or `Member` overwrite to a channel or profile, and never delete those roles |
 | No deletes | Never delete channels, roles, messages, commands or anything else from a script. Retire a channel through `archive` in `server.json`, or drop it from `server.json` and leave the delete to a person in the Discord UI. Both scripts' REST clients refuse DELETE |
 | Firmware team roles | `Betaflight`, `AM32` and `ExpressLRS` are maintainer roles in `guard.unassignable_roles`; onboarding gives the `* user` roles |
-| Do not touch `#web-support` or `#web-support-admin` | The storefront support bot owns them; they are `guard.protected_channels` |
+| Keep the `OpenDrone Support` bot permissions on `#web-support`, `#web-support-admin` and `#chatfpv` | The storefront ticket system and ChatFPV post there; README "Support" |
 | No bot deploys or registrations unasked | `wrangler deploy`, `wrangler secret put`, `register-commands --yes` and `register-metadata --yes` need an explicit request |
 
 ## Tokens and secrets

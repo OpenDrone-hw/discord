@@ -4,7 +4,7 @@
     "protected_roles": ["admin"],
     "gating_roles": ["Newbie", "Member"],
     "must_see": ["welcome", "rules"],
-    "protected_channels": ["1497547194159599778", "1495130821835624610"],
+    "protected_channels": [],
     "unassignable_roles": [
       "developer",
       "beta tester",
@@ -110,6 +110,114 @@
       "OpenDrone Dev": {
         "allow": ["VIEW_CHANNEL", "SEND_MESSAGES", "READ_MESSAGE_HISTORY", "EMBED_LINKS", "ATTACH_FILES",
                   "SEND_MESSAGES_IN_THREADS", "PIN_MESSAGES"]
+      }
+    },
+    "tickets": {
+      "@everyone": {"deny": ["VIEW_CHANNEL"]},
+      "admin": {
+        "allow": [
+          "VIEW_CHANNEL",
+          "SEND_MESSAGES_IN_THREADS",
+          "READ_MESSAGE_HISTORY",
+          "EMBED_LINKS",
+          "ATTACH_FILES",
+          "ADD_REACTIONS"
+        ]
+      },
+      "Support": {
+        "allow": [
+          "VIEW_CHANNEL",
+          "SEND_MESSAGES_IN_THREADS",
+          "READ_MESSAGE_HISTORY",
+          "EMBED_LINKS",
+          "ATTACH_FILES",
+          "ADD_REACTIONS"
+        ]
+      },
+      "OpenDrone Support": {
+        "allow": [
+          "VIEW_CHANNEL",
+          "SEND_MESSAGES",
+          "SEND_MESSAGES_IN_THREADS",
+          "MANAGE_CHANNELS",
+          "MANAGE_THREADS",
+          "READ_MESSAGE_HISTORY",
+          "EMBED_LINKS",
+          "ATTACH_FILES",
+          "ADD_REACTIONS"
+        ]
+      }
+    },
+    "ticket-meta": {
+      "@everyone": {"deny": ["VIEW_CHANNEL"]},
+      "admin": {
+        "allow": [
+          "VIEW_CHANNEL",
+          "READ_MESSAGE_HISTORY"
+        ]
+      },
+      "Support": {
+        "allow": [
+          "VIEW_CHANNEL",
+          "READ_MESSAGE_HISTORY"
+        ]
+      },
+      "OpenDrone Support": {
+        "allow": [
+          "VIEW_CHANNEL",
+          "SEND_MESSAGES",
+          "READ_MESSAGE_HISTORY",
+          "EMBED_LINKS"
+        ]
+      }
+    },
+    "chatfpv": {
+      "@everyone": {"deny": ["VIEW_CHANNEL"]},
+      "admin": {
+        "allow": [
+          "VIEW_CHANNEL",
+          "SEND_MESSAGES",
+          "READ_MESSAGE_HISTORY",
+          "EMBED_LINKS",
+          "ATTACH_FILES",
+          "SEND_MESSAGES_IN_THREADS",
+          "ADD_REACTIONS",
+          "USE_APPLICATION_COMMANDS"
+        ]
+      },
+      "Support": {
+        "allow": [
+          "VIEW_CHANNEL",
+          "SEND_MESSAGES",
+          "READ_MESSAGE_HISTORY",
+          "EMBED_LINKS",
+          "ATTACH_FILES",
+          "SEND_MESSAGES_IN_THREADS",
+          "ADD_REACTIONS",
+          "USE_APPLICATION_COMMANDS"
+        ]
+      },
+      "OpenDrone Dev": {
+        "allow": [
+          "VIEW_CHANNEL",
+          "SEND_MESSAGES",
+          "READ_MESSAGE_HISTORY",
+          "EMBED_LINKS",
+          "ATTACH_FILES",
+          "SEND_MESSAGES_IN_THREADS"
+        ]
+      },
+      "OpenDrone Support": {
+        "allow": [
+          "VIEW_CHANNEL",
+          "SEND_MESSAGES",
+          "SEND_MESSAGES_IN_THREADS",
+          "CREATE_PUBLIC_THREADS",
+          "READ_MESSAGE_HISTORY",
+          "EMBED_LINKS",
+          "ATTACH_FILES",
+          "ADD_REACTIONS"
+        ]
       }
     },
     "testers": {
@@ -228,7 +336,7 @@
         {
           "name": "help",
           "type": "forum",
-          "topic": "One post per problem. Say which product and revision, the firmware and its version (for example Betaflight 4.5.1), what you expected, what happened and what you already tried. Add photos, a diff or a log when you can.\nTag the product and question or bug; add solved when it is fixed.",
+          "topic": "One post per problem. Say which product and revision, the firmware and its version (for example Betaflight 4.5.1), what you expected, what happened and what you already tried. Add photos, a diff or a log when you can.\nOrders, payment, shipping, warranty or anything private: open a ticket at https://opendrone.be/support instead.\nTag the product and question or bug; add solved when it is fixed.",
           "forum": {
             "layout": "list",
             "sort": "activity",
@@ -250,8 +358,7 @@
               {"name": "solved", "emoji": "✅"}
             ]
           }
-        },
-        {"id": "1510002456849813595", "name": "chatfpv", "topic": "ChatFPV, the FPV knowledge assistant: ask it here and report wrong answers."}
+        }
       ]
     },
     {
@@ -335,6 +442,15 @@
       "name": "Staff",
       "access": "staff",
       "channels": [
+        {
+          "id": "1495130821835624610",
+          "name": "web-support",
+          "type": "forum",
+          "access": "tickets",
+          "topic": "Tickets from https://opendrone.be/support, one post each, opened by the OpenDrone Support bot. Reply in the post to answer the customer. // starts an internal note. !waiting, !answered, !close and !open set the status. React ✅ to send a held reply or an AI draft."
+        },
+        {"id": "1497547194159599778", "name": "web-support-admin", "access": "ticket-meta", "topic": "Name, email and Shopify link for each ticket, written by the OpenDrone Support bot."},
+        {"id": "1510002456849813595", "name": "chatfpv", "access": "chatfpv", "topic": "ChatFPV test channel and its operational alerts. /ask and Ask ChatFPV answer here."},
         {"name": "mod-log", "type": "text", "topic": "AutoMod alerts and moderation notes. Staff only."}
       ]
     }
@@ -456,10 +572,10 @@
           },
           {
             "title": "Web and tools",
-            "description": "opendrone.be, brand, this Discord, ChatFPV: #opendrone-web and #chatfpv",
+            "description": "opendrone.be, the brand, this Discord and ChatFPV: #opendrone-web",
             "emoji": "💻",
             "roles": ["Web-Tools follower"],
-            "channels": ["opendrone-web", "chatfpv"]
+            "channels": ["opendrone-web"]
           },
           {
             "title": "Proposals",
