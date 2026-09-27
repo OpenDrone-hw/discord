@@ -94,7 +94,9 @@ cannot be archived.
 | alpha-testing | Product line, `report`, `bug`, `fixed` (moderated) | Yes |
 
 Moderated tags can only be set by members with Manage Threads. The bot sets the
-product and lifecycle tags on the posts it creates. A test checks that every
+product and lifecycle tags on the posts it creates, so its role needs Manage
+Threads in the development forums (Administrator covers it; see "Discord
+permissions of the bot role" in `bot/README.md`). A test checks that every
 repository in `bot/config/repos.json` has its product tag and every lifecycle
 tag in its forum.
 

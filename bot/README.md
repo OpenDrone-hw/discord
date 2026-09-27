@@ -197,10 +197,18 @@ lifecycle tags exceed Discord's 20.
 
 ### Server prerequisites
 
-The names in `config/repos.json` must exist on the server. The repository's
-`server.json` creates all of them (every channel, forum, role, product tag and
-lifecycle tag), and `tests/test_server_json.py` fails when the two files drift
-apart. Until `discord_config.py apply --yes` has run, they are missing:
+The names in `config/repos.json` must exist on the server. They come from two
+places:
+
+| Names | Source |
+|---|---|
+| Roles `admin`, `developer`, `beta tester`, `reviewer`, `Member`; channel `announcements` | Exist on the live server; `server.json` does not create them (`announcements` is matched by id) |
+| Channels `git-feed`, `mod-log`; the development forums with their product and lifecycle tags; roles `Verified Owner`, `Verified Builder`, `Contributor`, `Maintainer` | Created by the repository's `server.json` |
+
+`tests/test_server_json.py` checks that every name exists after
+`discord_config.py apply` (created by `server.json` or already live) and fails
+when the two files drift apart. Until `apply --yes` has run, the names
+`server.json` creates are missing:
 
 | Missing on the server | Effect |
 |---|---|
@@ -319,6 +327,7 @@ layout is built. Without Administrator the Worker needs:
 | Permission | Where | Used by |
 |---|---|---|
 | View Channels, Send Messages, Send Messages in Threads, Create Public Threads (forum posts) | Development forums (the `open` profile grants these to `@everyone`) | PR threads and cards, collision warnings |
+| Manage Threads | Development forums; grant it on the bot role itself (server level), because `discord_config.py apply` rewrites each managed channel's role overwrites to exactly what `server.json` lists and would drop a hand-made overwrite | Posts the bot creates carry the lifecycle tag, and every lifecycle tag in `server.json` is moderated: only a member with Manage Threads can apply it. Without it, post creation fails for every repository with a `status-*` topic |
 | View Channels, Send Messages | `#git-feed`, `#announcements` (the `readonly` profile allows the bot role explicitly) | Feed lines, release and lifecycle cards |
 | Manage Roles, role above Verified Builder | Server | Approve build |
 
