@@ -602,8 +602,15 @@ class Guild(ToolCase):  # F9
     def test_description_and_channels(self):
         d = minimal_desired(guild={"description": "New", "rules_channel": "rules", "public_updates_channel": "gen-chat"})
         op = self.plan(d)["ops"]["guild"][0]
-        self.assertEqual(op["body"], {"description": "New", "public_updates_channel_id": "101"})
+        live = self.fake.guild
+        self.assertEqual(op["body"], {"description": "New", "public_updates_channel_id": "101",
+                                      "rules_channel_id": live.get("rules_channel_id"),
+                                      "features": list(live.get("features", []))})
         self.assertIdempotent(d)
+
+    def test_description_alone_sends_no_community_fields(self):
+        op = self.plan(minimal_desired(guild={"description": "Only this"}))["ops"]["guild"][0]
+        self.assertEqual(op["body"], {"description": "Only this"})
 
     def test_other_guild_settings_rejected(self):
         self.assertConfigError(minimal_desired(guild={"verification_level": 4}), "unknown keys")

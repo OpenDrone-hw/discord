@@ -188,6 +188,10 @@ class FakeDiscord:
 
     def patch_guild(self, m):
         for key, value in self.body.items():
+            if key == "features":
+                # sent only to carry the Community channel fields; it must never change features
+                assert sorted(value) == sorted(self.guild["features"]), value
+                continue
             assert key in ("description", *dc.GUILD_CHANNELS.values()), key
             self.guild[key] = value
         return copy.deepcopy(self.guild)
