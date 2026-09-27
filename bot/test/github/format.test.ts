@@ -82,6 +82,35 @@ describe("escaping", () => {
     }
   });
 
+  it("stays fast on pathological input that used to backtrack", () => {
+    const inputs = [
+      "[a](".repeat(5000),
+      "[a](x ".repeat(5000),
+      "[".repeat(20_000),
+      "[a]".repeat(7000),
+      "![a](".repeat(5000),
+      "![".repeat(10_000),
+      "<a ".repeat(7000),
+      "<!--".repeat(5000),
+      `${"[".repeat(3000)}${"](".repeat(3000)}`,
+      `${"(".repeat(3000)}${"[a](b".repeat(3000)}`,
+    ];
+    for (const input of inputs) {
+      const start = performance.now();
+      plainExcerpt(input, 800);
+      expect(performance.now() - start, input.slice(0, 12)).toBeLessThan(50);
+    }
+  });
+
+  it("strips a long template comment before bounding the excerpt input", () => {
+    const body = `<!-- ${"template ".repeat(1000)} -->\nReal description`;
+    expect(plainExcerpt(body, 500)).toBe("Real description");
+  });
+
+  it("keeps link titles out of the shown URL", () => {
+    expect(plainExcerpt('[docs](https://github.com/x "Title")', 500)).toBe("docs (https://github.com/x)");
+  });
+
   it("keeps autolinks and timestamps as escaped text instead of dropping them", () => {
     expect(plainExcerpt("docs <https://github.com/OpenDrone-hw> at <t:1700000000:R>", 500)).toBe(
       "docs \\<https://github.com/OpenDrone-hw\\> at \\<t:1700000000:R\\>",

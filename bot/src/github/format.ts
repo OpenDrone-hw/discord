@@ -70,9 +70,19 @@ export function link(text: string, url: string): string {
 
 /** HTML tags by real tag name; "<https://...>", "<t:...>" and "<@id>" do not match. */
 const HTML_TAG = /<\/?[a-zA-Z][a-zA-Z0-9-]*(?:\s[^<>]*)?\/?>/g;
-const MASKED_LINK = /\[([^\]]*)\]\(([^)\s]*)[^)]*\)/g;
-/** Input read per excerpt; the rest cannot reach a 4000-character message anyway. */
-const MAX_EXCERPT_INPUT = 20_000;
+/**
+ * Masked link "[label](url optional-title)". Every group excludes the
+ * characters that end it and the groups never overlap, so a failed match
+ * costs linear time: no catastrophic backtracking on hostile input.
+ */
+const MASKED_LINK = /\[([^[\]]*)\]\(([^()\s]*)(?:\s[^()]*)?\)/g;
+/** Image "![alt](src)", with the same non-overlapping groups as MASKED_LINK. */
+const IMAGE = /!\[[^[\]]*\]\([^()]*\)/g;
+const HTML_COMMENT = /<!--[\s\S]*?(?:-->|$)/g;
+/** Raw input scanned for HTML comments, so a long PR template comment does not eat the excerpt. */
+const MAX_RAW_INPUT = 20_000;
+/** Input left after comments are removed; 4 times the largest excerpt the bot posts (800). */
+const MAX_EXCERPT_INPUT = 3200;
 const MAX_LINK_PASSES = 20;
 
 /**
@@ -85,10 +95,11 @@ const MAX_LINK_PASSES = 20;
  */
 export function plainExcerpt(markdown: string, max: number): string {
   let text = markdown
+    .slice(0, MAX_RAW_INPUT)
+    .replace(HTML_COMMENT, "")
     .slice(0, MAX_EXCERPT_INPUT)
     .replace(/\r\n?/g, "\n")
-    .replace(/<!--[\s\S]*?(-->|$)/g, "")
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+    .replace(IMAGE, "")
     .replace(HTML_TAG, "");
   for (let pass = 0; pass < MAX_LINK_PASSES; pass++) {
     const next = text.replace(MASKED_LINK, (_, label: string, url: string) => (label ? `${label} (${url})` : url));
