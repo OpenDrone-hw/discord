@@ -171,6 +171,17 @@ client (429 and bucket handling, no DELETE) as `discord_config.py`; every write
 carries the audit log reason `OpenDrone-hw/discord migrate.py` and is followed
 by a 0.5 s pause. Every subcommand is a dry run unless `--yes`.
 
+Order, as `checklist` prints it:
+
+1. `discord_config.py plan`, then `apply --yes`
+2. Paste the Server Guide copy (UI only). Before `announce`, because the announcement links `<id:guide>` and the live guide's first to-do, "Pick your roles", opens #roles, which `apply` archives
+3. `migrate.py announce`
+4. `migrate.py notices`
+5. `migrate.py backfill --only-user <id>`, check that account, then `backfill`
+6. Remove carl-bot
+7. Attach linked roles
+8. Re-enable 2FA for moderator actions
+
 | Command | Reads | Writes with `--yes` | Rerun |
 |---|---|---|---|
 | `python3 migrate.py checklist` | Nothing | Nothing; prints the manual steps in order and the Server Guide copy | |

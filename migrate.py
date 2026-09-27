@@ -377,6 +377,9 @@ def cmd_checklist(args) -> None:
     steps = [
         ("Apply the layout",
          ["python3 discord_config.py plan", "python3 discord_config.py apply --yes   # only after the plan was seen"]),
+        ("Paste the Server Guide copy: Server Settings > Onboarding > Server Guide",
+         ["Copy below. Discord has no API for the Server Guide.",
+          "Before announce: the live guide's first to-do sends members to #roles, which apply archives."]),
         ("Announce the reorganisation in #announcements",
          ["python3 migrate.py announce", "python3 migrate.py announce --yes"]),
         ("Post and pin a notice in each archived channel",
@@ -388,8 +391,6 @@ def cmd_checklist(args) -> None:
         ("Remove carl-bot: Server Settings > Integrations > carl-bot > Kick",
          ["It only gives Newbie on join and runs the #roles reaction roles; onboarding replaces both.",
           "Keep the Newbie and Member roles."]),
-        ("Paste the Server Guide copy: Server Settings > Onboarding > Server Guide",
-         ["Copy below. Discord has no API for the Server Guide."]),
         ("Attach linked roles: Server Settings > Roles > the role > Links > add OpenDrone Dev",
          ["Contributor: merged_prs at least 1", "Maintainer: maintainer is true",
           "Verified Owner: owner is true (any paid order on opendrone.be, preorders included;"

@@ -345,8 +345,8 @@ class Backfill(Case):
 class Checklist(Case):
     def test_steps_in_order_without_a_token(self):
         out = self.ok("checklist", fake=object())
-        order = ["discord_config.py apply --yes", "migrate.py announce", "migrate.py notices",
-                 "backfill --only-user", "migrate.py backfill --yes", "carl-bot", "Server Guide",
+        order = ["discord_config.py apply --yes", "Paste the Server Guide copy", "migrate.py announce",
+                 "migrate.py notices", "backfill --only-user", "migrate.py backfill --yes", "carl-bot",
                  "linked roles", "2FA"]
         positions = [out.index(part) for part in order]
         self.assertEqual(positions, sorted(positions))
