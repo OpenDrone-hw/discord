@@ -42,7 +42,7 @@ flowchart LR
     c1["#gen-chat, #introduce-yourself, #flying, #off-topic, #builds, #proposals"]
   end
   subgraph Support
-    h1["help (forum), #chatfpv"]
+    h1["help (forum)"]
   end
   subgraph Development
     d1["#git-feed (GitHub feed role), alpha-testing (testers)"]
@@ -57,7 +57,7 @@ flowchart LR
     v1["general, troubleshooting, dev-call, community-call"]
   end
   subgraph Staff
-    st["#mod-log, #web-support, #web-support-admin"]
+    st["#web-support, #web-support-admin, #chatfpv, #mod-log"]
   end
   Start --> Community --> Support --> Development --> Hardware --> Software --> Voice --> Staff
 ```
@@ -68,13 +68,43 @@ flowchart LR
 | A product or firmware channel | Picking it in onboarding or Channels & Roles |
 | #git-feed | Picking GitHub feed, which gives the `GitHub feed` role |
 | alpha-testing | `beta tester`, given by an admin with an alpha board |
-| Staff | `admin`, `Support`, the bot |
+| Staff | `admin`, `Support`, the bots |
 
 Four read-only channels (#how-to-contribute, #product-lifecycle,
 #buying-and-support, #licence-and-ai) are the Server Guide resource pages and
-are not in the sidebar. `#web-support` (storefront tickets) and
-`#web-support-admin` belong to the storefront support bot: they are
-`guard.protected_channels`, so no plan touches them.
+are not in the sidebar.
+
+## Support
+
+Three systems meet in this server. Each question has one door:
+
+| Question | Door | Answered by | Visible to |
+|---|---|---|---|
+| Order, payment, shipping, warranty, returns, anything private | Ticket at opendrone.be/support | The team, in a `#web-support` post; ChatFPV drafts some replies | The customer and `Support` |
+| A board that does not work | `#help` forum | Community and team | Everyone |
+| Design of a board | Its product channel | Community | Its followers |
+
+```mermaid
+flowchart LR
+  C[Customer] -->|opendrone.be/support| T[Storefront Worker]
+  T -->|one post per ticket, pings Support| WS["#web-support"]
+  T -->|name, email, Shopify link| WA["#web-support-admin"]
+  T -->|POST /v1/draft| F[ChatFPV Worker]
+  F -->|draft| WS
+  S[Support role] -->|reply, ✅| WS
+  WS -->|polled| T
+  F -->|/ask tests, alerts| CF["#chatfpv"]
+```
+
+| Channel | Owner | Access profile |
+|---|---|---|
+| `#web-support` | Storefront Worker ([OpenDrone-Web](https://github.com/OpenDrone-hw/OpenDrone-Web) README, "Support tickets") | `tickets`: `admin`, `Support`, and the `OpenDrone Support` bot with the permissions that README lists |
+| `#web-support-admin` | Storefront Worker | `ticket-meta`: `admin` and `Support` read, the bot writes |
+| `#chatfpv` | ChatFPV Worker, which also uses the `OpenDrone Support` application | `chatfpv`: staff and the bot; ChatFPV's test channel and alert target |
+
+The storefront's `SUPPORT_MOD_ROLE_ID` is the `Support` role: its members get
+pinged on a new ticket and approve held replies and AI drafts with ✅. Give
+the role to whoever answers tickets.
 
 Access profiles in `server.json`: `open` (everyone reads and writes),
 `readonly` (admin and the bot post), `staff`, `testers` and `feed` (hidden
