@@ -42,9 +42,11 @@ describe("module registration", () => {
   it("registers the handled events and actions", () => {
     const registry = new Registry([githubModule]);
     const names = (event: string, action?: string) => registry.githubHandlers(event, action).length;
-    for (const action of ["opened", "reopened", "ready_for_review", "synchronize", "closed"]) {
+    for (const action of ["opened", "reopened", "ready_for_review", "synchronize"]) {
       expect(names("pull_request", action)).toBe(1);
     }
+    // closed: the thread/feed handler and the linked-role refresh.
+    expect(names("pull_request", "closed")).toBe(2);
     expect(names("pull_request", "edited")).toBe(0);
     expect(names("pull_request", "labeled")).toBe(0);
     expect(names("pull_request_review", "submitted")).toBe(1);
@@ -55,6 +57,11 @@ describe("module registration", () => {
     expect(names("release", "created")).toBe(0);
     expect(names("repository", "edited")).toBe(1);
     expect(names("push", undefined)).toBe(1);
+    expect(names("organization", "member_added")).toBe(1);
+    expect(names("organization", "member_removed")).toBe(1);
+    expect(names("organization", "member_invited")).toBe(0);
+    expect(names("membership", "added")).toBe(1);
+    expect(names("membership", "removed")).toBe(1);
   });
 });
 
