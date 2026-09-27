@@ -6,6 +6,7 @@ Configuration as code for the [OpenDrone Discord server](https://discord.gg/v3sW
 |---|---|---|
 | `server.json` + `discord_config.py` | Channels, categories, forums, roles, order, archive, onboarding, welcome screen, AutoMod and guild settings, planned and applied from Git | This file |
 | `bot/` | Cloudflare Worker bot: GitHub webhooks into Discord, linked roles | [bot/README.md](bot/README.md) |
+| `migrate.py` | One-off member-facing steps after the layout is applied: announcement, archive notices, ping-role backfill, manual checklist | [Migration](#migration-migratepy) |
 
 ```mermaid
 flowchart LR
@@ -162,6 +163,51 @@ These have no API, or are outside what `discord_config.py` manages.
 | Self-assign role picker in #roles | carl-bot dashboard, reaction roles | The picker is carl-bot reaction roles; `discord_config.py` does not manage carl-bot. Turning off its reaction roles after onboarding prompts replace them is a manual step |
 | Attach linked roles to a role | Server Settings, Roles, the role, Links: add `OpenDrone Dev` and set its requirements | No API; the metadata comes from the bot, see [bot/README.md](bot/README.md) |
 | Re-enable "Require 2FA for moderator actions" | Server Settings, Safety Setup | It is off so the bot can write. Turn it on again after the `OpenDrone Dev` application moves to a Developer Team whose owner has 2FA, then check the bot still writes |
+
+## Migration (`migrate.py`)
+
+Run after `discord_config.py apply --yes`. Same token, `server.json` and REST
+client (429 and bucket handling, no DELETE) as `discord_config.py`; every write
+carries the audit log reason `OpenDrone-hw/discord migrate.py` and is followed
+by a 0.5 s pause. Every subcommand is a dry run unless `--yes`.
+
+| Command | Reads | Writes with `--yes` | Rerun |
+|---|---|---|---|
+| `python3 migrate.py checklist` | Nothing | Nothing; prints the manual steps in order and the Server Guide copy | |
+| `python3 migrate.py announce` | Channels, the newest 300 messages of #announcements | One message in #announcements: the reorganisation, `<id:customize>`, `<id:guide>`, #help, builds, proposals, the archive is read-only | Finds its own message by the marker `opendrone-migration:announce-1` and posts nothing |
+| `python3 migrate.py notices` | Channels, the newest 100 messages of each archived channel | In each of the 19 archived channels, a notice pointing to its successor, then pins it | Finds its notice by the marker `opendrone-migration:notice-1`; pins it if unpinned, else nothing |
+| `python3 migrate.py backfill` | Channels, roles, message history of the archived development channels | The mapped ping role for each member who posted there in the window | `GET` each member first; members who hold the role or left are skipped |
+
+`announce` and `notices` post with `allowed_mentions: {parse: []}`. Both refuse
+`--yes` until the layout is applied (successor channels exist, old channels sit
+in the archive category); their dry run then prints the text instead.
+
+`backfill` flags: `--days N` (default 90), `--only-user <id>` (grant only to
+that member; use it on one test account first), `--channel <name or id>`
+(repeatable). Only default and reply messages count; bots, webhooks and system
+messages do not; thread messages are not read. Output is counts per channel and
+role, never user ids or names. It refuses to grant a role that is missing,
+integration-managed, protected, in `guard.unassignable_roles` or holds a
+privileged permission.
+
+| Archived | Successor | Ping role granted by `backfill` |
+|---|---|---|
+| #fc, #aio | flight-controllers | FC dev |
+| #esc | escs | ESC dev |
+| #rx | receivers | RX dev |
+| #vtx, #digital-vtx | video | Video dev |
+| #remote-id, #gps | remote-id-gps | RemoteID-GPS dev |
+| #frame | frames | Frame dev |
+| #charger | power | Power dev |
+| #opendrone-web | web-and-tools | Web-Tools dev |
+| #esc-am32, #fc-betaflight, #rx-expresslrs | firmware | AM32, Betaflight, ExpressLRS |
+| #proposals, #builds, #support | proposals, builds, help | none |
+| #motors | #gen-chat (no motor product line) | none |
+| #roles | Channels & Roles (`<id:customize>`) | none |
+
+The mapping is `SUCCESSORS` in `migrate.py`, keyed by channel id. Tests check
+it covers exactly `server.json`'s archive list and that each ping role is the
+one the onboarding option for that successor gives.
 
 ## Bot application
 
