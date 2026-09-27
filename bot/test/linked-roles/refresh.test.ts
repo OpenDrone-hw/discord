@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { refreshLinkedUser } from "../../src/linked-roles/index.ts";
 import { LinkedRolesContext } from "../../src/linked-roles/context.ts";
-import { refreshStale } from "../../src/linked-roles/refresh.ts";
+import { refreshStale, refreshUser } from "../../src/linked-roles/refresh.ts";
 import { APP, ORG, harness, link, type Harness } from "./harness.ts";
 
 const A = "111111111111111111";
@@ -59,12 +59,13 @@ describe("refreshLinkedUser (for the github module)", () => {
     expect(h.providers.calls).toHaveLength(0);
   });
 
-  it("deletes the user when they revoked the app on Discord", async () => {
+  it("clears the Discord token and keeps the row when they revoked the app on Discord", async () => {
     const h = await harness();
     await linked(h, A, "alice");
+    h.d1.sqlite.exec(`UPDATE users SET owner = 1 WHERE discord_id = '${A}'`);
     h.providers.discordRefresh.clear();
     expect((await refreshLinkedUser(h.services, "alice", h.options)).status).toBe("revoked");
-    expect(h.d1.row(A)).toBeUndefined();
+    expect(h.d1.row(A)).toMatchObject({ discord_refresh_token: null, github_login: "alice", owner: 1, refresh_lock_until: 0 });
     expect(h.providers.callsTo("PUT", PUT_PATH)).toHaveLength(0);
   });
 
@@ -156,7 +157,7 @@ describe("cron refresh", () => {
 
     h.providers.fail.add(`GET api.github.com/orgs/${ORG}/members/alice`);
     const summary = await refreshStale(new LinkedRolesContext(h.services, h.options));
-    expect(summary).toEqual({ checked: 2, updated: 1, revoked: 0, noToken: 0, failed: 1 });
+    expect(summary).toEqual({ checked: 2, updated: 1, revoked: 0, noToken: 0, skipped: 0, failed: 1 });
     expect([...h.providers.roleConnections.keys()]).toEqual([B]);
     expect(String(error.mock.calls[0]?.[0])).toContain(`refresh of ${A} failed`);
     // Both attempts moved to the back of the queue; C waits for the next run.
@@ -183,10 +184,95 @@ describe("cron refresh", () => {
     h.providers.discordRefresh.clear();
     await h.scheduled();
     expect(log).toHaveBeenCalledWith(
-      "linked-roles refresh: 1 checked, 0 updated, 1 revoked, 0 without token, 0 failed",
+      "linked-roles refresh: 1 checked, 0 updated, 1 revoked, 0 without token, 0 skipped, 0 failed",
     );
     // A was stale and had revoked the app; B linked just now and was not checked.
-    expect(h.d1.row(A)).toBeUndefined();
-    expect(h.d1.row(B)).toBeDefined();
+    expect(h.d1.row(A)?.discord_refresh_token).toBeNull();
+    expect(h.d1.row(B)?.discord_refresh_token).not.toBeNull();
+  });
+});
+
+describe("overlapping refreshes of one user", () => {
+  /** Real short sleeps so the lease holder's awaits can finish. */
+  const options = (h: Harness) => ({ ...h.options, sleep: (ms: number) => new Promise<void>((r) => setTimeout(r, ms / 25)) });
+
+  async function expectWorkingTokens(h: Harness) {
+    const row = (await (await store(h)).get(A))!;
+    expect(row.discordRefreshToken).not.toBeNull();
+    expect(h.providers.discordRefresh.has(row.discordRefreshToken!)).toBe(true);
+    expect(row.githubLogin).toBe("alice");
+    expect(h.providers.githubRefresh.has(row.githubRefreshToken!)).toBe(true);
+    expect(h.d1.row(A)?.refresh_lock_until).toBe(0);
+  }
+
+  it("runs two refreshes one after the other; the row survives with working tokens", async () => {
+    const h = await harness();
+    await linked(h, A, "alice");
+    h.d1.sqlite.exec(`UPDATE users SET owner = 1 WHERE discord_id = '${A}'`);
+    const o = options(h);
+    const results = await Promise.allSettled([refreshLinkedUser(h.services, "alice", o), refreshLinkedUser(h.services, "alice", o)]);
+    expect(results.map((r) => (r.status === "fulfilled" ? r.value.status : String(r.reason)))).toEqual(["updated", "updated"]);
+    await expectWorkingTokens(h);
+    expect(h.d1.row(A)?.owner).toBe(1);
+    // Each run spent its own token: two Discord refreshes, two GitHub refreshes, no invalid_grant.
+    expect(h.providers.callsTo("POST", "discord.com/api/v10/oauth2/token")).toHaveLength(2);
+    expect(h.providers.callsTo("PUT", PUT_PATH)).toHaveLength(2);
+  });
+
+  it("does not let a cron row read before the webhook refresh spend an old token", async () => {
+    const h = await harness({}, { staleAfterSeconds: 1000 });
+    await linked(h, A, "alice", 5000);
+    const o = options(h);
+    const staleRows = await (await store(h)).stale(h.clock.seconds - 1000, 10);
+    await refreshLinkedUser(h.services, "alice", o);
+    // The cron's copy of the row holds tokens that were rotated since.
+    expect((await refreshUser(new LinkedRolesContext(h.services, o), staleRows[0]!)).status).toBe("updated");
+    await expectWorkingTokens(h);
+  });
+
+  it("returns busy without any provider call when the lease stays held", async () => {
+    const h = await harness();
+    await linked(h, A, "alice");
+    h.d1.sqlite.exec(`UPDATE users SET refresh_lock_until = ${h.clock.seconds + 60} WHERE discord_id = '${A}'`);
+    const sleeps: number[] = [];
+    const o = { ...h.options, lockWaitMs: 1000, sleep: async (ms: number) => void sleeps.push(ms) };
+    expect(await refreshLinkedUser(h.services, "alice", o)).toEqual({ status: "busy", discordId: A });
+    expect(sleeps).toEqual([250, 250, 250]);
+    expect(h.providers.calls).toHaveLength(0);
+    // An expired lease (a cancelled refresh) is taken over.
+    h.clock.advance(60);
+    expect((await refreshLinkedUser(h.services, "alice", o)).status).toBe("updated");
+  });
+
+  it("leaves a browser link that replaced the Discord token alone", async () => {
+    const h = await harness();
+    await linked(h, A, "alice");
+    const s = await store(h);
+    // The stored token is dead; while Discord answers invalid_grant, the member links again.
+    h.providers.discordRefresh.clear();
+    const fetch = async (input: string, init?: RequestInit) => {
+      const response = await h.providers.fetch(input, init);
+      if (input.endsWith("/oauth2/token")) await s.saveDiscord(A, h.providers.issueDiscordRefresh(A), h.clock.seconds);
+      return response;
+    };
+    expect((await refreshLinkedUser(h.services, "alice", { ...h.options, fetch })).status).toBe("superseded");
+    const row = (await s.get(A))!;
+    expect(h.providers.discordRefresh.has(row.discordRefreshToken!)).toBe(true);
+  });
+
+  it("keeps a GitHub link that a browser link replaced during a revoked GitHub refresh", async () => {
+    const h = await harness();
+    await linked(h, A, "alice");
+    const s = await store(h);
+    h.providers.githubRefresh.clear();
+    const fetch = async (input: string, init?: RequestInit) => {
+      const response = await h.providers.fetch(input, init);
+      if (input.endsWith("/login/oauth/access_token")) await s.linkGitHub(A, "alice", h.providers.issueGitHubRefresh("alice"), h.clock.seconds);
+      return response;
+    };
+    const result = await refreshLinkedUser(h.services, "alice", { ...h.options, fetch });
+    expect(result).toMatchObject({ status: "updated", githubLogin: "alice" });
+    const row = (await s.get(A))!;
+    expect(h.providers.githubRefresh.has(row.githubRefreshToken!)).toBe(true);
   });
 });

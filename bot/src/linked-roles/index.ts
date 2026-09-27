@@ -17,7 +17,9 @@
  * event that changes a user's facts (a merged pull request, an organisation
  * or team membership change). It returns status "not-linked" when nobody
  * linked that login, and throws on transient failures. It makes about seven
- * subrequests, well inside the 30 s waitUntil budget.
+ * subrequests, well inside the 30 s waitUntil budget. Calls for the same user
+ * may overlap: a per-row lease runs them one after the other (the second waits
+ * up to 10 s, then returns status "busy").
  *
  * The cron (wrangler.toml, every 6 h) refreshes at most DEFAULT_BATCH_SIZE
  * users whose last refresh is older than 24 h, oldest first.
@@ -54,7 +56,7 @@ export function createLinkedRolesModule(options: LinkedRolesOptions = {}): BotMo
     async scheduled(_controller, services) {
       const s = await refreshStale(context(services));
       console.log(
-        `linked-roles refresh: ${s.checked} checked, ${s.updated} updated, ${s.revoked} revoked, ${s.noToken} without token, ${s.failed} failed`,
+        `linked-roles refresh: ${s.checked} checked, ${s.updated} updated, ${s.revoked} revoked, ${s.noToken} without token, ${s.skipped} skipped, ${s.failed} failed`,
       );
     },
     roleConnectionMetadata: METADATA_RECORDS,

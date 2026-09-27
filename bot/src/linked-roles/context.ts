@@ -16,6 +16,11 @@ import { UserStore } from "./store.ts";
 export const DEFAULT_BATCH_SIZE = 6;
 /** A user is refreshed by the cron when their last refresh is older than this. */
 export const DEFAULT_STALE_AFTER_SECONDS = 24 * 3600;
+/** Refresh lease per user; longer than the 30 s waitUntil budget, so a cancelled refresh frees its row within a minute. */
+export const DEFAULT_LOCK_LEASE_SECONDS = 60;
+/** How long a refresh waits for another refresh of the same user before giving up with status "busy". */
+export const DEFAULT_LOCK_WAIT_MS = 10_000;
+export const LOCK_POLL_MS = 250;
 
 export interface LinkedRolesOptions {
   fetch?: FetchLike;
@@ -27,6 +32,10 @@ export interface LinkedRolesOptions {
   maintainerTeam?: string;
   batchSize?: number;
   staleAfterSeconds?: number;
+  lockLeaseSeconds?: number;
+  lockWaitMs?: number;
+  /** Delay used while waiting for a refresh lease. Default: setTimeout. */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 /** Optional var read by this module; set it in wrangler.toml [vars] to change the team. */
@@ -40,6 +49,9 @@ export class LinkedRolesContext {
   readonly maintainerTeam: string;
   readonly batchSize: number;
   readonly staleAfterSeconds: number;
+  readonly lockLeaseSeconds: number;
+  readonly lockWaitMs: number;
+  readonly sleep: (ms: number) => Promise<void>;
   readonly discord: DiscordOAuth;
   readonly github: GitHubOAuth;
   readonly #now: () => number;
@@ -55,6 +67,9 @@ export class LinkedRolesContext {
     this.maintainerTeam = options.maintainerTeam ?? (this.env.GITHUB_MAINTAINER_TEAM || DEFAULT_MAINTAINER_TEAM);
     this.batchSize = options.batchSize ?? DEFAULT_BATCH_SIZE;
     this.staleAfterSeconds = options.staleAfterSeconds ?? DEFAULT_STALE_AFTER_SECONDS;
+    this.lockLeaseSeconds = options.lockLeaseSeconds ?? DEFAULT_LOCK_LEASE_SECONDS;
+    this.lockWaitMs = options.lockWaitMs ?? DEFAULT_LOCK_WAIT_MS;
+    this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.discord = new DiscordOAuth({
       fetch: this.fetch,
       clientId: this.env.DISCORD_CLIENT_ID,

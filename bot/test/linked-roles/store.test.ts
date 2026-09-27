@@ -29,6 +29,7 @@ describe("UserStore", () => {
       githubRefreshToken: "github-refresh-plain",
       updatedAt: 101,
       owner: false,
+      sealed: { discord: raw.discord_refresh_token, github: raw.github_refresh_token },
     });
   });
 
@@ -94,14 +95,48 @@ describe("UserStore", () => {
     expect((await store.stale(30, 10)).map((u) => u.discordId)).toEqual([B]);
   });
 
-  it("reads the storefront's owner flag and deletes rows", async () => {
+  it("reads the storefront's owner flag and never writes it", async () => {
     const { d1, store } = await setup();
     await store.saveDiscord(A, "ra", 1);
     d1.sqlite.exec(`UPDATE users SET owner = 1 WHERE discord_id = '${A}'`);
     expect((await store.get(A))?.owner).toBe(true);
     await store.update(A, { discordRefreshToken: "rb" }, 2);
+    await store.update(A, { discordRefreshToken: null, githubLogin: null, githubRefreshToken: null }, 3);
     expect(d1.row(A)?.owner).toBe(1);
-    await store.delete(A);
-    expect(await store.get(A)).toBeNull();
+  });
+
+  it("writes each token group only while its stored ciphertext is unchanged", async () => {
+    const { d1, store } = await setup();
+    await store.saveDiscord(A, "r1", 1);
+    await store.linkGitHub(A, "alice", "g1", 2);
+    const read = (await store.get(A))!;
+    // A new browser link lands after the read: both token columns change.
+    await store.saveDiscord(A, "r-new", 3);
+    await store.linkGitHub(A, "alice", "g-new", 3);
+
+    const stale = await store.update(A, { discordRefreshToken: null, githubRefreshToken: null, githubLogin: null }, 4, read.sealed);
+    expect(stale).toEqual({ discord: false, github: false });
+    expect(await store.get(A)).toMatchObject({ discordRefreshToken: "r-new", githubRefreshToken: "g-new", githubLogin: "alice", updatedAt: 4 });
+
+    const fresh = (await store.get(A))!;
+    expect(await store.update(A, { discordRefreshToken: "r2" }, 5, fresh.sealed)).toEqual({ discord: true, github: false });
+    expect(await store.update(A, { githubLogin: null, githubRefreshToken: null }, 6, fresh.sealed)).toEqual({ discord: false, github: true });
+    expect(d1.row(A)).toMatchObject({ github_login: null, github_refresh_token: null });
+    expect((await store.get(A))?.discordRefreshToken).toBe("r2");
+
+    // NULL matches NULL.
+    await store.linkGitHub(C, "carol", null, 1);
+    expect(await store.update(C, { githubRefreshToken: "gc" }, 7, { github: null })).toEqual({ discord: false, github: true });
+  });
+
+  it("gives the refresh lease to one holder until it expires or is released", async () => {
+    const { store } = await setup();
+    expect(await store.tryLock(A, 100, 60)).toBe(false); // no row
+    await store.saveDiscord(A, "ra", 1);
+    expect(await store.tryLock(A, 100, 60)).toBe(true);
+    expect(await store.tryLock(A, 159, 60)).toBe(false);
+    expect(await store.tryLock(A, 160, 60)).toBe(true); // expired lease
+    await store.unlock(A);
+    expect(await store.tryLock(A, 161, 60)).toBe(true);
   });
 });

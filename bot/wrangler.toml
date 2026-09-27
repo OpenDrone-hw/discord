@@ -12,6 +12,7 @@ workers_dev = true
 GUILD_ID = "1494019459822653512"
 APPLICATION_ID = "1553748824470851644"
 PROMOTE_ENABLED = "false"
+# GITHUB_MAINTAINER_TEAM = "maintainers"  # optional; team slug for the maintainer linked-role metadata
 
 [[d1_databases]]
 binding = "DB"
