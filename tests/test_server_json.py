@@ -70,7 +70,6 @@ BUILDS, PROPOSALS, SUPPORT_CHAT = "1494782854117326969", "1494033189532860707", 
 # Channel id -> (category, name in server.json) for every channel the archive held that server.json still
 # manages. The old support chat was archived too; it is retired with the empty forums.
 RESTORED = {
-    "1494780931498705057": ("Start", "roles"),
     PROPOSALS: ("Community", "proposals"),
     BUILDS: ("Community", "builds"),
     **{cid: ("Hardware", name) for cid, name, _t, parent in CHANNELS if parent == HARDWARE},
@@ -90,14 +89,57 @@ PREVIOUS_OPTION_CHANNELS = {
     "Remote ID and GPS": ["remote-id-gps"], "Frames": ["frames"], "Power": ["power"], "KiCad library": ["library"],
     "Web and tools": ["web-and-tools"], "Proposals": ["proposals"], "Alpha testing": ["alpha-testing"],
 }
+# The live Support role before this change: moderation of members, not of messages.
+SUPPORT_LIVE_PERMISSIONS = 564049690609153
+RESOURCE_CHANNELS = ["how-to-contribute", "product-lifecycle", "buying-and-support", "licence-and-ai"]
+ROLES_CH = "1494780931498705057"
+FOLLOWER_ROLES = ["FC follower", "ESC follower", "RX follower", "Video follower", "RemoteID-GPS follower",
+                  "Frame follower", "Power follower", "Library follower", "Web-Tools follower"]
 NEW_TOPICS = ["welcome", "rules", "announcements", "gen-chat", "introduce-yourself", "charger", "builds", "proposals",
               "kicad-library"]
 
 
-def current_desired():
-    """The layout live before this one: every product twice, as an empty forum under Development and as the
-    old text chat (#build-chat and #proposal-chat renamed), plus #support-chat and no #kicad-library."""
+def previous_layout():
+    """server.json before the polish pass: #roles and an open #welcome in Start, the "X dev" follower roles, the
+    "Firmware" prompt title, the Hardware and Software categories as default channels, no GitHub feed option,
+    region roles and Support unmanaged, block-only AutoMod rules and no guild description or flags."""
     d = copy.deepcopy(DESIRED)
+    start = next(c for c in d["categories"] if c["name"] == "Start")
+    start["channels"] = [ch for ch in start["channels"] if ch["name"] not in RESOURCE_CHANNELS]
+    start["channels"][0] = {"id": start["channels"][0]["id"], "name": "welcome", "access": "open",
+                            "topic": "Start here: read #rules, pick what you follow in Channels & Roles, then say hi in "
+                                     "#introduce-yourself."}
+    start["channels"].append({"id": ROLES_CH, "name": "roles", "access": "readonly"})
+    voice = next(c for c in d["categories"] if c["name"] == "Voice")
+    for ch in voice["channels"]:
+        ch["name"] = {"general": "General", "troubleshooting": "Troubleshooting"}.get(ch["name"], ch["name"])
+    d["profiles"]["open"]["@everyone"]["deny"] = ["MENTION_EVERYONE"]
+    renamed = {r["name"]: r.pop("renamed_from") for r in d["roles"] if "renamed_from" in r}
+    d["roles"] = [r for r in d["roles"] if r["name"] not in ("Support", *(n for n, _e in REGIONS))]
+    for r in d["roles"]:
+        r["name"] = renamed.get(r["name"], r["name"])
+        if r["name"] == "Verified Builder":
+            r["color"] = "#2ecc71"
+    onboarding = d["onboarding"]
+    onboarding["default_channels"] += ["Hardware", "Software"]
+    for prompt in onboarding["prompts"]:
+        if prompt.pop("renamed_from", None):
+            prompt["title"] = "Firmware"
+        prompt["options"] = [o for o in prompt["options"] if o["title"] != "GitHub feed"]
+        for option in prompt["options"]:
+            option["roles"] = [renamed.get(r, r) for r in option.get("roles", [])]
+    for rule in d["automod"]:
+        if rule["name"] != "Block Invite Links":
+            rule["actions"] = [{"type": "block"}]
+    d["guild"] = {k: v for k, v in d["guild"].items() if k not in ("description", "system_channel_flags")}
+    return d
+
+
+def current_desired():
+    """The layout live before the one-channel-per-product layout: every product twice, as an empty forum under
+    Development and as the old text chat (#build-chat and #proposal-chat renamed), plus #support-chat and no
+    #kicad-library."""
+    d = previous_layout()
     cats = {c["name"]: c for c in d["categories"]}
     for ch in [ch for cat in d["categories"] for ch in cat["channels"]]:
         if ch["name"] in NEW_TOPICS:
@@ -194,8 +236,9 @@ class ServerJson(ToolCase):
 
     def test_plan_is_valid_and_has_no_notes(self):
         self.assertEqual(self.plan_["notes"], [])
-        # The old support chat is no longer in server.json; it is deleted by hand with the empty forums.
-        self.assertEqual(sorted(self.plan_["unmanaged"]["channels"]), ["support", "web-support", "web-support-admin"])
+        # The old support chat and #roles are no longer in server.json; a person deletes them by hand.
+        self.assertEqual(sorted(self.plan_["unmanaged"]["channels"]),
+                         ["roles", "support", "web-support", "web-support-admin"])
         self.assertEqual(self.plan_["unmanaged"]["onboarding prompts"], [])
 
     def test_plan_never_touches_the_storefront_channels(self):
@@ -229,7 +272,7 @@ class ServerJson(ToolCase):
         fake = self.applied()
         gating = {r["id"] for r in fake.roles if r["name"] in ("Newbie", "Member")}
         for c in fake.channels:
-            if c["id"] in PROTECTED | {SUPPORT_CHAT}:  # unmanaged
+            if c["id"] in PROTECTED | {SUPPORT_CHAT, ROLES_CH}:  # unmanaged
                 continue
             self.assertEqual({o["id"] for o in c["permission_overwrites"] if o["type"] == 0} & gating, set(), c["name"])
         for profile in DESIRED["profiles"].values():
@@ -240,23 +283,18 @@ class ServerJson(ToolCase):
         gen = fake.chan("1494779609131258048")
         self.assertIn(ow("777001", P["SEND_MESSAGES"], 0, 1), gen["permission_overwrites"])
 
-    def test_old_channels_are_restored_open_and_roles_is_read_only(self):
+    def test_old_channels_are_restored_open(self):
         self.assertNotIn("archive", DESIRED)
         fake = self.applied()
         cats = {c["name"]: c["id"] for c in fake.channels if c["type"] == 4}
         self.assertNotIn("Archive", cats)
-        self.assertEqual(len(RESTORED), 18)
+        self.assertEqual(len(RESTORED), 17)
         self.assertNotIn(CHATFPV, RESTORED)
         for cid, (category, name) in RESTORED.items():
             ch = fake.chan(cid)
             self.assertEqual((ch["name"], ch["parent_id"], ch["type"]), (name, cats[category], 0), cid)
             ows = {o["id"]: (int(o["allow"]), int(o["deny"])) for o in ch["permission_overwrites"] if o["type"] == 0}
             allow, deny = ows[GID]
-            if name == "roles":
-                # the live Server Guide still links #roles, and Discord refuses to hide a guide channel
-                self.assertTrue(allow & P["VIEW_CHANNEL"], name)
-                self.assertTrue(deny & P["SEND_MESSAGES"], name)
-                continue
             for perm in ("VIEW_CHANNEL", "SEND_MESSAGES", "READ_MESSAGE_HISTORY", "SEND_MESSAGES_IN_THREADS"):
                 self.assertTrue(allow & P[perm], (name, perm))
             self.assertTrue(deny & P["MENTION_EVERYONE"], name)
@@ -305,8 +343,14 @@ class ServerJson(ToolCase):
         self.assertEqual(sorted(c["name"] for c in fake.channels if c["parent_id"] == dev), ["alpha-testing", "git-feed"])
         forums = sorted(ch["name"] for cat in DESIRED["categories"] for ch in cat["channels"] if ch.get("type") == "forum")
         self.assertEqual(forums, ["alpha-testing", "help"])
-        self.assertEqual(fake.by_name("kicad-library")["topic"],
-                         "KiCad-Library parts, footprints, datasheets and hardware-template.")
+        self.assertEqual(fake.by_name("kicad-library")["topic"], "KiCad-Library parts and footprints, hardware-template "
+                         "and OpenDrone-Fixtures. One thread per pull request.")
+        for name in PRODUCT_CHANNELS + ["digital-vtx", "motors", "chatfpv"]:
+            topic = fake.by_name(name)["topic"]
+            self.assertTrue(topic and "\n" not in topic and "\u2014" not in topic, name)
+        for repo, entry in REPOS["repos"].items():
+            if entry["channel"] not in ("opendrone-web", "fc-betaflight", "esc-am32", "rx-expresslrs"):
+                self.assertIn(repo, fake.by_name(entry["channel"])["topic"], repo)
 
     def test_text_channels_get_one_line_topics(self):
         fake = self.applied()
@@ -342,20 +386,27 @@ class ServerJson(ToolCase):
         self.assertFalse([c["name"] for c in defaults if c["parent_id"] == dev])
         follow = next(p for p in ob["prompts"] if p["title"] == "Follow OpenDrone development")
         granted = {by_id[c]["name"] for o in follow["options"] for c in o["channel_ids"]}
-        firmware = next(p for p in ob["prompts"] if p["title"] == "Firmware")
+        firmware = next(p for p in ob["prompts"] if p["title"] == "Which firmware do you use?")
+        self.assertFalse([p for p in ob["prompts"] if p["title"] == "Firmware"])
         granted |= {by_id[c]["name"] for o in firmware["options"] for c in o["channel_ids"]}
         self.assertLessEqual(set(PRODUCT_CHANNELS) | {"proposals", "alpha-testing"}, granted)
         self.assertFalse({c["type"] for o in follow["options"] for c in map(by_id.get, o["channel_ids"])
-                          if c["name"] not in ("alpha-testing",)} - {0})
-        ping = {r["id"] for r in fake.roles if r["name"].endswith(" dev")}
+                          if c["name"] not in ("alpha-testing", "git-feed")} - {0})
+        feed = next(o for o in follow["options"] if o["title"] == "GitHub feed")
+        self.assertEqual([by_id[c]["name"] for c in feed["channel_ids"]], ["git-feed"])
+        followers = {r["id"] for r in fake.roles if r["name"] in FOLLOWER_ROLES}
+        self.assertEqual(len(followers), len(FOLLOWER_ROLES))
+        self.assertFalse([r["name"] for r in fake.roles if r["name"].endswith(" dev")])
         for option in follow["options"]:
-            self.assertLessEqual(set(option["role_ids"]), ping, option["title"])
+            self.assertLessEqual(set(option["role_ids"]), followers, option["title"])
+            self.assertNotIn("ping", option["description"], option["title"])
             self.assertLessEqual(len(option["description"]), 100, option["title"])
             if {by_id[c]["name"] for c in option["channel_ids"]} & set(PRODUCT_CHANNELS):
                 self.assertTrue(option["role_ids"], option["title"])
         names = {by_id[c]["name"] for c in ob["default_channel_ids"]}
+        # Product channels come from the Follow and firmware options, not from the defaults.
         self.assertEqual(names, {"welcome", "rules", "announcements", "gen-chat", "introduce-yourself", "off-topic",
-                                 "flying", "help", "builds", "proposals", "Hardware", "Software"})
+                                 "flying", "help", "builds", "proposals"})
         self.assertIn(BUILDS, ob["default_channel_ids"])
         self.assertIn(BUILDS, [c["channel_id"] for c in fake.welcome["welcome_channels"]])
         role_names = {r["id"]: r["name"] for r in fake.roles}
@@ -392,7 +443,7 @@ class ServerJson(ToolCase):
 
     def test_an_option_giving_a_firmware_team_role_is_refused(self):
         d = copy.deepcopy(DESIRED)
-        firmware = next(p for p in d["onboarding"]["prompts"] if p["title"] == "Firmware")
+        firmware = next(p for p in d["onboarding"]["prompts"] if p["title"] == "Which firmware do you use?")
         firmware["options"][0]["roles"] = ["Betaflight"]
         with self.assertRaises(dc.ConfigError) as ctx:
             dc.build_plan(d, copy.deepcopy(self.live))
@@ -421,7 +472,7 @@ class FromTheCurrentLayout(ToolCase):
         return next(c["id"] for c in self.fake.channels if c["name"] == name and c["type"] == 15)
 
     def test_plan_renames_back_creates_kicad_library_and_repoints_onboarding(self):
-        plan = self.plan(DESIRED)
+        plan = self.plan(previous_layout())
         ops = plan["ops"]
         self.assertEqual((ops["roles"], ops["categories"], ops["archive"]), ([], [], []))
         updates = {op["path"].rsplit("/", 1)[1]: op for op in ops["channels"] if op["action"] == "update"}
@@ -444,6 +495,7 @@ class FromTheCurrentLayout(ToolCase):
                    for names in RETIRED_FORUMS.values() for n in names]
         self.assertEqual(plan["unmanaged"]["channels"],
                          sorted(retired + ["support-chat", "web-support", "web-support-admin"]))
+        self.assertNotIn("roles", plan["unmanaged"]["channels"])
         self.assertEqual(len(plan["notes"]), 2, plan["notes"])
         self.assertIn(f"#builds ({BUILDS}) is renamed to a name unmanaged channel(s) {self.forum('builds')} still carry",
                       plan["notes"][0])
@@ -476,11 +528,95 @@ class FromTheCurrentLayout(ToolCase):
 
     def test_once_the_retired_channels_are_deleted_only_the_storefront_channels_are_unmanaged(self):
         self.apply(DESIRED)
-        retired = {self.forum(n) for names in RETIRED_FORUMS.values() for n in names} | {SUPPORT_CHAT}
+        retired = {self.forum(n) for names in RETIRED_FORUMS.values() for n in names} | {SUPPORT_CHAT, ROLES_CH}
         self.fake.channels = [c for c in self.fake.channels if c["id"] not in retired]
         plan = self.plan(DESIRED)
         self.assertEqual(plan["total"], 0)
         self.assertEqual((plan["unmanaged"]["channels"], plan["notes"]), (["web-support", "web-support-admin"], []))
+
+
+class FromThePreviousLayout(ToolCase):
+    """The live server before this polish pass: server.json as previous_layout() applied."""
+
+    def setUp(self):
+        super().setUp()
+        self.fake = FakeDiscord(live_state())
+        self.apply(previous_layout())
+
+    def plan(self):
+        return dc.build_plan(DESIRED, dc.fetch(self.fake, GID))
+
+    def test_follower_roles_and_the_firmware_prompt_are_renamed_in_place(self):
+        before = {r["name"]: r["id"] for r in self.fake.roles}
+        prompts = {p["title"]: p["id"] for p in self.fake.onboarding["prompts"]}
+        plan = self.plan()
+        renames = {op["diff"]["name"] for op in plan["ops"]["roles"] if "name" in op["diff"]}
+        self.assertEqual(renames, {(n.replace("follower", "dev"), n) for n in FOLLOWER_ROLES})
+        self.assertFalse([op for op in plan["ops"]["roles"] if op["action"] == "create"])
+        text = "\n".join(plan["ops"]["onboarding"][0]["summary"])
+        self.assertIn("prompt 'Firmware': title -> 'Which firmware do you use?'", text)
+        self.assertRegex(text, r"default channels: \+\[\] -\['(Hardware|Software)', '(Hardware|Software)'\]")
+        self.assertIn("new option 'GitHub feed': channels [#git-feed]", text)
+        self.assertEqual(plan["unmanaged"]["onboarding prompts"], [])
+        self.apply(DESIRED)
+        after = {r["name"]: r["id"] for r in self.fake.roles}
+        for name in FOLLOWER_ROLES:
+            self.assertEqual(after[name], before[name.replace("follower", "dev")], name)
+        self.assertEqual({p["title"]: p["id"] for p in self.fake.onboarding["prompts"]}["Which firmware do you use?"],
+                         prompts["Firmware"])
+        self.assertEqual(self.plan()["total"], 0)
+
+    def test_roles_channel_is_left_alone_and_reported_unmanaged(self):
+        plan = self.plan()
+        self.assertIn("roles", plan["unmanaged"]["channels"])
+        self.assertEqual(plan["notes"], [])
+        self.apply(DESIRED)
+        self.assertEqual(self.fake.chan(ROLES_CH)["name"], "roles")
+
+    def test_region_roles_change_colour_only_and_support_gains_message_moderation(self):
+        roles = {r["name"]: r for r in self.fake.roles}
+        for name, _emoji in REGIONS:
+            roles[name]["color"] = roles[name]["colors"]["primary_color"] = 0x2FBEFF
+        roles["Support"]["permissions"] = str(SUPPORT_LIVE_PERMISSIONS)
+        plan = self.plan()
+        ops = {op["label"]: op for op in plan["ops"]["roles"]}
+        for name, _emoji in REGIONS:
+            self.assertEqual(ops[f"role {name}"]["body"], {"colors": {"primary_color": 0}}, name)
+        support = ops["role Support"]
+        self.assertEqual(support["perm_lines"][0][1:], (["MANAGE_MESSAGES", "MANAGE_THREADS"], []))
+        self.assertEqual(ops["role Verified Builder"]["diff"]["color"], ("#2ecc71", "#c27c0e"))
+
+    def test_guild_description_system_channel_flags_and_automod_alerts(self):
+        plan = self.plan()
+        [guild] = plan["ops"]["guild"]
+        self.assertEqual(guild["body"]["system_channel_flags"], 1 | 4 | 8)
+        self.assertTrue(guild["body"]["description"].startswith("Development, testing and support for OpenDrone"))
+        self.fake.guild["system_channel_flags"] = 2 | 64  # boost messages off, an unknown bit
+        [guild] = self.plan()["ops"]["guild"]
+        self.assertEqual(guild["body"]["system_channel_flags"], 1 | 4 | 8 | 64)
+        self.apply(DESIRED)
+        modlog = self.fake.by_name("mod-log")["id"]
+        for rule in self.fake.automod:
+            if rule["name"] != "Block Mention Spam":
+                self.assertIn({"type": 2, "metadata": {"channel_id": modlog}}, rule["actions"], rule["name"])
+
+    def test_welcome_and_resource_channels_are_read_only_for_everyone(self):
+        self.apply(DESIRED)
+        for name in ["welcome", *RESOURCE_CHANNELS]:
+            ch = self.fake.by_name(name)
+            ows = {o["id"]: (int(o["allow"]), int(o["deny"])) for o in ch["permission_overwrites"] if o["type"] == 0}
+            allow, deny = ows[GID]
+            self.assertTrue(allow & P["VIEW_CHANNEL"], name)
+            self.assertTrue(deny & P["SEND_MESSAGES"] and deny & P["SEND_MESSAGES_IN_THREADS"], name)
+        self.assertIn("<#1494792999844974800>", self.fake.by_name("welcome")["topic"])
+        voice = sorted(c["name"] for c in self.fake.channels if c["type"] == 2)
+        self.assertIn("general", voice)
+        self.assertIn("troubleshooting", voice)
+
+    def test_open_profile_denies_private_threads(self):
+        planner = dc.Planner(DESIRED, dc.fetch(self.fake, GID))
+        _allow, deny = planner.expand("open", "x")[GID]
+        self.assertTrue(deny & P["CREATE_PRIVATE_THREADS"])
 
 
 if __name__ == "__main__":

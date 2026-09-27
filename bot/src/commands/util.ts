@@ -97,7 +97,10 @@ export interface ThreadContext {
   channel: Channel;
   /** Repositories mapped to this product channel, in repos.json order. */
   repos: RepoMatch[];
-  /** Of those, the repositories the thread name mentions, longest name first. */
+  /**
+   * Of those, the repository a pull request thread is named after, else the
+   * repositories the thread name mentions, longest name first.
+   */
   named: RepoMatch[];
 }
 
@@ -114,6 +117,29 @@ function threadFromInteraction(interaction: Interaction, channelId: string): Cha
 }
 
 const NAME_CHAR = /[a-z0-9_-]/;
+/** Thread name the GitHub module gives a pull request thread: "<repo> #<number>: <title>". */
+const PULL_THREAD_NAME = /^([A-Za-z0-9._-]+) #(\d+): ([\s\S]*)$/;
+
+/**
+ * Repository, number and title of a thread named by the GitHub module
+ * (src/github/thread-link.ts threadName), else null. The title may be cut.
+ */
+export function parsePullThreadName(threadName: string): { repo: string; number: number; title: string } | null {
+  const match = PULL_THREAD_NAME.exec(threadName);
+  if (!match?.[1] || !match[2]) return null;
+  return { repo: match[1], number: Number(match[2]), title: match[3] ?? "" };
+}
+
+/**
+ * The repositories a thread is about: for a pull request thread the one its
+ * name starts with, when it belongs to this channel; otherwise every
+ * repository the name mentions (namedRepos).
+ */
+export function threadRepos(threadName: string, repos: RepoMatch[]): RepoMatch[] {
+  const pull = parsePullThreadName(threadName);
+  const own = pull ? repos.find((r) => r.repo.toLowerCase() === pull.repo.toLowerCase()) : undefined;
+  return own ? [own] : namedRepos(threadName, repos);
+}
 
 /**
  * Repositories whose name appears in a thread name as a whole word, case
@@ -152,7 +178,7 @@ export async function productThread(ctx: InteractionContext, channelId?: string)
   const cfg = services.directory.config;
   if (!productChannels(cfg).includes(channel.name)) return null;
   const repos = reposInChannel(channel.name, cfg);
-  return { thread, channel, repos, named: namedRepos(thread.name ?? "", repos) };
+  return { thread, channel, repos, named: threadRepos(thread.name ?? "", repos) };
 }
 
 /**

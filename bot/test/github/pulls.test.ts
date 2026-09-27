@@ -86,7 +86,7 @@ describe("pull_request opened", () => {
     const thread = world.threads[0]!;
     expect(thread.channelId).toBe(CHANNEL_RX);
     expect(thread.id).toBe(starter.id);
-    expect(thread.body).toEqual({ name: "PR #12: Move the **antenna** <@&1>", auto_archive_duration: 10080 });
+    expect(thread.body).toEqual({ name: "OpenRX #12: Move the **antenna** <@&1>", auto_archive_duration: 10080 });
     expect(decodeURIComponent(thread.reason ?? "")).toBe("GitHub OpenDrone-hw/OpenRX#12");
 
     // The card with the description goes into the thread, not the channel.

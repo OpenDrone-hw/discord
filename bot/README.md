@@ -46,8 +46,8 @@ Any other path is 404; a known path with the wrong method is 405.
 
 | Event.action | Thread of the PR in its product channel | `#git-feed` | `#announcements` |
 |---|---|---|---|
-| `pull_request.opened`, `reopened`, `ready_for_review` | Started if missing, card with the description | One line | No |
-| `pull_request.synchronize` | Started if missing, push line (with the description when this event started the thread) | No | No |
+| `pull_request.opened`, `reopened`, `ready_for_review` | Started if missing, card with the first paragraph of the description | One line | No |
+| `pull_request.synchronize` | Started if missing, push line (with the first paragraph of the description when this event started the thread) | No | No |
 | `pull_request.closed` | Card if linked (merged or closed) | One line | No |
 | `pull_request_review.submitted` | Started if missing, review card | Approved or changes requested | No |
 | `check_suite.completed` | Card if linked, only for the PR head commit | Default-branch failures only | No |
@@ -80,8 +80,9 @@ flowchart TD
 | Step | Discord call | Detail |
 |---|---|---|
 | Starter | `POST /channels/{channel}/messages` | "Pull request **OpenRX** #12 by alice: title" linking the PR; "Draft pull request" for a draft |
-| Thread | `POST /channels/{channel}/messages/{starter}/threads` | Name `PR #<n>: <title>` cut to 100 characters, `auto_archive_duration` 10080 (a week). The thread id is the starter's id; a retry that finds the thread already started (Discord code 160004) uses it |
+| Thread | `POST /channels/{channel}/messages/{starter}/threads` | Name `<repo> #<n>: <title>` cut to 100 characters (for example `OpenRX #12: Move the antenna`), `auto_archive_duration` 10080 (a week). The thread id is the starter's id; a retry that finds the thread already started (Discord code 160004) uses it |
 | Link | GitHub `PATCH` of the PR body | Read again right before writing so an edit made meanwhile is kept |
+| Card | `POST /channels/{thread}/messages` | Title, actor and the first paragraph of the PR description as plain text: HTML comments, images, headings, tables, rules and code blocks skipped, at most 300 characters ending in "..." when cut. The "Open on GitHub" button carries the rest |
 
 The line is `Discussion: https://discord.com/channels/<guild>/<thread>`. It is
 the only record of the link; nothing about it is stored in D1. There are no
@@ -110,7 +111,7 @@ that failed.
 |---|---|---|
 | `merged_prs` | Integer, greater than or equal | GitHub search `is:pr is:merged org:OpenDrone-hw author:<login>` |
 | `org_member` | Boolean | `GET /orgs/OpenDrone-hw/members/<login>` |
-| `maintainer` | Boolean | Active member of the team `GITHUB_MAINTAINER_TEAM` (default `maintainers`) |
+| `maintainer` | Boolean | Active member of the team `GITHUB_MAINTAINER_TEAM` (`core` in `wrangler.toml`; `maintainers` when unset) |
 | `owner` | Boolean | `users.owner` in D1. Owner means any paid order on opendrone.be, preorders included; the storefront is to fill it, and nothing in this repository writes it, so it is 0 |
 
 The cron refreshes 6 users per run whose last refresh is older than 24 h, oldest
@@ -190,11 +191,11 @@ Settings, Integrations, OpenDrone Dev.
 | Command | Where | Who | What it does |
 |---|---|---|---|
 | `/link pr:<url>` | thread in the text channel the PR's repository maps to | members; private repos: refused | Writes `Discussion: <thread url>` into the PR description; a repository of another channel is refused before any GitHub call. Replaces an existing line only when it points at a thread the bot started or at a deleted thread, and leaves a "moved to" note in the replaced thread |
-| `/branch [repo]` | thread in a product channel | anyone who can use it | Fork and branch commands, and the `Discussion:` line to put in the PR description. `repo` accepts and autocompletes only repositories mapped to the thread's channel (the ones the thread name mentions first); without it, a thread name that names exactly one of them, or a channel with one repository, decides |
+| `/branch [repo]` | thread in a product channel | anyone who can use it | Fork and branch commands, and the `Discussion:` line to put in the PR description. `repo` accepts and autocompletes only repositories mapped to the thread's channel (the ones the thread name mentions first); without it, a pull request thread uses the repository its name starts with (`<repo> #<n>: ...`), another thread a name that names exactly one of them, and a channel with one repository decides. The branch name comes from the thread name, without the `<repo> #<n>:` prefix |
 | `/editing repo:<name>` | anywhere | anyone; private repos: staff | Open PRs that change `.kicad_pcb` or `.kicad_sch` files |
 | `/verify` | anywhere | anyone who can use it | Link to the Linked Roles verification page |
 | `/promote name summary [private]` | anywhere | admin | Creates a repository from `hardware-template` with topic `status-planned`. Refuses while `PROMOTE_ENABLED` is `"false"` |
-| To GitHub issue | message in a thread of a product channel | members; private repos: staff | Modal offering the channel's repositories (the one the thread name mentions preselected), then an issue with a link back to the message |
+| To GitHub issue | message in a thread of a product channel | members; private repos: staff | Modal offering the channel's repositories (a pull request thread's own repository, or the one the thread name mentions, preselected), then an issue with a link back to the message |
 | Approve build | message | reviewer or admin | Grants Verified Builder to the message author |
 
 Approve build and `/promote` are visible to Administrators only until an
@@ -402,7 +403,7 @@ layout is applied and migrated.
 | `GUILD_ID` | `1494019459822653512` |
 | `APPLICATION_ID` | `1553826696673759344` |
 | `PROMOTE_ENABLED` | `"false"`; `/promote` refuses unless it is `"true"` |
-| `GITHUB_MAINTAINER_TEAM` | Optional team slug for `maintainer`; unset means `maintainers`. The team must exist, otherwise `maintainer` is 0 for everyone |
+| `GITHUB_MAINTAINER_TEAM` | `core`, the organisation team that holds the maintainers (the other team, `engineering`, does not count). Team slug for `maintainer`; unset means `maintainers`, which does not exist in the organisation. The team must exist, otherwise `maintainer` is 0 for everyone |
 
 For `npm run dev`, copy `.dev.vars.example` to `.dev.vars` (git-ignored).
 

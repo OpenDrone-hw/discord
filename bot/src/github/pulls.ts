@@ -26,6 +26,7 @@ import {
   code,
   escapeMarkdown,
   feedLine,
+  firstParagraph,
   link,
   plainExcerpt,
   shortSha,
@@ -55,8 +56,11 @@ function stats(pull: PullRequest): string {
   return `-# ${pull.changedFiles} ${pull.changedFiles === 1 ? "file" : "files"} changed${lines}`;
 }
 
-function description(pull: PullRequest, max: number): string {
-  return plainExcerpt(pull.body.replace(DISCUSSION_TEXT, ""), max);
+/** Longest PR summary on a card; "Open on GitHub" carries the rest. */
+export const MAX_SUMMARY = 300;
+
+function description(pull: PullRequest): string {
+  return firstParagraph(pull.body.replace(DISCUSSION_TEXT, ""), MAX_SUMMARY);
 }
 
 interface PullEvent {
@@ -111,7 +115,7 @@ function eventCard(scope: Scope, pull: PullRequest, event: PullEvent, withDetail
     blocks: [
       heading(scope, pull),
       `**${escapeMarkdown(event.actor)}** ${event.text}`,
-      withDetails ? description(pull, 500) : "",
+      withDetails ? description(pull) : "",
       withDetails ? stats(pull) : "",
     ],
     button: { label: "Open on GitHub", url: pull.htmlUrl },

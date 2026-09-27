@@ -33,7 +33,7 @@
           "SEND_MESSAGES_IN_THREADS",
           "USE_APPLICATION_COMMANDS"
         ],
-        "deny": ["MENTION_EVERYONE"]
+        "deny": ["MENTION_EVERYONE", "CREATE_PRIVATE_THREADS"]
       }
     },
     "readonly": {
@@ -146,16 +146,43 @@
     {"name": "Maintainer", "color": "#e67e22", "hoist": true, "mentionable": false, "permissions": []},
     {"name": "Contributor", "color": "#3498db", "hoist": true, "mentionable": false, "permissions": []},
     {"name": "Verified Owner", "color": "#1abc9c", "hoist": false, "mentionable": false, "permissions": []},
-    {"name": "Verified Builder", "color": "#2ecc71", "hoist": false, "mentionable": false, "permissions": []},
-    {"name": "FC dev", "hoist": false, "mentionable": false, "permissions": []},
-    {"name": "ESC dev", "hoist": false, "mentionable": false, "permissions": []},
-    {"name": "RX dev", "hoist": false, "mentionable": false, "permissions": []},
-    {"name": "Video dev", "hoist": false, "mentionable": false, "permissions": []},
-    {"name": "RemoteID-GPS dev", "hoist": false, "mentionable": false, "permissions": []},
-    {"name": "Frame dev", "hoist": false, "mentionable": false, "permissions": []},
-    {"name": "Power dev", "hoist": false, "mentionable": false, "permissions": []},
-    {"name": "Library dev", "hoist": false, "mentionable": false, "permissions": []},
-    {"name": "Web-Tools dev", "hoist": false, "mentionable": false, "permissions": []},
+    {"name": "Verified Builder", "color": "#c27c0e", "hoist": false, "mentionable": false, "permissions": []},
+    {
+      "name": "Support",
+      "permissions": [
+        "CREATE_INSTANT_INVITE",
+        "STREAM",
+        "VIEW_CHANNEL",
+        "EMBED_LINKS",
+        "ATTACH_FILES",
+        "READ_MESSAGE_HISTORY",
+        "CONNECT",
+        "SPEAK",
+        "MUTE_MEMBERS",
+        "MOVE_MEMBERS",
+        "CHANGE_NICKNAME",
+        "MANAGE_NICKNAMES",
+        "MODERATE_MEMBERS",
+        "SEND_POLLS",
+        "MANAGE_MESSAGES",
+        "MANAGE_THREADS"
+      ]
+    },
+    {"name": "Europe", "color": "#000000"},
+    {"name": "North America", "color": "#000000"},
+    {"name": "South America", "color": "#000000"},
+    {"name": "Asia", "color": "#000000"},
+    {"name": "Oceania", "color": "#000000"},
+    {"name": "Africa", "color": "#000000"},
+    {"name": "FC follower", "renamed_from": "FC dev", "hoist": false, "mentionable": false, "permissions": []},
+    {"name": "ESC follower", "renamed_from": "ESC dev", "hoist": false, "mentionable": false, "permissions": []},
+    {"name": "RX follower", "renamed_from": "RX dev", "hoist": false, "mentionable": false, "permissions": []},
+    {"name": "Video follower", "renamed_from": "Video dev", "hoist": false, "mentionable": false, "permissions": []},
+    {"name": "RemoteID-GPS follower", "renamed_from": "RemoteID-GPS dev", "hoist": false, "mentionable": false, "permissions": []},
+    {"name": "Frame follower", "renamed_from": "Frame dev", "hoist": false, "mentionable": false, "permissions": []},
+    {"name": "Power follower", "renamed_from": "Power dev", "hoist": false, "mentionable": false, "permissions": []},
+    {"name": "Library follower", "renamed_from": "Library dev", "hoist": false, "mentionable": false, "permissions": []},
+    {"name": "Web-Tools follower", "renamed_from": "Web-Tools dev", "hoist": false, "mentionable": false, "permissions": []},
     {"name": "Betaflight user", "color": "#000000", "hoist": false, "mentionable": false, "permissions": []},
     {"name": "AM32 user", "color": "#000000", "hoist": false, "mentionable": false, "permissions": []},
     {"name": "ExpressLRS user", "color": "#000000", "hoist": false, "mentionable": false, "permissions": []}
@@ -166,10 +193,13 @@
       "name": "Start",
       "access": "readonly",
       "channels": [
-        {"id": "1494019460850389075", "name": "welcome", "access": "open", "topic": "Start here: read #rules, pick what you follow in Channels & Roles, then say hi in #introduce-yourself."},
+        {"id": "1494019460850389075", "name": "welcome", "topic": "Start here: read <#1494792999844974800>, pick what you follow in Channels & Roles, then say hi in <#1494781139980779682>."},
         {"id": "1494792999844974800", "name": "rules", "topic": "The server rules. They apply in every channel, thread and voice channel."},
         {"id": "1494032474626326548", "name": "announcements", "type": "announcement", "topic": "Releases, lifecycle changes and news from OpenDrone."},
-        {"id": "1494780931498705057", "name": "roles", "access": "readonly", "topic": "Old role picker, read-only. Roles are picked in Channels & Roles."}
+        {"name": "how-to-contribute", "type": "text", "topic": "How to contribute: say it here, fork, open a pull request. Read-only."},
+        {"name": "product-lifecycle", "type": "text", "topic": "Planned, in progress, alpha, beta, launched: what each status means. Read-only."},
+        {"name": "buying-and-support", "type": "text", "topic": "Where to buy, where to ask and who does what. Read-only."},
+        {"name": "licence-and-ai", "type": "text", "topic": "CERN-OHL-S-2.0, the incutec trademark and AI usage. Read-only."}
       ]
     },
     {
@@ -215,7 +245,7 @@
             ]
           }
         },
-        {"id": "1510002456849813595", "name": "chatfpv"}
+        {"id": "1510002456849813595", "name": "chatfpv", "topic": "ChatFPV, the FPV knowledge assistant: ask it here and report wrong answers."}
       ]
     },
     {
@@ -258,18 +288,18 @@
       "name": "Hardware",
       "access": "open",
       "channels": [
-        {"id": "1494783056026796262", "name": "fc"},
-        {"id": "1538618173354414190", "name": "aio"},
-        {"id": "1494782966302507118", "name": "esc"},
-        {"id": "1494758332903456969", "name": "rx"},
-        {"id": "1494758396577058900", "name": "vtx"},
-        {"id": "1494803018770809065", "name": "digital-vtx"},
-        {"id": "1494758377010757682", "name": "remote-id"},
-        {"id": "1550883307246461033", "name": "gps"},
-        {"id": "1494758355825328158", "name": "frame"},
+        {"id": "1494783056026796262", "name": "fc", "topic": "Flight controllers: OpenFC-Lite, OpenFC-Lite-Mini and OpenFC hardware. One thread per pull request."},
+        {"id": "1538618173354414190", "name": "aio", "topic": "AIO boards: OpenAIO and OpenAIO-Whoop hardware. One thread per pull request."},
+        {"id": "1494782966302507118", "name": "esc", "topic": "ESCs: OpenESC-20x20 and OpenESC-30x30 hardware. One thread per pull request."},
+        {"id": "1494758332903456969", "name": "rx", "topic": "Receivers: OpenRX, OpenRX-Lite, OpenRX-Lite-UFL, OpenRX-Mono and OpenRX-Gemini hardware. One thread per pull request."},
+        {"id": "1494758396577058900", "name": "vtx", "topic": "Analog video transmitters: OpenVTX hardware. One thread per pull request."},
+        {"id": "1494803018770809065", "name": "digital-vtx", "topic": "Digital video transmission: research and discussion. No OpenDrone repository yet."},
+        {"id": "1494758377010757682", "name": "remote-id", "topic": "Remote ID: OpenRemoteID hardware. One thread per pull request."},
+        {"id": "1550883307246461033", "name": "gps", "topic": "GPS: OpenGPS hardware. The repository is private until release."},
+        {"id": "1494758355825328158", "name": "frame", "topic": "Frames: OpenFrame-3F and OpenFrame-5F CAD. The repositories are private until release."},
         {"id": "1550884618322972693", "name": "charger", "topic": "Chargers: the OpenDrone Charger hardware, its firmware and pull request threads."},
-        {"id": "1550883427220197396", "name": "motors"},
-        {"name": "kicad-library", "type": "text", "topic": "KiCad-Library parts, footprints, datasheets and hardware-template."}
+        {"id": "1550883427220197396", "name": "motors", "topic": "Motors: design discussion. No OpenDrone motor product line yet."},
+        {"name": "kicad-library", "type": "text", "topic": "KiCad-Library parts and footprints, hardware-template and OpenDrone-Fixtures. One thread per pull request."}
       ]
     },
     {
@@ -277,10 +307,10 @@
       "name": "Software",
       "access": "open",
       "channels": [
-        {"id": "1494783023114096821", "name": "fc-betaflight"},
-        {"id": "1494758297885212832", "name": "esc-am32"},
-        {"id": "1550882869839134810", "name": "rx-expresslrs"},
-        {"id": "1494796004615131237", "name": "opendrone-web"}
+        {"id": "1494783023114096821", "name": "fc-betaflight", "topic": "Betaflight on OpenDrone flight controllers: targets, configs and the OpenDrone-hw/betaflight fork."},
+        {"id": "1494758297885212832", "name": "esc-am32", "topic": "AM32 on OpenDrone ESCs: targets, settings and the OpenDrone-hw/AM32 fork."},
+        {"id": "1550882869839134810", "name": "rx-expresslrs", "topic": "ExpressLRS on OpenRX: targets, binding and the OpenDrone-hw/ExpressLRS fork."},
+        {"id": "1494796004615131237", "name": "opendrone-web", "topic": "opendrone.be storefront, OpenDrone-Brand, the .github profile and this server's config and bot."}
       ]
     },
     {
@@ -288,8 +318,8 @@
       "name": "Voice",
       "access": "open",
       "channels": [
-        {"id": "1494019460850389076", "name": "General"},
-        {"id": "1494786474028044469", "name": "Troubleshooting"},
+        {"id": "1494019460850389076", "name": "general"},
+        {"id": "1494786474028044469", "name": "troubleshooting"},
         {"name": "dev-call", "type": "voice"},
         {"name": "community-call", "type": "stage"}
       ]
@@ -315,9 +345,7 @@
       "flying",
       "help",
       "builds",
-      "proposals",
-      "Hardware",
-      "Software"
+      "proposals"
     ],
     "prompts": [
       {
@@ -343,7 +371,7 @@
         "in_onboarding": true,
         "options": [
           {"title": "Plane", "emoji": ":planes:", "roles": ["Plane"]},
-          {"title": "Camera", "emoji": ":camera:", "roles": ["Camera"]},
+          {"title": "Camera", "description": "Camera drones and cinematography", "emoji": ":camera:", "roles": ["Camera"]},
           {"title": "FPV", "emoji": ":fpv:", "roles": ["FPV"]},
           {"title": "Tinywhoop", "emoji": ":tinywhoop:", "roles": ["Tinywhoop"]},
           {"title": "Racing", "emoji": ":racing:", "roles": ["Racing"]},
@@ -363,65 +391,65 @@
         "options": [
           {
             "title": "Flight controllers",
-            "description": "OpenFC, OpenFC-Lite, OpenAIO: #fc, #aio and the FC dev ping",
+            "description": "OpenFC-Lite, OpenFC-Lite-Mini, OpenFC, OpenAIO: #fc and #aio",
             "emoji": "🧠",
-            "roles": ["FC dev"],
+            "roles": ["FC follower"],
             "channels": ["fc", "aio"]
           },
           {
             "title": "ESCs",
-            "description": "OpenESC: #esc and the ESC dev ping",
+            "description": "OpenESC-20x20, OpenESC-30x30: #esc",
             "emoji": "⚡",
-            "roles": ["ESC dev"],
+            "roles": ["ESC follower"],
             "channels": ["esc"]
           },
           {
             "title": "Receivers",
-            "description": "OpenRX: #rx and the RX dev ping",
+            "description": "OpenRX, OpenRX-Lite, OpenRX-Lite-UFL, OpenRX-Mono, OpenRX-Gemini: #rx",
             "emoji": "📡",
-            "roles": ["RX dev"],
+            "roles": ["RX follower"],
             "channels": ["rx"]
           },
           {
             "title": "Video",
-            "description": "OpenVTX: #vtx, #digital-vtx and the Video dev ping",
+            "description": "OpenVTX and digital video: #vtx and #digital-vtx",
             "emoji": "🎥",
-            "roles": ["Video dev"],
+            "roles": ["Video follower"],
             "channels": ["vtx", "digital-vtx"]
           },
           {
             "title": "Remote ID and GPS",
-            "description": "OpenRemoteID, OpenGPS: #remote-id, #gps and the RemoteID-GPS dev ping",
+            "description": "OpenRemoteID, OpenGPS: #remote-id and #gps",
             "emoji": "📍",
-            "roles": ["RemoteID-GPS dev"],
+            "roles": ["RemoteID-GPS follower"],
             "channels": ["remote-id", "gps"]
           },
           {
             "title": "Frames",
-            "description": "OpenFrame: #frame and the Frame dev ping",
+            "description": "OpenFrame-3F, OpenFrame-5F: #frame",
             "emoji": "🔧",
-            "roles": ["Frame dev"],
+            "roles": ["Frame follower"],
             "channels": ["frame"]
           },
           {
             "title": "Power",
-            "description": "Charger and motors: #charger, #motors and the Power dev ping",
+            "description": "Charger and motors: #charger and #motors",
             "emoji": "🔋",
-            "roles": ["Power dev"],
+            "roles": ["Power follower"],
             "channels": ["charger", "motors"]
           },
           {
             "title": "KiCad library",
-            "description": "KiCad-Library, hardware-template, fixtures: #kicad-library and the Library dev ping",
+            "description": "KiCad-Library, hardware-template, fixtures: #kicad-library",
             "emoji": "📚",
-            "roles": ["Library dev"],
+            "roles": ["Library follower"],
             "channels": ["kicad-library"]
           },
           {
             "title": "Web and tools",
-            "description": "opendrone.be, brand, this Discord, ChatFPV: #opendrone-web, #chatfpv and the Web-Tools dev ping",
+            "description": "opendrone.be, brand, this Discord, ChatFPV: #opendrone-web and #chatfpv",
             "emoji": "💻",
-            "roles": ["Web-Tools dev"],
+            "roles": ["Web-Tools follower"],
             "channels": ["opendrone-web", "chatfpv"]
           },
           {
@@ -435,11 +463,18 @@
             "description": "Alpha board reports: #alpha-testing",
             "emoji": "🧪",
             "channels": ["alpha-testing"]
+          },
+          {
+            "title": "GitHub feed",
+            "description": "Pull requests, merges and releases from GitHub: #git-feed",
+            "emoji": "📰",
+            "channels": ["git-feed"]
           }
         ]
       },
       {
-        "title": "Firmware",
+        "title": "Which firmware do you use?",
+        "renamed_from": "Firmware",
         "type": "multiple_choice",
         "single_select": false,
         "required": false,
@@ -486,14 +521,14 @@
       "name": "Block Harmful Words",
       "trigger": "keyword_preset",
       "metadata": {"presets": ["sexual_content", "slurs"]},
-      "actions": [{"type": "block"}],
+      "actions": [{"type": "block"}, {"type": "alert", "channel": "mod-log"}],
       "exempt_roles": ["admin", "Support", "developer", "OpenDrone Support", "OpenBrain"],
       "exempt_channels": ["1497547194159599778", "1495130821835624610"]
     },
     {
       "name": "Block Spam",
       "trigger": "spam",
-      "actions": [{"type": "block"}],
+      "actions": [{"type": "block"}, {"type": "alert", "channel": "mod-log"}],
       "exempt_roles": ["admin", "Support", "developer", "OpenDrone Support", "OpenBrain"],
       "exempt_channels": ["1497547194159599778", "1495130821835624610"]
     },
@@ -512,5 +547,15 @@
       "exempt_channels": ["1497547194159599778", "1495130821835624610"]
     }
   ],
-  "guild": {"rules_channel": "rules", "public_updates_channel": "mod-log", "safety_alerts_channel": "mod-log"}
+  "guild": {
+    "description": "Development, testing and support for OpenDrone, a fully open source FPV stack: flight controllers, ESCs, receivers, frames and more, designed and made in Europe.",
+    "rules_channel": "rules",
+    "public_updates_channel": "mod-log",
+    "safety_alerts_channel": "mod-log",
+    "system_channel_flags": [
+      "SUPPRESS_JOIN_NOTIFICATIONS",
+      "SUPPRESS_GUILD_REMINDER_NOTIFICATIONS",
+      "SUPPRESS_JOIN_NOTIFICATION_REPLIES"
+    ]
+  }
 }

@@ -113,6 +113,38 @@ export function plainExcerpt(markdown: string, max: number): string {
   return truncate(text, max);
 }
 
+/** Lines a PR summary never starts with or contains: headings, table rows, horizontal rules, fences. */
+const NOT_PROSE = /^\s*(?:#{1,6}(?:\s|$)|\||[-*_](?:\s*[-*_]){2,}\s*$|```|~~~)/;
+
+/**
+ * The first paragraph of a PR description as plain text (plainExcerpt), at
+ * most `max` characters. HTML comments, images, headings, tables, rules and
+ * code fences are skipped; the first run of remaining non-blank lines is the
+ * paragraph. A paragraph over `max` ends in "..."; the card's "Open on
+ * GitHub" button carries the rest of the description.
+ */
+export function firstParagraph(markdown: string, max: number): string {
+  const lines = markdown
+    .slice(0, MAX_RAW_INPUT)
+    .replace(HTML_COMMENT, "")
+    .replace(/\r\n?/g, "\n")
+    .replace(IMAGE, "")
+    .split("\n");
+  const hasText = (line: string) => line.replace(HTML_TAG, "").trim() !== "";
+  const paragraph: string[] = [];
+  let fenced = false;
+  for (const line of lines) {
+    const fence = /^\s*(?:```|~~~)/.test(line);
+    if (fence) fenced = !fenced;
+    if (fence || fenced || NOT_PROSE.test(line) || !hasText(line)) {
+      if (paragraph.length > 0) break;
+      continue;
+    }
+    paragraph.push(line.trim());
+  }
+  return plainExcerpt(paragraph.join("\n"), max);
+}
+
 /** Release notes are written by maintainers: markdown kept, HTML comments removed. */
 export function releaseNotes(markdown: string, max: number): string {
   const text = markdown

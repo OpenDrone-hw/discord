@@ -108,8 +108,13 @@ export function withDiscussionLine(body: string | null | undefined, url: string)
   return current ? `${current}\n\nDiscussion: ${url}` : `Discussion: ${url}`;
 }
 
-export function threadName(pull: Pick<PullRequest, "number" | "title">): string {
-  return truncate(`PR #${pull.number}: ${oneLine(pull.title)}`, MAX_THREAD_NAME);
+/**
+ * "<repo> #<number>: <title>", cut to Discord's 100 characters. The command
+ * module reads the repository back from this prefix (src/commands/util.ts
+ * parsePullThreadName), so keep the two in step.
+ */
+export function threadName(repo: string, pull: Pick<PullRequest, "number" | "title">): string {
+  return truncate(`${repo} #${pull.number}: ${oneLine(pull.title)}`, MAX_THREAD_NAME);
 }
 
 export interface ThreadRef {
@@ -157,7 +162,7 @@ export async function findOrCreateThread(scope: Scope, pull: PullRequest, option
       const thread = await discord.startThread(
         resolved.channelId,
         starterId,
-        { name: threadName(fresh), auto_archive_duration: AUTO_ARCHIVE_MINUTES },
+        { name: threadName(scope.repo.name, fresh), auto_archive_duration: AUTO_ARCHIVE_MINUTES },
         reason,
       );
       return thread.id;

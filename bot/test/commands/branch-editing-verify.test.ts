@@ -32,6 +32,12 @@ describe("/branch", () => {
     expect(h.calls.some((c) => c.url.startsWith("https://api.github.com"))).toBe(false);
   });
 
+  it("takes the repository and the slug of a pull request thread from its name", async () => {
+    const pr = await run([], rxThread({ name: "OpenRX-Lite #12: port the OpenRX UART fix" }));
+    expect(pr.reply).toContain("gh repo fork OpenDrone-hw/OpenRX-Lite --clone");
+    expect(pr.reply).toContain("git switch -c port-the-openrx-uart-fix");
+  });
+
   it("asks for a repository when the thread names none or several", async () => {
     const none = await run([], rxThread({ name: "PR #12: move the antenna" }));
     expect(none.reply).toContain("OpenRX, OpenRX-Lite, OpenRX-Lite-UFL, OpenRX-Mono, OpenRX-Gemini");
