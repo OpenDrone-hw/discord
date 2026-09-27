@@ -27,7 +27,7 @@ live server is from it.
 flowchart LR
   subgraph Start["Start: readonly"]
     direction TB
-    welcome["#welcome: open"] --- rules["#rules"] --- ann["#announcements: announcement"]
+    welcome["#welcome: open"] --- rules["#rules"] --- ann["#announcements: announcement"] --- roles["#roles: old picker, readonly"]
   end
   subgraph Community["Community: open"]
     direction TB
@@ -55,7 +55,7 @@ flowchart LR
   end
   subgraph Staff["Staff: staff"]
     direction TB
-    modlog["#mod-log"] --- roles["#roles"]
+    modlog["#mod-log"]
   end
   Start --> Community --> Support --> Development --> Hardware --> Software --> Voice --> Staff
 ```
@@ -401,7 +401,7 @@ privileged permission.
 | #opendrone-web | Software | web-and-tools | Web-Tools dev |
 | #esc-am32, #fc-betaflight, #rx-expresslrs | Software | firmware | AM32 user, Betaflight user, ExpressLRS user |
 | #builds, #proposals, #support | Community #build-chat, Community #proposal-chat, Support #support-chat | builds, proposals, help | none |
-| #roles | Staff | Channels & Roles (`<id:customize>`) | none |
+| #roles | Start (read-only: the live Server Guide still links it, and Discord refuses to hide a guide channel) | Channels & Roles (`<id:customize>`) | none |
 
 The mapping is `CHATS` in `migrate.py`, keyed by channel id. Tests check it
 covers exactly the 19 restored channels with their `server.json` names and that

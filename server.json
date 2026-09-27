@@ -168,7 +168,8 @@
       "channels": [
         {"id": "1494019460850389075", "name": "welcome", "access": "open"},
         {"id": "1494792999844974800", "name": "rules"},
-        {"id": "1494032474626326548", "name": "announcements", "type": "announcement"}
+        {"id": "1494032474626326548", "name": "announcements", "type": "announcement"},
+        {"id": "1494780931498705057", "name": "roles", "access": "readonly", "topic": "Old role picker, read-only. Roles are picked in Channels & Roles."}
       ]
     },
     {
@@ -610,8 +611,7 @@
       "name": "Staff",
       "access": "staff",
       "channels": [
-        {"name": "mod-log", "type": "text", "topic": "AutoMod alerts and moderation notes. Staff only."},
-        {"id": "1494780931498705057", "name": "roles"}
+        {"name": "mod-log", "type": "text", "topic": "AutoMod alerts and moderation notes. Staff only."}
       ]
     }
   ],
