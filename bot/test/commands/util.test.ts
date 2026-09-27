@@ -8,12 +8,15 @@ import {
   hasAdministrator,
   hasRole,
   namedRepos,
+  parsePullThreadName,
   productThread,
   repoChoices,
   stringOption,
+  threadRepos,
   truncate,
   within,
 } from "../../src/commands/util.ts";
+import { threadName } from "../../src/github/thread-link.ts";
 import { jsonResponse } from "../helpers.ts";
 import {
   CHANNEL_CHARGER,
@@ -135,6 +138,26 @@ describe("productThread", () => {
     expect(await productThread(h.ctx(slash("x", [], { channel: null })))).toBeNull();
     const charger = await productThread(h.ctx(slash("x", [], { channel: rxThread({ parent_id: CHANNEL_CHARGER, name: "x" }) })));
     expect(charger?.repos.map((r) => r.repo)).toEqual(["Charger"]);
+  });
+});
+
+describe("pull request thread names", () => {
+  const repos = ["OpenRX", "OpenRX-Lite", "OpenRX-Lite-UFL"].map((repo) => ({ repo, channel: "rx" }));
+
+  it("reads back the repository, number and title the GitHub module writes", () => {
+    const name = threadName("OpenRX-Lite", { number: 12, title: "Port the OpenRX fix" });
+    expect(parsePullThreadName(name)).toEqual({ repo: "OpenRX-Lite", number: 12, title: "Port the OpenRX fix" });
+    expect(parsePullThreadName(".github #3: CI")).toEqual({ repo: ".github", number: 3, title: "CI" });
+    expect(parsePullThreadName("PR #12: move the antenna")).toEqual({ repo: "PR", number: 12, title: "move the antenna" });
+    expect(parsePullThreadName("OpenRX and OpenRX-Lite: shared UART")).toBeNull();
+  });
+
+  it("prefers the repository the name starts with over repositories the title mentions", () => {
+    expect(threadRepos("OpenRX-Lite #12: port the OpenRX fix", repos).map((r) => r.repo)).toEqual(["OpenRX-Lite"]);
+    expect(threadRepos("openrx #4: x", repos).map((r) => r.repo)).toEqual(["OpenRX"]);
+    // A prefix that is not a repository of this channel falls back to the words of the name.
+    expect(threadRepos("PR #12: OpenRX-Lite antenna", repos).map((r) => r.repo)).toEqual(["OpenRX-Lite"]);
+    expect(threadRepos("OpenRX and OpenRX-Lite: shared UART", repos).map((r) => r.repo)).toEqual(["OpenRX-Lite", "OpenRX"]);
   });
 });
 

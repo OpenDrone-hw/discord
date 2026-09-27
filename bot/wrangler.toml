@@ -12,7 +12,8 @@ workers_dev = true
 GUILD_ID = "1494019459822653512"
 APPLICATION_ID = "1553826696673759344"
 PROMOTE_ENABLED = "false"
-# GITHUB_MAINTAINER_TEAM = "maintainers"  # optional; team slug for the maintainer linked-role metadata
+# Team slug for the maintainer linked-role metadata: the org team "core" holds the maintainers.
+GITHUB_MAINTAINER_TEAM = "core"
 
 [[d1_databases]]
 binding = "DB"

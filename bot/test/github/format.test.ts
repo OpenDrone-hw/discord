@@ -6,6 +6,7 @@ import {
   code,
   escapeMarkdown,
   feedLine,
+  firstParagraph,
   formatBytes,
   isGitHubUrl,
   link,
@@ -209,8 +210,46 @@ describe("Discussion line", () => {
     expect(parseDiscussion(withDiscussionLine("x", url), GUILD)).toBe(thread);
   });
 
-  it("names threads within Discord's 100 characters", () => {
-    expect(threadName({ number: 12, title: "Fix\nantenna" })).toBe("PR #12: Fix antenna");
-    expect(threadName({ number: 12, title: "x".repeat(200) })).toHaveLength(100);
+  it("names threads after the repository and number, within Discord's 100 characters", () => {
+    expect(threadName("OpenRX", { number: 12, title: "Fix\nantenna" })).toBe("OpenRX #12: Fix antenna");
+    const long = threadName("OpenRX-Lite-UFL", { number: 12, title: "x".repeat(200) });
+    expect(long).toHaveLength(100);
+    expect(long.startsWith("OpenRX-Lite-UFL #12: xxx")).toBe(true);
+    expect(long.endsWith("...")).toBe(true);
+  });
+});
+
+describe("firstParagraph", () => {
+  it("keeps only the first prose paragraph", () => {
+    const body = [
+      "<!-- Template: describe the change -->",
+      "## Summary",
+      "![board](https://example.com/a.png)",
+      "Moves the **antenna** to the edge",
+      "and adds a u.FL <b>connector</b>.",
+      "",
+      "| Part | Value |",
+      "|---|---|",
+      "| C1 | 10u |",
+      "",
+      "Second paragraph.",
+    ].join("\n");
+    expect(firstParagraph(body, 300)).toBe("Moves the **antenna** to the edge\nand adds a u.FL connector.");
+  });
+
+  it("cuts a long paragraph to the limit with an ellipsis", () => {
+    const text = firstParagraph("word ".repeat(200), 300);
+    expect(text).toHaveLength(300);
+    expect(text.endsWith("...")).toBe(true);
+  });
+
+  it("skips code fences and returns nothing for a body without prose", () => {
+    expect(firstParagraph("```\nlog line\n```\n\nReal text.", 300)).toBe("Real text.");
+    expect(firstParagraph("## Heading\n\n| a |\n---\n<!-- x -->", 300)).toBe("");
+    expect(firstParagraph("Only one paragraph.\n\n", 300)).toBe("Only one paragraph.");
+  });
+
+  it("still escapes links and mentions like plainExcerpt", () => {
+    expect(firstParagraph("See [docs](https://x.test) <@123>", 300)).toBe("See docs (https://x.test) \\<@123\\>");
   });
 });

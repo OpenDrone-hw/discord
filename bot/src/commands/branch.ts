@@ -14,6 +14,7 @@ import { ApplicationCommandType } from "../types.ts";
 import {
   branchSlug,
   code,
+  parsePullThreadName,
   productThread,
   guildOnly,
   MEMBER_PERMISSIONS,
@@ -71,7 +72,9 @@ async function branch(ctx: InteractionContext, repoOption: string | undefined): 
     const options = (thread.named.length > 1 ? thread.named : thread.repos).map((r) => r.repo);
     return `This thread does not name one product. Run /branch repo:<name> with one of: ${options.join(", ")}.`;
   }
-  const slug = branchSlug(thread.thread.name ?? "", `thread-${thread.thread.id}`);
+  const name = thread.thread.name ?? "";
+  // A pull request thread's slug comes from the title, without the "<repo> #<n>:" prefix.
+  const slug = branchSlug(parsePullThreadName(name)?.title ?? name, `thread-${thread.thread.id}`);
   const link = threadUrl(ctx.interaction.guild_id ?? ctx.services.env.GUILD_ID, thread.thread.id);
   return branchInstructions(cfg.org, repo.repo, slug, link);
 }
