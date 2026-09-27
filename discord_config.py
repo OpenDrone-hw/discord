@@ -1069,6 +1069,13 @@ class Planner:
                     body[api_key] = cid
                     diff[key] = (self.label(live.get(api_key)) if live.get(api_key) else None,
                                  self.label(cid) if cid else None)
+        community = ("rules_channel_id", "public_updates_channel_id")
+        if any(k in body for k in community):
+            # Discord ignores a lone public_updates_channel_id change on a Community server; it
+            # applies only when features and both Community channels arrive in the same PATCH.
+            for k in community:
+                body.setdefault(k, live.get(k))
+            body["features"] = list(live.get("features", []))
         if body:
             self.add("guild", {"action": "update", "label": "guild settings", "method": "PATCH",
                                "path": f"/guilds/{self.gid}", "body": body, "diff": diff})
