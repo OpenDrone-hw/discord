@@ -11,6 +11,8 @@
  * note in the replaced post. A line pointing at a thread a person started,
  * or outside this server, is never replaced. Pull requests of private
  * repositories are refused for everyone: nothing of theirs is posted to Discord.
+ * A repository mapped to another forum is refused before any GitHub call,
+ * because the GitHub module ignores a line pointing outside the repo's forum.
  */
 import { DiscordError } from "../discord.ts";
 import { defer, ephemeral, errorText } from "../interactions.ts";
@@ -31,6 +33,7 @@ import {
   stringOption,
   threadUrl,
   truncate,
+  wrongForum,
 } from "./util.ts";
 
 export const DISCUSSION_PREFIX = "Discussion:";
@@ -126,9 +129,8 @@ async function link(ctx: InteractionContext, prText: string): Promise<string> {
   }
   const repo = resolveRepoName(ctx, `${ref.owner}/${ref.repo}`);
   if (!repo) return `${ref.owner}/${ref.repo} is not an ${cfg.org} repository the bot knows (bot/config/repos.json).`;
-  if (repo.forum !== thread.forum.name) {
-    return `${repo.repo} is discussed in #${repo.forum}; open or pick a thread there.`;
-  }
+  const refusal = wrongForum(thread, repo, "/link");
+  if (refusal) return refusal;
 
   const path = `/repos/${cfg.org}/${repo.repo}/pulls/${ref.number}`;
   let pull: PullRequest;

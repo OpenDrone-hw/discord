@@ -165,7 +165,11 @@ describe("/link", () => {
 
   it("refuses a repository discussed in another forum without calling GitHub", async () => {
     const { h, reply } = await run("https://github.com/OpenDrone-hw/Charger/pull/3");
-    expect(reply).toBe("Charger is discussed in #power; open or pick a thread there.");
+    expect(reply).toBe(
+      "Charger is discussed in #power, not #receivers; run /link in a thread there. " +
+        "This forum covers: OpenRX, OpenRX-Lite, OpenRX-Lite-UFL, OpenRX-Mono, OpenRX-Gemini.",
+    );
+    expect(h.find("POST", `/channels/${THREAD}/messages`)).toHaveLength(0);
     expect(h.calls.some((c) => c.url.startsWith("https://api.github.com"))).toBe(false);
   });
 
@@ -173,7 +177,7 @@ describe("/link", () => {
     const { reply } = await run("OpenRX#12", github(), { channel: { id: GEN_CHAT, type: 0, parent_id: null, applied_tags: [] } });
     expect(reply).toBe("Run /link inside a thread of a development forum.");
     const power = await run("OpenRX#12", github(), { channel: rxThread({ parent_id: FORUM_POWER }) });
-    expect(power.reply).toContain("discussed in #receivers");
+    expect(power.reply).toBe("OpenRX is discussed in #receivers, not #power; run /link in a thread there. This forum covers: Charger.");
   });
 
   it("refuses non-members before any GitHub call", async () => {

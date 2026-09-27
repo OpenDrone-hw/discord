@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { branchCommand, branchInstructions } from "../../src/commands/branch.ts";
 import { editingCommand, formatEditing, MAX_PULLS } from "../../src/commands/editing.ts";
 import { clearVerificationUrlCache, verifyCommand, verifyMessage } from "../../src/commands/verify.ts";
+import { config, Directory, DirectoryCache } from "../../src/config.ts";
 import { InteractionResponseType, MessageFlags } from "../../src/types.ts";
 import { jsonResponse } from "../helpers.ts";
 import { FORUM_POWER, GEN_CHAT, GUILD, harness, ROLE_DEVELOPER, rxThread, slash, TAG_LITE, TAG_OPENRX, text, THREAD, type Handler } from "./fixtures.ts";
@@ -41,23 +42,74 @@ describe("/branch", () => {
     expect((await run([{ name: "repo", value: "openrx-mono" }], rxThread({ applied_tags: [] }))).reply).toContain(
       "gh repo fork OpenDrone-hw/OpenRX-Mono --clone",
     );
-    expect((await run([{ name: "repo", value: "Nope" }])).reply).toContain("is not a repository");
     const power = await run([], rxThread({ parent_id: FORUM_POWER, applied_tags: [], name: "!!!" }));
     expect(power.reply).toContain("gh repo fork OpenDrone-hw/Charger --clone");
     expect(power.reply).toContain(`git switch -c thread-${rxThread().id}`);
+  });
+
+  it("refuses a repository of another forum, so no Discussion line the GitHub module would reject is handed out", async () => {
+    const other = await run([{ name: "repo", value: "Charger" }]);
+    expect(other.reply).toBe(
+      "Charger is discussed in #power, not #receivers; run /branch in a thread there. " +
+        "This forum covers: OpenRX, OpenRX-Lite, OpenRX-Lite-UFL, OpenRX-Mono, OpenRX-Gemini.",
+    );
+    expect(other.reply).not.toContain("Discussion:");
+    const unknown = await run([{ name: "repo", value: "Nope" }]);
+    expect(unknown.reply).toBe(
+      "`Nope` is not a repository in bot/config/repos.json. This forum covers: OpenRX, OpenRX-Lite, OpenRX-Lite-UFL, OpenRX-Mono, OpenRX-Gemini.",
+    );
+    expect(unknown.reply).not.toContain("Discussion:");
+  });
+
+  it("refuses a development forum with no repository", async () => {
+    const h = await harness();
+    const cfg = { ...config, repos: Object.fromEntries(Object.entries(config.repos).filter(([, r]) => r.forum !== "power")) };
+    const services = { ...h.services, directory: new Directory(h.services.discord, GUILD, { config: cfg, cache: new DirectoryCache() }) };
+    const interaction = slash("branch", [{ name: "repo", value: "OpenRX" }], { channel: rxThread({ parent_id: FORUM_POWER, applied_tags: [] }) });
+    await branchCommand.execute({ interaction, services });
+    await h.settle();
+    expect(text(h.lastEdit())).toBe("#power has no repository in bot/config/repos.json.");
   });
 
   it("refuses outside development forum threads", async () => {
     expect((await run([], { id: GEN_CHAT, type: 0 })).reply).toBe("Run /branch inside a thread of a development forum.");
   });
 
-  it("autocompletes repositories", async () => {
-    const h = await harness();
-    const choices = await branchCommand.autocomplete!(h.ctx(slash("branch", [{ name: "repo", value: "openesc", focused: true }], { type: 4 })));
-    expect(choices).toEqual([
-      { name: "OpenESC-20x20", value: "OpenESC-20x20" },
-      { name: "OpenESC-30x30", value: "OpenESC-30x30" },
-    ]);
+  describe("autocomplete", () => {
+    async function choices(typed: string, channel?: Record<string, unknown> | null, handler?: Handler) {
+      const h = await harness(handler);
+      const extra = channel === undefined ? { type: 4 } : { type: 4, channel };
+      const result = await branchCommand.autocomplete!(h.ctx(slash("branch", [{ name: "repo", value: typed, focused: true }], extra)));
+      return { h, values: result.map((c) => c.value) };
+    }
+
+    it("offers only the repositories of the thread's forum, tagged ones first", async () => {
+      expect((await choices("")).values).toEqual(["OpenRX", "OpenRX-Lite", "OpenRX-Lite-UFL", "OpenRX-Mono", "OpenRX-Gemini"]);
+      expect((await choices("", rxThread({ applied_tags: [TAG_LITE] }))).values).toEqual([
+        "OpenRX-Lite",
+        "OpenRX",
+        "OpenRX-Lite-UFL",
+        "OpenRX-Mono",
+        "OpenRX-Gemini",
+      ]);
+      expect((await choices("mono")).values).toEqual(["OpenRX-Mono"]);
+      expect((await choices("openesc")).values).toEqual([]);
+      expect((await choices("char")).values).toEqual([]);
+      expect((await choices("", rxThread({ parent_id: FORUM_POWER, applied_tags: [] }))).values).toEqual(["Charger"]);
+    });
+
+    it("offers nothing outside a development forum thread", async () => {
+      expect((await choices("", { id: GEN_CHAT, type: 0 })).values).toEqual([]);
+      expect((await choices("", null)).values).toEqual([]);
+    });
+
+    it("reads the thread from Discord when the interaction carries a partial channel", async () => {
+      const handler: Handler = (call, url) =>
+        call.method === "GET" && url.pathname === `/api/v10/channels/${THREAD}` ? jsonResponse(rxThread()) : undefined;
+      const { h, values } = await choices("", { id: THREAD, type: 11 }, handler);
+      expect(values).toEqual(["OpenRX", "OpenRX-Lite", "OpenRX-Lite-UFL", "OpenRX-Mono", "OpenRX-Gemini"]);
+      expect(h.find("GET", `/channels/${THREAD}`)).toHaveLength(1);
+    });
   });
 });
 

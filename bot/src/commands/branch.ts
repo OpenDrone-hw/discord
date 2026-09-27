@@ -3,6 +3,10 @@
  * invoker) with the commands to fork the repository and start a branch named
  * after the thread title, and the "Discussion:" line to put in the pull
  * request description so its activity comes to this thread.
+ *
+ * Only repositories mapped to the thread's forum are accepted or offered by
+ * autocomplete: the GitHub module ignores a "Discussion:" line that points at
+ * a thread in another forum.
  */
 import { defer } from "../interactions.ts";
 import type { Command, InteractionContext } from "../registry.ts";
@@ -10,13 +14,16 @@ import { ApplicationCommandType } from "../types.ts";
 import {
   branchSlug,
   code,
+  emptyForum,
   forumThread,
   guildOnly,
   MEMBER_PERMISSIONS,
-  repoChoices,
   resolveRepoName,
   stringOption,
+  threadRepoChoices,
   threadUrl,
+  truncate,
+  wrongForum,
 } from "./util.ts";
 
 export function branchInstructions(org: string, repo: string, branch: string, threadLink: string): string {
@@ -47,11 +54,16 @@ async function branch(ctx: InteractionContext, repoOption: string | undefined): 
   const cfg = ctx.services.directory.config;
   const thread = await forumThread(ctx);
   if (!thread) return "Run /branch inside a thread of a development forum.";
+  if (thread.repos.length === 0) return emptyForum(thread);
 
   let repo = null;
   if (repoOption) {
     repo = resolveRepoName(ctx, repoOption);
-    if (!repo) return `${code(repoOption)} is not a repository in bot/config/repos.json.`;
+    if (!repo) {
+      return `${code(truncate(repoOption, 100))} is not a repository in bot/config/repos.json. This forum covers: ${thread.repos.map((r) => r.repo).join(", ")}.`;
+    }
+    const refusal = wrongForum(thread, repo, "/branch");
+    if (refusal) return refusal;
   } else if (thread.tagged.length === 1) {
     repo = thread.tagged[0] ?? null;
   } else if (thread.repos.length === 1) {
@@ -75,7 +87,7 @@ export const branchCommand: Command = {
       {
         type: 3,
         name: "repo",
-        description: "Repository, when the thread has no single product tag",
+        description: "Repository of this thread's forum, when the thread has no single product tag",
         required: false,
         autocomplete: true,
       },
@@ -87,5 +99,5 @@ export const branchCommand: Command = {
     const repo = stringOption(ctx.interaction, "repo");
     return defer(ctx, () => branch(ctx, repo || undefined), { ephemeral: true });
   },
-  autocomplete: (ctx) => repoChoices(ctx),
+  autocomplete: (ctx) => threadRepoChoices(ctx),
 };

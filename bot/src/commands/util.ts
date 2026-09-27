@@ -140,6 +140,39 @@ export async function forumThread(ctx: InteractionContext, channelId?: string): 
   return { thread, forum, repos, tagged };
 }
 
+/**
+ * Null when `repo` belongs to the thread's forum, else the refusal for
+ * `command`. The GitHub module (src/github/thread-link.ts linkState) follows
+ * a "Discussion:" line only to a thread in the repository's own forum, so a
+ * link or line for any other repository would be ignored there.
+ */
+export function wrongForum(thread: ThreadContext, repo: RepoMatch, command: string): string | null {
+  if (repo.forum === thread.forum.name) return null;
+  const here = thread.repos.length > 0 ? ` This forum covers: ${thread.repos.map((r) => r.repo).join(", ")}.` : "";
+  return `${repo.repo} is discussed in #${repo.forum}, not #${thread.forum.name}; run ${command} in a thread there.${here}`;
+}
+
+/** Refusal for a development forum with no repository in config/repos.json. */
+export function emptyForum(thread: ThreadContext): string {
+  return `#${thread.forum.name} has no repository in bot/config/repos.json.`;
+}
+
+/** Autocomplete stops waiting for Discord after this; Discord drops answers after 3 s. */
+export const AUTOCOMPLETE_TIMEOUT_MS = 2_200;
+
+/**
+ * Autocomplete limited to the repositories of the thread's forum, the ones
+ * tagged on the thread first. No choices outside a development forum thread
+ * or when the thread cannot be read in time.
+ */
+export async function threadRepoChoices(ctx: InteractionContext): Promise<Array<{ name: string; value: string }>> {
+  const thread = await within(forumThread(ctx), AUTOCOMPLETE_TIMEOUT_MS);
+  if (!thread) return [];
+  const tagged = new Set(thread.tagged.map((r) => r.repo));
+  const names = [...thread.tagged.map((r) => r.repo), ...thread.repos.map((r) => r.repo).filter((n) => !tagged.has(n))];
+  return repoChoices(ctx, names);
+}
+
 export function threadUrl(guildId: string, threadId: string): string {
   return `https://discord.com/channels/${guildId}/${threadId}`;
 }

@@ -12,7 +12,7 @@ flowchart LR
   B[Member browser] -->|GET /linked-roles/*| W
   C[Cron every 6 h] -->|scheduled| W
   W --> R[Registry src/registry.ts]
-  R --> M1[src/commands: empty]
+  R --> M1[src/commands]
   R --> M2[src/github]
   R --> M3[src/linked-roles]
   M1 & M2 & M3 -->|src/discord.ts| DA[Discord API]
@@ -124,8 +124,8 @@ Settings, Integrations, OpenDrone Dev. Staff means admin or developer.
 
 | Command | Where | Who | What it does |
 |---|---|---|---|
-| `/link pr:<url>` | development forum thread | members; private repos: refused | Writes `Discussion: <thread url>` into the PR description. Replaces an existing line only when it points at a post the bot created or at a deleted thread, and leaves a "moved to" note in the replaced post |
-| `/branch [repo]` | development forum thread | anyone who can use it | Fork and branch commands, and the `Discussion:` line to put in the PR description |
+| `/link pr:<url>` | thread of the forum the PR's repository maps to | members; private repos: refused | Writes `Discussion: <thread url>` into the PR description; a repository of another forum is refused before any GitHub call. Replaces an existing line only when it points at a post the bot created or at a deleted thread, and leaves a "moved to" note in the replaced post |
+| `/branch [repo]` | development forum thread | anyone who can use it | Fork and branch commands, and the `Discussion:` line to put in the PR description. `repo` accepts and autocompletes only repositories mapped to the thread's forum (tagged ones first) |
 | `/editing repo:<name>` | anywhere | anyone; private repos: staff | Open PRs that change `.kicad_pcb` or `.kicad_sch` files |
 | `/verify` | anywhere | anyone who can use it | Link to the Linked Roles verification page |
 | `/promote name summary [private]` | anywhere | admin | Creates a repository from `hardware-template` with topic `status-planned`. Refuses while `PROMOTE_ENABLED` is `"false"` |
@@ -134,6 +134,11 @@ Settings, Integrations, OpenDrone Dev. Staff means admin or developer.
 
 Approve build and `/promote` are visible to Administrators only until an
 override is added.
+
+The GitHub module follows a `Discussion:` line only to a thread in the
+repository's own forum (`linkState` in `src/github/thread-link.ts`), so
+`/link` and `/branch` refuse any other repository instead of writing or
+handing out a line it would ignore.
 
 ## `config/repos.json`
 
@@ -175,6 +180,7 @@ branch does not create them.
 | `src/github.ts` | GitHub App client: RS256 JWT via WebCrypto, installation token cache |
 | `src/config.ts` | `config/repos.json` validation, `findRepo`, `Directory` (name to id, cached per isolate) |
 | `src/services.ts` | Per-request bundle of env, clients and directory |
+| `src/commands/` | Commands; table at the top of `src/commands/index.ts` |
 | `src/github/` | Webhook handlers; file table at the top of `src/github/index.ts` |
 | `src/linked-roles/` | Linked roles; file table at the top of `src/linked-roles/index.ts` |
 | `config/repos.json` | Repository to forum and product tag, channel and role names |
@@ -265,6 +271,7 @@ the Worker converts it.
 
 View Channels, Send Messages, Send Messages in Threads and Create Public Threads
 (forum posts) in the development forums, `#git-feed` and `#announcements`.
+Approve build also needs Manage Roles, with the bot's role above Verified Builder.
 
 ### 3. Secrets
 
@@ -287,7 +294,7 @@ View Channels, Send Messages, Send Messages in Threads and Create Public Threads
 |---|---|
 | `GUILD_ID` | `1494019459822653512` |
 | `APPLICATION_ID` | `1553748824470851644` |
-| `PROMOTE_ENABLED` | `"false"`; read only by `promoteEnabled()` in `src/env.ts`, which nothing calls |
+| `PROMOTE_ENABLED` | `"false"`; `/promote` refuses unless it is `"true"` |
 | `GITHUB_MAINTAINER_TEAM` | Optional team slug for `maintainer`; unset means `maintainers`. The team must exist, otherwise `maintainer` is 0 for everyone |
 
 For `npm run dev`, copy `.dev.vars.example` to `.dev.vars` (git-ignored).
@@ -344,19 +351,18 @@ its requirements. This has no API.
 
 | Item | State in this branch |
 |---|---|
-| Commands `/link`, `/branch`, `/editing`, `/verify`, `/promote`, context menus "To GitHub issue" and "Approve build" | Absent; `src/commands/` registers nothing and `register-commands` has nothing to send |
 | Metadata refresh on GitHub events | `refreshLinkedUser(services, login)` exists in `src/linked-roles/index.ts`; `src/github/` does not call it. Refresh happens only in the browser flow and the cron |
 | `owner` metadata | Always 0: nothing writes `users.owner` |
 | `status`, `organization`, `membership` webhooks | No handler; do not subscribe |
 | Message, reaction and member events | Need a gateway connection; the Worker has none |
 | Work longer than 30 s | No Cloudflare Queue is configured; only the cron (15 min per invocation) runs longer |
-| `channels.modLog`, `roles` in `config/repos.json` | Validated and resolvable, used by no handler |
+| `channels.modLog` in `config/repos.json` | Validated and resolvable, used by no handler; `roles` is read by the commands' role checks |
 
 ## Adding to a module
 
 Each module's `index.ts` exports one `BotModule`; the contract, the dispatch
-table and the time budgets are documented in `src/registry.ts`, with an example
-at the top of `src/commands/index.ts`.
+table and the time budgets are documented in `src/registry.ts`. `src/commands/`
+is a complete example of commands, autocomplete and a modal component.
 
 ## Licence
 
