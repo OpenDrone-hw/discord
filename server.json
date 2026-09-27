@@ -13,7 +13,10 @@
       "Maintainer",
       "Contributor",
       "Verified Owner",
-      "Verified Builder"
+      "Verified Builder",
+      "Betaflight",
+      "AM32",
+      "ExpressLRS"
     ]
   },
   "profiles": {
@@ -152,7 +155,10 @@
     {"name": "Frame dev", "hoist": false, "mentionable": false, "permissions": []},
     {"name": "Power dev", "hoist": false, "mentionable": false, "permissions": []},
     {"name": "Library dev", "hoist": false, "mentionable": false, "permissions": []},
-    {"name": "Web-Tools dev", "hoist": false, "mentionable": false, "permissions": []}
+    {"name": "Web-Tools dev", "hoist": false, "mentionable": false, "permissions": []},
+    {"name": "Betaflight user", "color": "#000000", "hoist": false, "mentionable": false, "permissions": []},
+    {"name": "AM32 user", "color": "#000000", "hoist": false, "mentionable": false, "permissions": []},
+    {"name": "ExpressLRS user", "color": "#000000", "hoist": false, "mentionable": false, "permissions": []}
   ],
   "categories": [
     {
@@ -203,6 +209,7 @@
             ]
           }
         },
+        {"id": "1494782854117326969", "name": "build-chat"},
         {
           "name": "proposals",
           "type": "forum",
@@ -228,7 +235,8 @@
               {"name": "declined", "emoji": "❌", "moderated": true}
             ]
           }
-        }
+        },
+        {"id": "1494033189532860707", "name": "proposal-chat"}
       ]
     },
     {
@@ -261,6 +269,7 @@
             ]
           }
         },
+        {"id": "1497547403140530237", "name": "support-chat"},
         {"id": "1510002456849813595", "name": "chatfpv"}
       ]
     },
@@ -558,6 +567,35 @@
       ]
     },
     {
+      "id": "1550880981592973433",
+      "name": "Hardware",
+      "access": "open",
+      "channels": [
+        {"id": "1494783056026796262", "name": "fc"},
+        {"id": "1494758396577058900", "name": "vtx"},
+        {"id": "1494758355825328158", "name": "frame"},
+        {"id": "1538618173354414190", "name": "aio"},
+        {"id": "1494803018770809065", "name": "digital-vtx"},
+        {"id": "1494758377010757682", "name": "remote-id"},
+        {"id": "1494758332903456969", "name": "rx"},
+        {"id": "1494782966302507118", "name": "esc"},
+        {"id": "1550883307246461033", "name": "gps"},
+        {"id": "1550883427220197396", "name": "motors"},
+        {"id": "1550884618322972693", "name": "charger"}
+      ]
+    },
+    {
+      "id": "1550881887050928248",
+      "name": "Software",
+      "access": "open",
+      "channels": [
+        {"id": "1494758297885212832", "name": "esc-am32"},
+        {"id": "1494783023114096821", "name": "fc-betaflight"},
+        {"id": "1494796004615131237", "name": "opendrone-web"},
+        {"id": "1550882869839134810", "name": "rx-expresslrs"}
+      ]
+    },
+    {
       "id": "1494019460850389074",
       "name": "Voice",
       "access": "open",
@@ -571,40 +609,31 @@
     {
       "name": "Staff",
       "access": "staff",
-      "channels": [{"name": "mod-log", "type": "text", "topic": "AutoMod alerts and moderation notes. Staff only."}]
-    },
-    {"id": "1550880981592973433", "name": "Hardware", "access": "staff", "channels": []},
-    {"id": "1550881887050928248", "name": "Software", "access": "staff", "channels": []}
+      "channels": [
+        {"name": "mod-log", "type": "text", "topic": "AutoMod alerts and moderation notes. Staff only."},
+        {"id": "1494780931498705057", "name": "roles"}
+      ]
+    }
   ],
-  "archive": {
-    "category": "Archive",
-    "access": "readonly",
-    "channels": [
-      "1494780931498705057",
-      "1494033189532860707",
-      "1494782854117326969",
-      "1497547403140530237",
-      "1494783056026796262",
-      "1494758396577058900",
-      "1494758355825328158",
-      "1538618173354414190",
-      "1494803018770809065",
-      "1494758377010757682",
-      "1494758332903456969",
-      "1494782966302507118",
-      "1550883307246461033",
-      "1550883427220197396",
-      "1550884618322972693",
-      "1494758297885212832",
-      "1494783023114096821",
-      "1494796004615131237",
-      "1550882869839134810"
-    ]
-  },
   "onboarding": {
     "enabled": true,
     "mode": "advanced",
-    "default_channels": ["welcome", "rules", "announcements", "gen-chat", "introduce-yourself", "off-topic", "flying", "help", "builds"],
+    "default_channels": [
+      "welcome",
+      "rules",
+      "announcements",
+      "gen-chat",
+      "introduce-yourself",
+      "off-topic",
+      "flying",
+      "help",
+      "builds",
+      "build-chat",
+      "proposal-chat",
+      "support-chat",
+      "Hardware",
+      "Software"
+    ],
     "prompts": [
       {
         "title": "Where are you from?",
@@ -735,21 +764,21 @@
             "title": "Betaflight",
             "description": "Flight controller firmware: #firmware",
             "emoji": "🟥",
-            "roles": ["Betaflight"],
+            "roles": ["Betaflight user"],
             "channels": ["firmware"]
           },
           {
             "title": "AM32",
             "description": "ESC firmware: #firmware",
             "emoji": "🟩",
-            "roles": ["AM32"],
+            "roles": ["AM32 user"],
             "channels": ["firmware"]
           },
           {
             "title": "ExpressLRS",
             "description": "Radio link firmware: #firmware",
             "emoji": "🟪",
-            "roles": ["ExpressLRS"],
+            "roles": ["ExpressLRS user"],
             "channels": ["firmware"]
           }
         ]

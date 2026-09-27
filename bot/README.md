@@ -332,8 +332,9 @@ layout is built. Without Administrator the Worker needs:
 | Manage Roles, role above Verified Builder | Server | Approve build |
 
 `discord_config.py` and `migrate.py` use the same application's token and need
-more (Manage Channels, Manage Roles, Manage Server, Pin Messages in archived
-channels), so the role keeps Administrator while the layout is applied and migrated.
+more (Manage Channels, Manage Roles, Manage Server, Pin Messages to unpin its
+notices, View Audit Log for firmware-roles), so the role keeps Administrator while the
+layout is applied and migrated.
 
 ### 3. Secrets
 

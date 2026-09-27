@@ -335,6 +335,19 @@ class Archive(ToolCase):  # F5
         self.assertConfigError(d, "#roles (onboarding default channel) would be hidden from a member holding "
                                   "@everyone; @everyone + Newbie")
 
+    def test_renamed_in_place_frees_the_old_name_for_a_new_forum(self):
+        # The old text #builds (102) stays in its category as #build-chat; a new forum takes the name builds.
+        d = minimal_desired()
+        d["categories"][0]["channels"] = [{"id": "101", "name": "gen-chat"},
+                                          {"name": "builds", "type": "forum"},
+                                          {"id": "102", "name": "build-chat"}]
+        plan = self.plan(d)
+        self.assertIn("#builds (forum)", labels(plan, "channels"))
+        self.assertEqual(plan["notes"], [])
+        self.assertIdempotent(d)
+        self.assertEqual((self.fake.chan("102")["name"], self.fake.chan("102")["type"]), ("build-chat", 0))
+        self.assertEqual(self.fake.by_name("builds")["type"], 15)
+
     def test_archive_refusals(self):
         self.assertConfigError(self.archive_desired(["101"]), "also listed under categories")
         self.assertConfigError(self.archive_desired(["Chats"]), "no unmanaged channel")

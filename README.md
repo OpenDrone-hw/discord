@@ -5,7 +5,7 @@ Configuration as code for the [OpenDrone Discord server](https://discord.gg/v3sW
 | Part | What it is | Guide |
 |---|---|---|
 | `server.json` + `discord_config.py` | Channels, categories, forums, roles, order, archive, onboarding, welcome screen, AutoMod and guild settings, planned and applied from Git | [Commands](#commands), [`server.json`](#serverjson) |
-| `migrate.py` | One-off member-facing steps after the layout is applied: announcement, archive notices, ping-role backfill, manual checklist | [Migration](#migration-migratepy) |
+| `migrate.py` | Member-facing steps after the layout is applied: rewrite the archive notices, move firmware team roles to user roles, ping-role backfill, manual checklist | [Migration](#migration-migratepy) |
 | `bot/` | Cloudflare Worker bot: GitHub activity into Discord, KiCad collision guard, commands, linked roles | [bot/README.md](bot/README.md) |
 
 ```mermaid
@@ -15,13 +15,13 @@ flowchart LR
   P -->|plan / apply| R[printed diff]
   P -->|apply --yes| S[snapshot] --> A[apply phases: roles ... guild] --> B[read back: no diff]
   S -.->|restore --yes| L
-  B --> M[migrate.py: announce, notices, backfill]
+  B --> M[migrate.py: unarchive, firmware-roles, backfill]
 ```
 
 ## Target layout
 
 This is what `server.json` describes. `discord_config.py plan` shows how far the
-live server is from it; nothing of it is live until `apply --yes` runs.
+live server is from it.
 
 ```mermaid
 flowchart LR
@@ -31,15 +31,23 @@ flowchart LR
   end
   subgraph Community["Community: open"]
     direction TB
-    gen["#gen-chat"] --- intro["#introduce-yourself"] --- flying["#flying"] --- off["#off-topic"] --- builds["builds: forum, gallery"] --- props["proposals: forum"]
+    gen["#gen-chat"] --- intro["#introduce-yourself"] --- flying["#flying"] --- off["#off-topic"] --- builds["builds: forum, gallery"] --- bchat["#build-chat"] --- props["proposals: forum"] --- pchat["#proposal-chat"]
   end
   subgraph Support["Support: open"]
     direction TB
-    help["help: forum"] --- chatfpv["#chatfpv"]
+    help["help: forum"] --- schat["#support-chat"] --- chatfpv["#chatfpv"]
   end
   subgraph Development["Development: open"]
     direction TB
     dev["10 product-line forums"] --- alpha["alpha-testing: forum, testers"] --- feed["#git-feed: announcement, readonly"]
+  end
+  subgraph Hardware["Hardware: open"]
+    direction TB
+    hw["11 board chats: #fc ... #charger"]
+  end
+  subgraph Software["Software: open"]
+    direction TB
+    sw["4 firmware and web chats"]
   end
   subgraph Voice["Voice: open"]
     direction TB
@@ -47,13 +55,9 @@ flowchart LR
   end
   subgraph Staff["Staff: staff"]
     direction TB
-    modlog["#mod-log"]
+    modlog["#mod-log"] --- roles["#roles"]
   end
-  subgraph Archive["Archive: readonly"]
-    direction TB
-    old["19 old channels"]
-  end
-  Start --> Community --> Support --> Development --> Voice --> Staff --> Archive
+  Start --> Community --> Support --> Development --> Hardware --> Software --> Voice --> Staff
 ```
 
 | Category | Channel | Type | Access | Onboarding default | Onboarding option that adds it |
@@ -63,25 +67,31 @@ flowchart LR
 | Start | announcements | announcement | readonly | yes | |
 | Community | gen-chat, introduce-yourself, flying, off-topic | text | open | yes | |
 | Community | builds | forum, gallery, sorted by creation | open | yes | |
+| Community | build-chat (the old #builds) | text | open | yes | |
 | Community | proposals | forum | open | | Proposals |
+| Community | proposal-chat (the old #proposals) | text | open | yes | |
 | Support | help | forum | open | yes | |
+| Support | support-chat (the old #support) | text | open | yes | |
 | Support | chatfpv | text | open | | |
 | Development | flight-controllers, escs, receivers, video, remote-id-gps, frames, power, library, web-and-tools | forum | open | | the product line, see [Onboarding](#onboarding) |
 | Development | firmware | forum | open | | Betaflight, AM32, ExpressLRS |
 | Development | alpha-testing | forum | testers | | Alpha testing |
 | Development | git-feed | announcement | readonly | | |
+| Hardware | fc, vtx, frame, aio, digital-vtx, remote-id, rx, esc, gps, motors, charger | text | open | yes (the category) | |
+| Software | esc-am32, fc-betaflight, opendrone-web, rx-expresslrs | text | open | yes (the category) | |
 | Voice | General, Troubleshooting | voice (kept as live) | open | | |
 | Voice | dev-call | voice | open | | |
 | Voice | community-call | stage | open | | |
 | Staff | mod-log | text | staff | | |
-| Hardware, Software | none (emptied) | category | readonly | | |
-| Archive | 19 old channels, see [Migration](#migration-migratepy) | as live | readonly | | |
+| Staff | roles (carl-bot's reaction-role messages) | text | staff | | |
 
 `#web-support` and `#web-support-admin` belong to the storefront support bot:
 they are `guard.protected_channels`, so the tool refuses any plan that manages
-or archives them, and they are reported as unmanaged. Hardware and Software stay
-as empty read-only categories because the tool never deletes and categories
-cannot be archived.
+or archives them, and they are reported as unmanaged. The old chats keep their
+ids and history: the forums hold one post per topic, the chats next to them
+hold the conversation. The Archive category that held them is not in
+`server.json`; once empty it is reported as unmanaged, and the tool never
+deletes it.
 
 ### Forums
 
@@ -131,7 +141,7 @@ flowchart LR
 | Why not gate with roles? | 414 of 507 members hold `Newbie` (carl-bot gives it on join). A `Newbie` deny left on any channel locks all of them out, and a channel only `Member` unlocks hides it from everyone without `Member` |
 | What happens to `Newbie` and `Member`? | Both roles stay; they are never deleted. No channel overwrite uses them. The region options still give `Member`, and the bot's member-only commands (`/link`, To GitHub issue) read it. Nothing gives `Newbie` once carl-bot is removed |
 | What enforces it? | `guard.gating_roles` is `["Newbie", "Member"]`: the [lockout guard](#lockout-guard) refuses a plan in which holding any mix of them takes away a permission `@everyone` alone has. A test checks no managed channel has a `Newbie` or `Member` overwrite |
-| What keeps onboarding valid? | Nine default channels, five of them text channels `@everyone` can view and send in (#welcome, #gen-chat, #introduce-yourself, #flying, #off-topic), so Discord's requirement is met without relying on how it counts forums. The tool checks this before any write, see [Onboarding requirement check](#onboarding-requirement-check) |
+| What keeps onboarding valid? | Twelve default channels and the Hardware and Software categories; 23 of the channels they cover are text channels `@everyone` can view and send in, so Discord's requirement is met without relying on how it counts forums. The tool checks this before any write, see [Onboarding requirement check](#onboarding-requirement-check) |
 
 ## Onboarding
 
@@ -143,12 +153,15 @@ members change their answers later in Channels & Roles (`<id:customize>`).
 | Where are you from? | Yes, single select | North America, Europe, Asia, South America, Oceania, Africa: that region role and `Member` | none |
 | What do you fly? | No | Plane, Camera, FPV, Tinywhoop, Racing, Freestyle, Commercial, Long Range, Cinewhoop, Toothpick (custom server emojis): the role of the same name | none |
 | Follow OpenDrone development | No | Flight controllers: `FC dev`; ESCs: `ESC dev`; Receivers: `RX dev`; Video: `Video dev`; Remote ID and GPS: `RemoteID-GPS dev`; Frames: `Frame dev`; Power: `Power dev`; KiCad library: `Library dev`; Web and tools: `Web-Tools dev`; Proposals and Alpha testing: no role | The matching forum |
-| Firmware | No | Betaflight, AM32, ExpressLRS: the role of the same name | firmware |
+| Firmware | No | Betaflight, AM32, ExpressLRS: `Betaflight user`, `AM32 user`, `ExpressLRS user` | firmware |
 
 Default channels: #welcome, #rules, #announcements, #gen-chat,
-#introduce-yourself, #off-topic, #flying, help, builds. The development forums
-are opt-in only. Welcome screen: #rules, #announcements, help, builds,
-#gen-chat.
+#introduce-yourself, #off-topic, #flying, help, builds, #build-chat,
+#proposal-chat, #support-chat and the Hardware and Software categories. In
+`advanced` mode a channel that is neither default nor added by a picked option
+is hidden from the member's sidebar, so the old chats are defaults. The
+development forums are opt-in only. Welcome screen: #rules, #announcements,
+help, builds, #gen-chat.
 
 ## Roles
 
@@ -161,10 +174,14 @@ are opt-in only. Welcome screen: #rules, #announcements, help, builds,
 | `Verified Owner` | Linked role: `owner` is true. Owner means any paid order on opendrone.be, preorders included; the storefront fills it, until then it is 0 for everyone | No |
 | `Verified Builder` | The bot's Approve build message command (reviewer or admin) | No |
 | `FC dev`, `ESC dev`, `RX dev`, `Video dev`, `RemoteID-GPS dev`, `Frame dev`, `Power dev`, `Library dev`, `Web-Tools dev` | Onboarding "Follow OpenDrone development"; `migrate.py backfill` | Yes |
+| `Betaflight user`, `AM32 user`, `ExpressLRS user` (no colour, not hoisted) | Onboarding "Firmware"; `migrate.py backfill`; `migrate.py firmware-roles` | Yes |
 
-None of them has a permission. `guard.unassignable_roles` lists `developer`,
-`beta tester`, `reviewer`, `Support`, `Maintainer`, `Contributor`,
-`Verified Owner` and `Verified Builder`, so no onboarding option can hand them out.
+None of them has a permission. `Betaflight`, `AM32` and `ExpressLRS` are the
+coloured, hoisted team roles of those projects' maintainers; `server.json` does
+not manage them and moderators give them by hand. `guard.unassignable_roles`
+lists `developer`, `beta tester`, `reviewer`, `Support`, `Maintainer`,
+`Contributor`, `Verified Owner`, `Verified Builder`, `Betaflight`, `AM32` and
+`ExpressLRS`, so no onboarding option can hand them out.
 
 ## AutoMod
 
@@ -222,7 +239,7 @@ Every write carries the audit log reason `OpenDrone-hw/discord discord_config.py
 | `profiles` | Named sets of role overwrites: `{role name: {allow: [...], deny: [...]}}`. Permission names are Discord's flag names (`VIEW_CHANNEL`, `SEND_MESSAGES`, ...); `@everyone` is the everyone role |
 | `roles[]` | `name`, optional `color` (`#rrggbb`), `hoist`, `mentionable`, `permissions`. Missing roles are created, listed ones updated, none deleted; integration-managed roles are skipped; a change to a role at or above the bot's role is refused. Role order is not managed: new roles are created at the bottom, so drag them into place in Server Settings > Roles |
 | `categories[]` | `name`, `access` (a profile or an inline overwrite set), optional `id` and `channels[]`. Without `id` a category is matched by name and created when missing. List order is category order; the archive category always comes last |
-| `channels[]` | Optional `id`, `name`, optional `type` (`text`, `announcement`, `voice`, `stage`, `forum`, `media`), `topic` (forum post guidelines), `slowmode`, `bitrate`, `user_limit`, `forum`, `access`. Without `access` a channel gets its category's. With `id` and no `type` the live type is kept. Without `id` it is matched by name and type (default `text`) inside its category and created when missing; a live channel of the same name but another type is left alone and noted. Only `text` and `announcement` convert into each other. Text, announcement, forum and media names must be lowercase without spaces, the form Discord stores; other names are refused. List order is channel order |
+| `channels[]` | Optional `id`, `name`, optional `type` (`text`, `announcement`, `voice`, `stage`, `forum`, `media`), `topic` (forum post guidelines), `slowmode`, `bitrate`, `user_limit`, `forum`, `access`. Without `access` a channel gets its category's. With `id` and no `type` the live type is kept. Without `id` it is matched by name and type (default `text`) inside its category and created when missing; a live channel of the same name but another type is left alone and noted. A live channel listed anywhere by `id` is never matched by name, so a text channel renamed in place frees its old name for a new forum. Only `text` and `announcement` convert into each other. Text, announcement, forum and media names must be lowercase without spaces, the form Discord stores; other names are refused. List order is channel order |
 | `forum` | `tags[]` (`name`, `emoji`, `moderated`; at most 20, live tags not listed are kept), `default_reaction`, `layout` (`list`, `gallery`), `sort` (`activity`, `creation`), `require_tag`, `post_slowmode` |
 | `archive` | `category` (created when missing), optional `id` of that category, `access`, `channels[]` (ids, `Category/name` or a unique name of channels not listed under `categories`): each listed channel moves into that category and gets its access; messages stay. Categories cannot be archived |
 | `onboarding` | `enabled`, `mode` (`default`, `advanced`), `default_channels[]`, `prompts[]` with `title`, `type` (`multiple_choice`, `dropdown`), `single_select`, `required`, `in_onboarding`, `options[]` (`title`, `description`, `emoji`, `roles[]`, `channels[]`). Prompts and options match by title; live ones not listed are kept |
@@ -308,7 +325,7 @@ permissions; otherwise a live violation is printed as a note.
 | Rule | Effect |
 |---|---|
 | Only listed things are managed | Channels, roles, prompts, options, forum tags and AutoMod rules not in `server.json` are reported as unmanaged and never touched |
-| Nothing is deleted | The REST client refuses DELETE; retiring a channel moves it to the `archive` category |
+| Nothing is deleted | The REST client refuses DELETE; retiring a channel moves it to the `archive` category. `migrate.py` allows DELETE on two routes only, neither of which deletes anything: unpinning a message and taking a role off a member |
 | Member overwrites are kept by apply | Only role overwrites are compared and written; `apply --yes` copies member overwrites into its PATCH unchanged |
 | Snapshot before every apply | `snapshots/` (git-ignored) holds guild, channels, roles, emojis, onboarding, welcome screen and AutoMod as fetched |
 | Read back after every apply | `apply --yes` fails if the server still differs from `server.json` |
@@ -317,23 +334,26 @@ permissions; otherwise a live violation is printed as a note.
 
 ## Migration (`migrate.py`)
 
-Run after `discord_config.py apply --yes`. Same token, `server.json` and REST
-client (429 and bucket handling, no DELETE) as `discord_config.py`; every write
-carries the audit log reason `OpenDrone-hw/discord migrate.py` and is followed
-by a 0.5 s pause. Every subcommand is a dry run unless `--yes`.
-`python3 migrate.py checklist` prints the steps below and the Server Guide copy.
+Run after `discord_config.py apply --yes`. Same token, `server.json` and 429 and
+bucket handling as `discord_config.py`; its client allows DELETE only on
+`/channels/{id}/pins/{id}` (unpin) and `/guilds/{id}/members/{id}/roles/{id}`
+(take a role off a member). Every write carries the audit log reason
+`OpenDrone-hw/discord migrate.py` and is followed by a 0.5 s pause. Every
+subcommand is a dry run unless `--yes`, and a rerun writes nothing that is
+already done. `python3 migrate.py checklist` prints the steps below and the
+Server Guide copy.
 
 ```mermaid
 flowchart LR
-  A[1 plan, apply --yes] --> G[2 Server Guide, UI] --> N[3 announce] --> P[4 notices] --> B1[5a backfill --only-user] --> B2[5b backfill] --> K[6 remove carl-bot, UI] --> L[7 linked roles, UI] --> F[8 2FA, UI]
+  A[1 plan, apply --yes] --> G[2 Server Guide, UI] --> U[3 unarchive] --> F[4 firmware-roles] --> B1[5a backfill --only-user] --> B2[5b backfill] --> K[6 remove carl-bot, UI] --> L[7 linked roles, UI] --> T[8 2FA, UI]
 ```
 
 | Step | Command or place | Done when |
 |---|---|---|
 | 1 Apply the layout | `python3 discord_config.py plan`, then `apply --yes` after the plan was seen | `apply` read-back reports no diff |
-| 2 Paste the Server Guide copy | Server Settings, Onboarding, Server Guide (UI only). Before `announce`: the announcement links `<id:guide>`, and the live guide's first to-do, "Pick your roles", opens #roles, which `apply` archives | The guide shows the copy from `checklist` |
-| 3 Announce | `python3 migrate.py announce`, then `--yes` | A rerun prints "already posted" |
-| 4 Archive notices | `python3 migrate.py notices`, then `--yes` | "0 to write, 19 done, 0 blocked" |
+| 2 Paste the Server Guide copy | Server Settings, Onboarding, Server Guide (UI only) | The guide shows the copy from `checklist` |
+| 3 Rewrite the archive notices | `python3 migrate.py unarchive`, then `--yes` | "0 to update, 19 done" |
+| 4 Move firmware team roles | `python3 migrate.py firmware-roles`, then `--yes` | A rerun reports removed 0 and granted 0 for every role |
 | 5 Ping-role backfill | `python3 migrate.py backfill --only-user <your id>`, `--yes`, check that account's roles, then `backfill` and `--yes` | A second `backfill --yes` reports granted 0 for every role |
 | 6 Remove carl-bot | Server Settings, Integrations, carl-bot, Kick | carl-bot gone; `Newbie` and `Member` roles still exist |
 | 7 Attach linked roles | Server Settings, Roles, the role, Links, add `OpenDrone Dev`: Contributor `merged_prs` at least 1, Maintainer `maintainer` true, Verified Owner `owner` true | Each role shows its requirement |
@@ -345,41 +365,48 @@ is the gate now) and runs the reaction roles in #roles (the onboarding prompts).
 | Command | Reads | Writes with `--yes` | Rerun |
 |---|---|---|---|
 | `python3 migrate.py checklist` | Nothing | Nothing; prints the steps in order and the Server Guide copy | |
-| `python3 migrate.py announce` | Channels, the newest 300 messages of #announcements | One message in #announcements: the reorganisation, `<id:customize>`, `<id:guide>`, help, builds, proposals, the archive is read-only | Finds its own message by the marker `opendrone-migration:announce-1` and posts nothing |
-| `python3 migrate.py notices` | Channels, the newest 100 messages of each archived channel | In each of the 19 archived channels, a notice pointing to its successor, then pins it | Finds its notice by the marker `opendrone-migration:notice-1`; pins it if unpinned, else nothing |
-| `python3 migrate.py backfill` | Channels, roles, message history of the archived development channels | The mapped ping role for each member who posted there in the window | `GET` each member first; members who hold the role or left are skipped |
+| `python3 migrate.py unarchive` | Channels, the pins and newest 500 messages of each of the 19 restored channels | Edits the bot's pinned archive notice (marker `opendrone-migration:notice-1`) to a short text pointing to the forum of the same topic, then unpins it | Finds the edited message by the marker `opendrone-migration:unarchive-1`; nothing to do when the text matches and it is unpinned |
+| `python3 migrate.py firmware-roles` | Roles, the audit log (member role updates since `--since`) | For each member who added `Betaflight`, `AM32` or `ExpressLRS` themselves (onboarding, Channels & Roles) or got it from `backfill`: grants the matching `* user` role, then takes the team role off | `GET` each member first; members who left or already have the result are skipped |
+| `python3 migrate.py backfill` | Channels, roles, message history of the development chats | The mapped ping role for each member who posted there in the window | `GET` each member first; members who hold the role or left are skipped |
 
-`announce` and `notices` post with `allowed_mentions: {parse: []}`. Both refuse
-`--yes` until the layout is applied (successor channels exist, old channels sit
-in the archive category); their dry run then prints the text instead.
+`unarchive` edits with `allowed_mentions: {parse: []}` and refuses `--yes` until
+every restored channel has its `server.json` name and category and every forum
+it points to exists.
+
+`firmware-roles` flags: `--since <ISO 8601>` (default `2026-09-27T16:40:00Z`, when
+the Firmware onboarding prompt went live). A team role a moderator or other bot
+code added in that window is left alone and counted. It refuses `--yes` while a
+`* user` role is missing, managed, protected, unassignable or privileged. Output
+is counts per role, never user ids or names.
 
 `backfill` flags: `--days N` (default 90), `--only-user <id>` (grant only to
 that member; use it on one test account first), `--channel <name or id>`
-(repeatable). Only default and reply messages count; bots, webhooks and system
-messages do not; thread messages are not read. Message content is not needed,
-only the author. Output is counts per channel and role, never user ids or
-names. It refuses to grant a role that is missing, integration-managed,
-protected, in `guard.unassignable_roles` or holds a privileged permission.
+(repeatable; the old or the current name). Only default and reply messages
+count; bots, webhooks and system messages do not; thread messages are not read.
+Message content is not needed, only the author. Output is counts per channel and
+role, never user ids or names. It refuses to grant a role that is missing,
+integration-managed, protected, in `guard.unassignable_roles` or holds a
+privileged permission.
 
-| Archived | Successor | Ping role granted by `backfill` |
-|---|---|---|
-| #fc, #aio | flight-controllers | FC dev |
-| #esc | escs | ESC dev |
-| #rx | receivers | RX dev |
-| #vtx, #digital-vtx | video | Video dev |
-| #remote-id, #gps | remote-id-gps | RemoteID-GPS dev |
-| #frame | frames | Frame dev |
-| #charger | power | Power dev |
-| #opendrone-web | web-and-tools | Web-Tools dev |
-| #esc-am32, #fc-betaflight, #rx-expresslrs | firmware | AM32, Betaflight, ExpressLRS |
-| #proposals, #builds, #support | proposals, builds, help | none |
-| #motors | #gen-chat (no motor product line) | none |
-| #roles | Channels & Roles (`<id:customize>`) | none |
+| Channel (old name) | Now | Notice points to | Ping role granted by `backfill` |
+|---|---|---|---|
+| #fc, #aio | Hardware | flight-controllers | FC dev |
+| #esc | Hardware | escs | ESC dev |
+| #rx | Hardware | receivers | RX dev |
+| #vtx, #digital-vtx | Hardware | video | Video dev |
+| #remote-id, #gps | Hardware | remote-id-gps | RemoteID-GPS dev |
+| #frame | Hardware | frames | Frame dev |
+| #charger | Hardware | power | Power dev |
+| #motors | Hardware | nothing (no motor product line) | none |
+| #opendrone-web | Software | web-and-tools | Web-Tools dev |
+| #esc-am32, #fc-betaflight, #rx-expresslrs | Software | firmware | AM32 user, Betaflight user, ExpressLRS user |
+| #builds, #proposals, #support | Community #build-chat, Community #proposal-chat, Support #support-chat | builds, proposals, help | none |
+| #roles | Staff | Channels & Roles (`<id:customize>`) | none |
 
-The mapping is `SUCCESSORS` in `migrate.py`, keyed by channel id. Tests check
-it covers exactly `server.json`'s archive list and that each ping role is the
-one the onboarding option for that successor gives. `Library dev` has no
-archived predecessor, so `backfill` never grants it.
+The mapping is `CHATS` in `migrate.py`, keyed by channel id. Tests check it
+covers exactly the 19 restored channels with their `server.json` names and that
+each ping role is the one the onboarding option for that forum gives. `Library
+dev` has no chat, so `backfill` never grants it.
 
 ## Manual steps (Discord UI only)
 

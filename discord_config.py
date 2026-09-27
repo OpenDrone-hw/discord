@@ -635,7 +635,12 @@ class Planner:
         if archive is not None:
             check_keys(archive, ARCHIVE_KEYS, "archive", ("category", "access", "channels"))
         refs = list(archive["channels"]) if archive else []
-        excluded = {r for r in refs if isinstance(r, str) and r.isdigit()}
+        # A channel listed anywhere by id is never matched by name for another entry: an old text
+        # channel renamed in place must not be taken for a new forum that reuses its old name.
+        listed_ids = {ch["id"] for cat in self.d["categories"] if isinstance(cat, dict)
+                      for ch in cat.get("channels") or []
+                      if isinstance(ch, dict) and isinstance(ch.get("id"), str)}
+        excluded = {r for r in refs if isinstance(r, str) and r.isdigit()} | listed_ids
         protected = set(self.guard["protected_channels"])
         matched: set = set()
         specs = [(c, False) for c in self.d["categories"]]
@@ -1358,8 +1363,11 @@ class Discord:
         self.sleep = sleep or time.sleep
         self.ctx = ssl_context() if urlopen is None else None
 
+    def allowed(self, method: str, path: str) -> bool:
+        return method in self.ALLOWED
+
     def request(self, method: str, path: str, body=None):
-        if method not in self.ALLOWED:
+        if not self.allowed(method, path):
             raise ConfigError(f"{method} {path}: refused, this tool never deletes")
         data = json.dumps(body).encode() if body is not None else None
         for _ in range(6):

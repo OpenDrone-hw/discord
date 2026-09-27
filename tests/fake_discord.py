@@ -118,7 +118,14 @@ class FakeDiscord:
         return [c for c in self.calls if c[0] != "GET"]
 
     def new_id(self):
-        return str(next(self.ids))
+        """The next free id: a state from an earlier fake already holds ids from the same counter."""
+        used = {x["id"] for x in self.roles + self.channels + self.automod}
+        used |= {t["id"] for c in self.channels for t in c.get("available_tags") or []}
+        used |= {x["id"] for p in self.onboarding["prompts"] for x in [p, *p["options"]]}
+        while True:
+            value = str(next(self.ids))
+            if value not in used:
+                return value
 
     def chan(self, cid):
         for c in self.channels:
