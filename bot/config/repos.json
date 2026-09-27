@@ -1,0 +1,152 @@
+{
+  "org": "OpenDrone-hw",
+  "channels": {
+    "gitFeed": "git-feed",
+    "announcements": "announcements",
+    "modLog": "mod-log"
+  },
+  "roles": {
+    "admin": "admin",
+    "developer": "developer",
+    "betaTester": "beta tester",
+    "reviewer": "reviewer",
+    "member": "Member",
+    "verifiedOwner": "Verified Owner",
+    "verifiedBuilder": "Verified Builder",
+    "contributor": "Contributor",
+    "maintainer": "Maintainer"
+  },
+  "lifecycleTags": {
+    "status-planned": "planned",
+    "status-in-progress": "in progress",
+    "status-alpha": "alpha",
+    "status-beta": "beta",
+    "status-launched": "launched"
+  },
+  "forums": [
+    "flight-controllers",
+    "escs",
+    "receivers",
+    "video",
+    "remote-id-gps",
+    "frames",
+    "power",
+    "library",
+    "firmware",
+    "web-and-tools"
+  ],
+  "repos": {
+    "OpenFC-Lite": {
+      "forum": "flight-controllers",
+      "tag": "OpenFC-Lite"
+    },
+    "OpenFC-Lite-Mini": {
+      "forum": "flight-controllers",
+      "tag": "OpenFC-Lite-Mini"
+    },
+    "OpenFC": {
+      "forum": "flight-controllers",
+      "tag": "OpenFC"
+    },
+    "OpenAIO": {
+      "forum": "flight-controllers",
+      "tag": "OpenAIO"
+    },
+    "OpenAIO-Whoop": {
+      "forum": "flight-controllers",
+      "tag": "OpenAIO-Whoop"
+    },
+    "OpenESC-20x20": {
+      "forum": "escs",
+      "tag": "OpenESC-20x20"
+    },
+    "OpenESC-30x30": {
+      "forum": "escs",
+      "tag": "OpenESC-30x30"
+    },
+    "OpenRX": {
+      "forum": "receivers",
+      "tag": "OpenRX"
+    },
+    "OpenRX-Lite": {
+      "forum": "receivers",
+      "tag": "OpenRX-Lite"
+    },
+    "OpenRX-Lite-UFL": {
+      "forum": "receivers",
+      "tag": "OpenRX-Lite-UFL"
+    },
+    "OpenRX-Mono": {
+      "forum": "receivers",
+      "tag": "OpenRX-Mono"
+    },
+    "OpenRX-Gemini": {
+      "forum": "receivers",
+      "tag": "OpenRX-Gemini"
+    },
+    "OpenVTX": {
+      "forum": "video",
+      "tag": "OpenVTX"
+    },
+    "OpenRemoteID": {
+      "forum": "remote-id-gps",
+      "tag": "OpenRemoteID"
+    },
+    "OpenGPS": {
+      "forum": "remote-id-gps",
+      "tag": "OpenGPS"
+    },
+    "OpenFrame-3F": {
+      "forum": "frames",
+      "tag": "OpenFrame-3F"
+    },
+    "OpenFrame-5F": {
+      "forum": "frames",
+      "tag": "OpenFrame-5F"
+    },
+    "Charger": {
+      "forum": "power",
+      "tag": "Charger"
+    },
+    "KiCad-Library": {
+      "forum": "library",
+      "tag": "KiCad-Library"
+    },
+    "hardware-template": {
+      "forum": "library",
+      "tag": "hardware-template"
+    },
+    "betaflight": {
+      "forum": "firmware",
+      "tag": "betaflight"
+    },
+    "AM32": {
+      "forum": "firmware",
+      "tag": "AM32"
+    },
+    "ExpressLRS": {
+      "forum": "firmware",
+      "tag": "ExpressLRS"
+    },
+    "OpenDrone-Web": {
+      "forum": "web-and-tools",
+      "tag": "OpenDrone-Web"
+    },
+    "OpenDrone-Brand": {
+      "forum": "web-and-tools",
+      "tag": "OpenDrone-Brand"
+    },
+    "OpenDrone-Fixtures": {
+      "forum": "web-and-tools",
+      "tag": "OpenDrone-Fixtures"
+    },
+    ".github": {
+      "forum": "web-and-tools",
+      "tag": ".github"
+    },
+    "discord": {
+      "forum": "web-and-tools",
+      "tag": "discord"
+    }
+  }
+}
