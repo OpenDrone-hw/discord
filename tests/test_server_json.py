@@ -18,6 +18,7 @@ GID = DESIRED["guild_id"]
 BOT_USER = "1553748824470851644"
 REPOS = json.loads((ROOT / "bot" / "config" / "repos.json").read_text(encoding="utf-8"))
 PROTECTED = set(DESIRED["guard"]["protected_channels"])
+CHATFPV = "1510002456849813595"
 
 MEMBER_ALLOW = P["VIEW_CHANNEL"] | P["SEND_MESSAGES"] | P["READ_MESSAGE_HISTORY"]
 NEWBIE_DENY = P["VIEW_CHANNEL"] | P["SEND_MESSAGES"]
@@ -190,7 +191,21 @@ class ServerJson(ToolCase):
         archived = {fake.chan(r)["name"] for r in DESIRED["archive"]["channels"]}
         hardware_software = {name for _, name, _, parent in CHANNELS
                              if parent in ("1550880981592973433", "1550881887050928248")}
-        self.assertLessEqual(hardware_software | {"roles", "proposals", "builds", "support"}, archived)
+        self.assertLessEqual((hardware_software - {"chatfpv"}) | {"roles", "proposals", "builds", "support"}, archived)
+        self.assertEqual(len(DESIRED["archive"]["channels"]), 19)
+        self.assertNotIn(CHATFPV, DESIRED["archive"]["channels"])
+
+    def test_chatfpv_stays_open_for_members_and_bots(self):
+        # ChatFPV (OpenBrain) and the storefront support bot post in #chatfpv through their role permissions
+        fake = self.applied()
+        ch = fake.chan(CHATFPV)
+        self.assertEqual(ch["type"], 0)
+        self.assertEqual(ch["parent_id"], "1497547320131190864")
+        ows = {o["id"]: (int(o["allow"]), int(o["deny"])) for o in ch["permission_overwrites"] if o["type"] == 0}
+        allow, deny = ows[GID]
+        for perm in ("VIEW_CHANNEL", "SEND_MESSAGES", "READ_MESSAGE_HISTORY", "SEND_MESSAGES_IN_THREADS"):
+            self.assertTrue(allow & P[perm], perm)
+        self.assertEqual(sum(d & (P["VIEW_CHANNEL"] | P["SEND_MESSAGES"]) for _, d in ows.values()), 0)
 
     def test_announcement_channels(self):
         fake = self.applied()
