@@ -265,11 +265,14 @@ class ServerJson(ToolCase):
         self.assertTrue(all(o["role_ids"] for o in follow["options"] if by_id[o["channel_ids"][0]]["name"]
                             in REPOS["forums"]))
 
-    def test_automod_updates_the_existing_mention_rule(self):
+    def test_automod_leaves_the_system_mention_rule_alone(self):
+        # Discord's own "Block Mention Spam" rule answers PATCH with 404, and the cap is one
+        # mention rule, so server.json does not manage it.
+        self.assertNotIn("mention_spam", [r["trigger"] for r in DESIRED["automod"]])
         fake = self.applied()
         mention = [r for r in fake.automod if r["trigger_type"] == 5]
         self.assertEqual([(r["id"], r["name"]) for r in mention], [("8500", "Block Mention Spam")])
-        self.assertEqual(mention[0]["trigger_metadata"]["mention_total_limit"], 5)
+        self.assertEqual(mention[0]["trigger_metadata"]["mention_total_limit"], 20)
         for trigger, cap in dc.AUTOMOD_CAPS.items():
             self.assertLessEqual(len([r for r in fake.automod if r["trigger_type"] == trigger]), cap)
 
@@ -279,8 +282,9 @@ class ServerJson(ToolCase):
         fake = self.applied()
         roles = {r["name"]: r["id"] for r in fake.roles}
         bots = {roles["OpenDrone Support"], roles["OpenBrain"]}
-        self.assertEqual(len(fake.automod), 4)
-        for rule in fake.automod:
+        managed = {r["name"] for r in DESIRED["automod"]}
+        self.assertEqual(len(managed), 3)
+        for rule in [r for r in fake.automod if r["name"] in managed]:
             self.assertLessEqual(bots, set(rule["exempt_roles"]), rule["name"])
             self.assertLessEqual(PROTECTED, set(rule["exempt_channels"]), rule["name"])
 

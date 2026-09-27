@@ -769,14 +769,6 @@
   },
   "automod": [
     {
-      "name": "Block Mention Spam",
-      "trigger": "mention_spam",
-      "metadata": {"mention_total_limit": 5, "mention_raid_protection_enabled": true},
-      "actions": [{"type": "block"}, {"type": "alert", "channel": "mod-log"}],
-      "exempt_roles": ["admin", "Support", "developer", "OpenDrone Support", "OpenBrain"],
-      "exempt_channels": ["1497547194159599778", "1495130821835624610"]
-    },
-    {
       "name": "Block Harmful Words",
       "trigger": "keyword_preset",
       "metadata": {"presets": ["sexual_content", "slurs"]},

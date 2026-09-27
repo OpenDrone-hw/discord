@@ -170,14 +170,14 @@ None of them has a permission. `guard.unassignable_roles` lists `developer`,
 
 | Rule | Trigger | Actions |
 |---|---|---|
-| Block Mention Spam (live rule, updated) | At most 5 mentions per message, raid protection on | Block, alert in #mod-log |
-| Block Harmful Words | Keyword presets profanity, sexual content, slurs | Block |
+| Block Mention Spam (Discord's own rule, not managed) | At most 20 mentions per message, raid protection on | Block. The API answers 404 to edits of this system rule, so change it in Server Settings > AutoMod if needed |
+| Block Harmful Words | Keyword presets sexual content, slurs | Block |
 | Block Spam | Spam | Block |
 | Block Invite Links | Invite link patterns, except `discord.gg/v3sWmTcx3R` | Block with a message, alert in #mod-log |
 
-Every rule exempts `admin`, `Support`, `developer`, the `OpenDrone Support` and
+Every managed rule exempts `admin`, `Support`, `developer`, the `OpenDrone Support` and
 `OpenBrain` bot roles, and the two storefront support channels. Guild settings:
-rules channel #rules, community updates #announcements, safety alerts #mod-log.
+rules channel #rules, community updates #mod-log, safety alerts #mod-log.
 
 ## Commands
 
