@@ -2,8 +2,8 @@
 """Member-facing steps that follow applying the server.json layout.
 
 Every subcommand is a dry run unless --yes, and a rerun writes nothing that is
-already done: messages the bot wrote carry a marker line so a rerun finds them,
-and role changes skip members who already have the result. Nothing is deleted.
+already done: a rerun finds the bot's own messages by author and first line, and
+role changes skip members who already have the result. Nothing is deleted.
 The REST client is discord_config.py's with one exception: DELETE is allowed
 only to unpin a message and to take a role off a member.
 """
@@ -22,11 +22,17 @@ from pathlib import Path
 import discord_config as dc
 
 AUDIT_REASON = "OpenDrone-hw/discord migrate.py"
-MARKER = "opendrone-migration"
-NOTICE_MARK = f"{MARKER}:notice-1"  # the archive notice the earlier notices step posted and pinned
-UNARCHIVE_MARK = f"{MARKER}:unarchive-1"  # the same message after unarchive edited it
-HUB_MARK = f"{MARKER}:hub-1"  # followed by the repository name: one pinned hub message per repository
-RULES_MARK = f"{MARKER}:rules-1"  # followed by the part number: the pinned rules text in #rules
+# Earlier runs ended every bot message with a visible "-# <mark>" line. Messages are now found by author
+# and first line; these marks are only read, so messages from those runs are still recognised and a rerun
+# edits the line away.
+LEGACY_MARKER = "opendrone-migration"
+NOTICE_MARK = f"{LEGACY_MARKER}:notice-1"  # the archive notice the earlier notices step posted and pinned
+UNARCHIVE_MARK = f"{LEGACY_MARKER}:unarchive-1"  # the same message after unarchive edited it
+HUB_MARK = f"{LEGACY_MARKER}:hub-1"  # followed by the repository name
+RULES_MARK = f"{LEGACY_MARKER}:rules-1"  # followed by the part number
+RULES_TITLE = "**OpenDrone rules**"  # first line of the rules text: finds its first message in #rules
+MENTION = re.compile(r"\{#([a-z0-9_-]+)\}")  # {#name} in a text the bot posts -> <#channel id>
+BARE_CHANNEL = re.compile(r"(?<![<{\w&#])#([a-z0-9][a-z0-9_-]*)")
 REPOS_JSON = dc.ROOT / "bot" / "config" / "repos.json"
 # Private repositories get no hub: nothing of theirs is posted to Discord. A repository GitHub reports
 # as private or answers 404 for is skipped as well.
@@ -49,30 +55,103 @@ UNDO_PATHS = (re.compile(r"/channels/\d+/pins/\d+"), re.compile(r"/guilds/\d+/me
 # backfill give the matching "user" role instead; firmware-roles moves members over.
 FIRMWARE_ROLES = {"Betaflight": "Betaflight user", "AM32": "AM32 user", "ExpressLRS": "ExpressLRS user"}
 
-# Channel id -> (name before the Archive migration, name in server.json, what the chat is for, ping role).
-# The archive notice in each is rewritten by unarchive; backfill grants the ping role to recent authors.
-# Tests check the names against server.json and each ping role against the onboarding option that
+# Channel id -> (name before the Archive migration, name in server.json, what the chat is for, follower role).
+# The archive notice in each is rewritten by unarchive; backfill grants the follower role to recent authors.
+# Tests check the names against server.json and each follower role against the onboarding option that
 # points at the channel.
 CHATS = {
-    "1494780931498705057": ("roles", "roles", None, None),
     "1494033189532860707": ("proposals", "proposals", "proposals for new products and changes", None),
     "1494782854117326969": ("builds", "builds", "builds", None),
-    "1494783056026796262": ("fc", "fc", "flight controllers", "FC dev"),
-    "1538618173354414190": ("aio", "aio", "AIO boards", "FC dev"),
-    "1494782966302507118": ("esc", "esc", "ESCs", "ESC dev"),
-    "1494758332903456969": ("rx", "rx", "receivers", "RX dev"),
-    "1494758396577058900": ("vtx", "vtx", "video transmitters", "Video dev"),
-    "1494803018770809065": ("digital-vtx", "digital-vtx", "digital video", "Video dev"),
-    "1494758377010757682": ("remote-id", "remote-id", "Remote ID", "RemoteID-GPS dev"),
-    "1550883307246461033": ("gps", "gps", "GPS", "RemoteID-GPS dev"),
-    "1494758355825328158": ("frame", "frame", "frames", "Frame dev"),
-    "1550884618322972693": ("charger", "charger", "chargers", "Power dev"),
+    "1494783056026796262": ("fc", "fc", "flight controllers", "FC follower"),
+    "1538618173354414190": ("aio", "aio", "AIO boards", "FC follower"),
+    "1494782966302507118": ("esc", "esc", "ESCs", "ESC follower"),
+    "1494758332903456969": ("rx", "rx", "receivers", "RX follower"),
+    "1494758396577058900": ("vtx", "vtx", "video transmitters", "Video follower"),
+    "1494803018770809065": ("digital-vtx", "digital-vtx", "digital video", "Video follower"),
+    "1494758377010757682": ("remote-id", "remote-id", "Remote ID", "RemoteID-GPS follower"),
+    "1550883307246461033": ("gps", "gps", "GPS", "RemoteID-GPS follower"),
+    "1494758355825328158": ("frame", "frame", "frames", "Frame follower"),
+    "1550884618322972693": ("charger", "charger", "chargers", "Power follower"),
     "1550883427220197396": ("motors", "motors", "motors", None),  # no OpenDrone motor product line
     "1494758297885212832": ("esc-am32", "esc-am32", "AM32", "AM32 user"),
     "1494783023114096821": ("fc-betaflight", "fc-betaflight", "Betaflight", "Betaflight user"),
     "1550882869839134810": ("rx-expresslrs", "rx-expresslrs", "ExpressLRS", "ExpressLRS user"),
-    "1494796004615131237": ("opendrone-web", "opendrone-web", "opendrone.be and the web tools", "Web-Tools dev"),
+    "1494796004615131237": ("opendrone-web", "opendrone-web", "opendrone.be and the web tools", "Web-Tools follower"),
 }
+
+# One message per channel, posted and kept up to date by `resources`, never pinned. The first line of each
+# identifies the message on a rerun; {#name} becomes a channel link. The four resource channels are the
+# Server Guide's resource pages; #welcome gets the orientation message.
+RESOURCES = {
+    "how-to-contribute": """\
+## How to contribute
+You don't need permission. Just say what you're up to.
+
+1. Say it on Discord. Post what you want to change in the channel for that board. Someone may already be working on it, or may have experience or good ideas.
+2. Fork it and change it. Work on a branch, not on main.
+```sh
+gh repo fork OpenDrone-hw/<repo> --clone
+git checkout -b my-change
+```
+3. Open a pull request. Say what you changed and why.
+4. Someone reviews it. Discuss problems openly in the right channel.
+
+You do not have to design anything to be useful. Reading a schematic and asking "why is this pull-up 10k" is a real contribution.
+
+KiCad files cannot be merged. If two people edit the same .kicad_pcb or .kicad_sch, one of them loses their work. Say what you are editing before you start.
+
+Full guide: https://github.com/OpenDrone-hw/.github/blob/main/CONTRIBUTING.md""",
+    "product-lifecycle": """\
+## Product lifecycle
+Every repo starts as a copy of hardware-template. Its status-* topic on GitHub shows how far along it is and drives the roadmap on opendrone.be.
+
+- **1 Planned**, not buyable: the specification exists. Needs research, parts, opinions.
+- **2 In progress**, not buyable: the design is being drawn. Needs drawing, review.
+- **3 Alpha**, preorder only: boards made, in community testing. Needs flying it, breaking it.
+- **4 Beta**, on sale as the first batch: needs reports from real use.
+- **5 Launched**, on sale: the design will not change. A change from here is a new product.
+
+Admins and the Incutec team change the status, because it changes the website.
+
+Anyone can propose a new product: post a paragraph of what and why in {#proposals}. Want to help test an alpha board? Ask for a sample.
+
+Roadmap: https://opendrone.be/roadmap""",
+    "buying-and-support": """\
+## Buying and support
+The products are sold at https://opendrone.be. Incutec handles production, quality control, parts sourcing, packing and shipping, and the legal responsibility for a product sold.
+
+Alpha boards may be offered as a preorder against a funding target. The first production batch is built once the target is met.
+
+Where to go:
+- Order, payment or shipping: https://opendrone.be/support
+- Technical questions about a board: {#help}, or that board's channel under Hardware
+- Firmware: Betaflight, AM32 and ExpressLRS are upstream open source projects. OpenDrone boards run them unchanged where possible. Use the channels under Software.
+- Anything that should be findable later: a GitHub issue on the relevant repo""",
+    "licence-and-ai": """\
+## Licence, names and AI
+Hardware is CERN-OHL-S-2.0, a reciprocal copyleft licence. You can modify a board and ship your version. If someone asks for your sources, you hand them over on the same terms. The goal is not to stop clones but for everyone to share their improvements.
+
+incutec is a registered trademark. OpenDrone is not. Build the designs, sell them, call them what you like. You cannot present your product as an official incutec product, or use incutec branding in a way that suggests we made, tested or support it. Saying what your board is based on is fine.
+
+Some bundled 3D models have their own upstream licence (CC-BY-SA-4.0 or GPL), noted inside the file. Those notices still apply.
+
+Licence text: https://ohwr.org/cern_ohl_s_v2.txt
+
+### AI usage
+You are responsible for what you commit. If you do not personally understand what an AI did and why, do not commit it.
+
+What it is used for: research and datasheet reading, component search and sourcing, BOM work, library management, running ERC and DRC checks and explaining the results, documentation, and project management.
+
+What it does not do (yet): make schematics, place parts or route a board.""",
+    "welcome": f"""\
+## Welcome to OpenDrone
+This server is where OpenDrone, a fully open source FPV stack, is developed, tested and supported.
+Start with {{#rules}}, say hi in {{#introduce-yourself}}, ask board questions in {{#help}} and propose products or changes in {{#proposals}}.
+Pick the product channels you follow in Channels & Roles: {CUSTOMIZE}
+Development happens in the product channels, one thread per pull request; {{#git-feed}} carries the GitHub activity.
+Orders, payment and shipping: https://opendrone.be/support""",
+}
+
 
 SERVER_GUIDE = """\
 Welcome sign
@@ -86,8 +165,11 @@ New member to-dos (title / channel / description)
   4. Show your build / #builds / A photo and the parts list
   5. Ask for help / help / Product, revision, firmware and what you tried
 
-Resource pages
-  #rules, #announcements, help"""
+Resource pages (channel / card description); the bodies are posted by migrate.py resources
+  #how-to-contribute / No permission needed. Say it here, fork, open a pull request.
+  #product-lifecycle / Planned, in progress, alpha, beta, launched. The status-* topic on each repo.
+  #buying-and-support / Where to buy, where to ask, who does what.
+  #licence-and-ai / CERN-OHL-S-2.0. incutec is a trademark, OpenDrone is not."""
 
 
 def load_repos(path: Path = REPOS_JSON) -> dict:
@@ -95,15 +177,11 @@ def load_repos(path: Path = REPOS_JSON) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def chat_text(line: str | None, product: bool) -> str:
-    """line None is #roles; product is True for a channel repos.json maps repositories to."""
-    if line is None:
-        body = f"Roles are picked in {CUSTOMIZE} (Channels & Roles)."
-    elif product:
-        body = f"Chat for {line}. Pull requests in the public repositories of this line get a thread here."
-    else:
-        body = f"Chat for {line}."
-    return f"{body}\n-# {UNARCHIVE_MARK}"
+def chat_text(line: str, product: bool) -> str:
+    """product is True for a channel repos.json maps repositories to."""
+    if product:
+        return f"Chat for {line}. Pull requests in the public repositories of this line get a thread here."
+    return f"Chat for {line}."
 
 
 # --- server state ----------------------------------------------------------
@@ -175,38 +253,58 @@ class Server:
                 return
             before = min(batch, key=lambda m: int(m["id"]))["id"]
 
-    def notice(self, cid: str) -> dict | None:
-        """The bot's archive notice in a channel, before or after unarchive rewrote it: pins first, then
-        the newest NOTICE_PAGES pages of history (an unpinned notice sinks as members post)."""
-        def mine(msg):
-            text = msg.get("content") or ""
-            return msg.get("author", {}).get("id") == self.bot_id and (NOTICE_MARK in text or UNARCHIVE_MARK in text)
+    def notice(self, cid: str, first: str) -> dict | None:
+        """The bot's archive notice in a channel: before unarchive rewrote it (the notice mark), after an
+        earlier run rewrote it (the unarchive mark) or after this version did (first line `first`)."""
+        def mine(text):
+            return NOTICE_MARK in text or UNARCHIVE_MARK in text or text.split("\n", 1)[0] == first
 
-        for msg in self.api.request("GET", f"/channels/{cid}/pins") or []:
-            if mine(msg):
-                return msg
-        return next((msg for msg in self.history(cid, pages=NOTICE_PAGES) if mine(msg)), None)
+        return self.find(cid, {"notice": mine}).get("notice")
 
-    def marked(self, cid: str, marks: list[str]) -> dict[str, dict]:
-        """The bot's messages carrying one of `marks` on its last line: pins first, then the newest
-        NOTICE_PAGES pages of history. {mark: message}, the first message found per mark."""
+    def find(self, cid: str, wanted: dict[str, callable]) -> dict[str, dict]:
+        """The bot's own messages in a channel, found by content: {key: test(content) -> bool}. Pins first,
+        then the newest NOTICE_PAGES pages of history (an unpinned message sinks as members post).
+        {key: message}, the first message found per key; a message by anyone else never matches."""
         found: dict[str, dict] = {}
 
         def take(msg):
-            text = msg.get("content") or ""
             if msg.get("author", {}).get("id") != self.bot_id:
                 return
-            last = text.rsplit("\n", 1)[-1]
-            for mark in marks:
-                if last == f"-# {mark}" and mark not in found:
-                    found[mark] = msg
+            text = msg.get("content") or ""
+            for key, test in wanted.items():
+                if key not in found and test(text):
+                    found[key] = msg
+                    return
 
         for msg in self.api.request("GET", f"/channels/{cid}/pins") or []:
             take(msg)
-        if len(found) < len(marks):
+        if len(found) < len(wanted):
             for msg in self.history(cid, pages=NOTICE_PAGES):
                 take(msg)
         return found
+
+    def mention(self, name: str, where: str) -> str:
+        """<#id> for a channel name: the server.json channel of that name, else the one live channel."""
+        listed = [ch for cat in self.desired["categories"] for ch in cat.get("channels", []) if ch["name"] == name]
+        live = self.managed(name) if len(listed) == 1 else None
+        if live is None:
+            hits = [c for c in self.channels if c["name"] == name and c["type"] != 4]
+            live = hits[0] if len(hits) == 1 else None
+            if len(hits) > 1:
+                raise dc.ConfigError(f"{where}: {{#{name}}} matches {len(hits)} channels")
+        if live is None:
+            raise dc.ConfigError(f"{where}: {{#{name}}} names no channel on the server")
+        return f"<#{live['id']}>"
+
+    def mentions(self, text: str, where: str) -> str:
+        """Every {#name} replaced by <#id>. A bare #name of an existing channel is refused: it would not be
+        clickable in the message."""
+        names = {c["name"] for c in self.channels if c["type"] != 4}
+        bare = sorted({m for m in BARE_CHANNEL.findall(text) if m in names})
+        if bare:
+            raise dc.ConfigError(f"{where}: write {', '.join('{#' + n + '}' for n in bare)} instead of "
+                                 f"{', '.join('#' + n for n in bare)} so the channel is a link")
+        return MENTION.sub(lambda m: self.mention(m.group(1), where), text)
 
     def write(self, method: str, path: str, body=None):
         result = self.api.request(method, path, body)
@@ -270,7 +368,7 @@ def cmd_unarchive(args, server: Server) -> None:
         raise dc.ConfigError(f"{len(blocked)} channel(s) not ready. Apply server.json first; nothing was written")
     todo = done = missing = 0
     for cid, name, text in ready:
-        msg = server.notice(cid)
+        msg = server.notice(cid, text.split("\n", 1)[0])
         if msg is None:
             missing += 1
             print(f"  #{name}: no notice found, nothing to do")
@@ -327,39 +425,60 @@ def lifecycle(topics: list[str], labels: dict[str, str]) -> str | None:
     return labels.get(status, status) if status else None
 
 
+def hub_first_line(org: str, repo: str) -> str:
+    """The first line of a repository's hub message; it identifies the hub on a rerun."""
+    return f"## [{repo}](https://github.com/{org}/{repo})"
+
+
 def hub_text(org: str, repo: str, meta: dict, labels: dict[str, str]) -> str:
     url = f"https://github.com/{org}/{repo}"
     status = lifecycle(meta.get("topics") or [], labels)
-    lines = [f"## [{repo}]({url})"]
+    lines = [hub_first_line(org, repo)]
     description = one_line(meta.get("description") or "")
     if description:
         lines.append(description[:300])
-    lines += [f"Lifecycle: {status or 'not set'}", f"Releases: {url}/releases", HUB_FOOTER, f"-# {HUB_MARK} {repo}"]
+    if status:
+        lines.append(f"Lifecycle: {status}")
+    lines += [f"Releases: {url}/releases", HUB_FOOTER]
     return "\n".join(lines)
 
 
-def sync_pinned(server: Server, cid: str, wanted: list[tuple[str, str]], yes: bool) -> dict[str, int]:
-    """Post, edit and pin the bot messages `wanted` [(mark, text)] in one channel, in order.
-    Returns counts: post, edit, pin, done."""
+def first_line(text: str) -> str:
+    return text.split("\n", 1)[0]
+
+
+def identified_by(first: str, legacy: str | None = None):
+    """Test for server.find: the message starts with `first`, or ends with the legacy mark line."""
+    def test(text: str) -> bool:
+        return first_line(text) == first or (legacy is not None and text.rsplit("\n", 1)[-1] == f"-# {legacy}")
+    return test
+
+
+def sync_messages(server: Server, cid: str, wanted: list[tuple[str, str | None, str]], yes: bool,
+                  pin: bool) -> dict[str, int]:
+    """Post and edit the bot messages `wanted` [(first line, legacy mark or None, text)] in one channel, in
+    order, and with `pin` pin the ones not yet pinned. A message is the bot's own one whose first line
+    matches, or whose last line is the legacy mark. Returns counts: post, edit, pin, done."""
     counts = {"post": 0, "edit": 0, "pin": 0, "done": 0}
-    have = server.marked(cid, [mark for mark, _ in wanted])
-    for mark, text in wanted:
-        msg = have.get(mark)
+    have = server.find(cid, {first: identified_by(first, legacy) for first, legacy, _text in wanted})
+    for first, _legacy, text in wanted:
+        msg = have.get(first)
         body = {"content": text, "allowed_mentions": {"parse": []}, "flags": SUPPRESS_EMBEDS}
         if msg is None:
             counts["post"] += 1
-            counts["pin"] += 1
+            counts["pin"] += pin
             if yes:
                 posted = server.write("POST", f"/channels/{cid}/messages", body)
-                server.write("PUT", f"/channels/{cid}/pins/{posted['id']}")
+                if pin:
+                    server.write("PUT", f"/channels/{cid}/pins/{posted['id']}")
             continue
-        edit, pin = msg.get("content") != text, not msg.get("pinned")
+        edit, repin = msg.get("content") != text, pin and not msg.get("pinned")
         counts["edit"] += edit
-        counts["pin"] += pin
-        counts["done"] += not (edit or pin)
+        counts["pin"] += repin
+        counts["done"] += not (edit or repin)
         if yes and edit:
             server.write("PATCH", f"/channels/{cid}/messages/{msg['id']}", body)
-        if yes and pin:
+        if yes and repin:
             server.write("PUT", f"/channels/{cid}/pins/{msg['id']}")
     return counts
 
@@ -367,7 +486,7 @@ def sync_pinned(server: Server, cid: str, wanted: list[tuple[str, str]], yes: bo
 def cmd_hubs(args, server: Server) -> None:
     repos = load_repos(args.repos)
     org, labels = repos["org"], repos.get("lifecycle", {})
-    by_channel: dict[str, list[tuple[str, str]]] = {}
+    by_channel: dict[str, list[tuple[str, str | None, str]]] = {}
     private = missing = 0
     sample = None
     for repo, entry in repos["repos"].items():
@@ -385,7 +504,7 @@ def cmd_hubs(args, server: Server) -> None:
         if len(text) > MESSAGE_LIMIT:
             raise dc.ConfigError(f"hub for {repo}: {len(text)} characters, over Discord's {MESSAGE_LIMIT}")
         sample = sample or text
-        by_channel.setdefault(entry["channel"], []).append((f"{HUB_MARK} {repo}", text))
+        by_channel.setdefault(entry["channel"], []).append((hub_first_line(org, repo), f"{HUB_MARK} {repo}", text))
     ready, blocked = [], []
     for name, wanted in by_channel.items():
         ch = server.managed(name)
@@ -396,7 +515,7 @@ def cmd_hubs(args, server: Server) -> None:
         raise dc.ConfigError(f"{len(blocked)} channel(s) missing. Apply server.json first; nothing was written")
     total = {"post": 0, "edit": 0, "pin": 0, "done": 0}
     for name, ch, wanted in ready:
-        counts = sync_pinned(server, ch["id"], wanted, args.yes)
+        counts = sync_messages(server, ch["id"], wanted, args.yes, pin=True)
         for key in total:
             total[key] += counts[key]
         print(f"  #{name}: {plural(len(wanted), 'hub')}, {counts['post']} to post, {counts['edit']} to edit, "
@@ -431,6 +550,9 @@ def rules_section(markdown: str) -> str:
         raise dc.ConfigError('--rules-file: the "4. #rules" section is empty')
     if "\u2014" in text or re.search(r"^>", text, re.M):
         raise dc.ConfigError("--rules-file: the rules text holds an em dash or a blockquote; fix the source first")
+    if first_line(text) != RULES_TITLE:
+        raise dc.ConfigError(f"--rules-file: the rules text must start with the line {RULES_TITLE}; "
+                             "it identifies the rules message on a rerun")
     return text
 
 
@@ -449,13 +571,16 @@ def split_parts(text: str, room: int) -> list[str]:
 
 
 def cmd_rules(args, server: Server) -> None:
-    text = rules_section(args.rules_file.read_text(encoding="utf-8"))
-    room = MESSAGE_LIMIT - len(f"\n-# {RULES_MARK} 99")
-    wanted = [(f"{RULES_MARK} {i}", f"{part}\n-# {RULES_MARK} {i}") for i, part in enumerate(split_parts(text, room), 1)]
+    text = server.mentions(rules_section(args.rules_file.read_text(encoding="utf-8")), "--rules-file")
+    parts = split_parts(text, MESSAGE_LIMIT)
+    # Part 1 starts with RULES_TITLE; a later part is found by its own first line.
+    wanted = [(first_line(part), f"{RULES_MARK} {i}", part) for i, part in enumerate(parts, 1)]
+    if len({first for first, _mark, _part in wanted}) < len(wanted):
+        raise dc.ConfigError("--rules-file: two messages of the rules text start with the same line")
     ch = server.managed("rules")
     if ch is None:
         raise dc.ConfigError("#rules does not exist")
-    counts = sync_pinned(server, ch["id"], wanted, args.yes)
+    counts = sync_messages(server, ch["id"], wanted, args.yes, pin=True)
     print(f"rules: {plural(len(wanted), 'message')} ({len(text)} characters), {counts['post']} to post, "
           f"{counts['edit']} to edit, {counts['pin']} to pin, {counts['done']} done")
     if not args.yes:
@@ -463,6 +588,38 @@ def cmd_rules(args, server: Server) -> None:
         show(text)
     if counts["post"] or counts["edit"] or counts["pin"]:
         dry_run_footer(args.yes, "post, edit and pin it")
+
+
+def cmd_resources(args, server: Server) -> None:
+    ready, blocked = [], []
+    for name, body in RESOURCES.items():
+        ch = server.managed(name)
+        if ch is None:
+            blocked.append(name)
+            continue
+        text = server.mentions(body, f"#{name}")
+        if len(text) > MESSAGE_LIMIT:
+            raise dc.ConfigError(f"#{name}: {len(text)} characters, over Discord's {MESSAGE_LIMIT}")
+        ready.append((name, ch, text))
+    for name in blocked:
+        print(f"  blocked #{name}: the channel does not exist yet (apply server.json first)")
+    if blocked and args.yes:
+        raise dc.ConfigError(f"{len(blocked)} channel(s) missing. Apply server.json first; nothing was written")
+    total = {"post": 0, "edit": 0, "done": 0}
+    for name, ch, text in ready:
+        counts = sync_messages(server, ch["id"], [(first_line(text), None, text)], args.yes, pin=False)
+        for key in total:
+            total[key] += counts[key]
+        state = "to post" if counts["post"] else "to edit" if counts["edit"] else "done"
+        print(f"  #{name}: {len(text)} characters, {state}")
+    print(f"\nresources: {total['post']} to post, {total['edit']} to edit, {total['done']} done, "
+          f"{len(blocked)} channel(s) blocked; nothing is pinned")
+    if not args.yes and ready:
+        name, _ch, text = ready[-1] if ready[-1][0] == "welcome" else ready[0]
+        print(f"\nText in #{name}:\n")
+        show(text)
+    if total["post"] or total["edit"]:
+        dry_run_footer(args.yes, "post and edit them")
 
 
 def parse_since(value: str) -> int:
@@ -560,7 +717,7 @@ def cmd_firmware_roles(args, server: Server) -> None:
 
 
 def backfill_channels(server: Server, only: list[str]) -> list[tuple[str, str]]:
-    """(channel id, ping role name) for each development chat with a ping role, limited by --channel."""
+    """(channel id, follower role name) for each development chat with a follower role, limited by --channel."""
     mapped = [(cid, chat[3]) for cid, chat in CHATS.items() if chat[3]]
     if not only:
         return mapped
@@ -569,13 +726,13 @@ def backfill_channels(server: Server, only: list[str]) -> list[tuple[str, str]]:
         hits = [(cid, role) for cid, role in mapped
                 if ref.lstrip("#") in (cid, CHATS[cid][0], CHATS[cid][1])]
         if not hits:
-            raise dc.ConfigError(f"--channel {ref}: not a development chat with a ping role")
+            raise dc.ConfigError(f"--channel {ref}: not a development chat with a follower role")
         picked += [h for h in hits if h not in picked]
     return picked
 
 
 def grantable(server: Server, role_name: str) -> str | None:
-    """Why a ping role must not be granted, or None."""
+    """Why a follower role must not be granted, or None."""
     role = server.roles.get(role_name)
     if role is None:
         return "does not exist yet (apply server.json first)"
@@ -662,7 +819,10 @@ def cmd_checklist(args) -> None:
           "Check each has no member posts first. The tools never delete; never touch #web-support or",
           "#web-support-admin. Then discord_config.py plan lists only those two as unmanaged."]),
         ("Paste the Server Guide copy: Server Settings > Onboarding > Server Guide",
-         ["Copy below. Discord has no API for the Server Guide."]),
+         ["Copy below. Discord has no API for the Server Guide. Take #roles off the guide, then delete",
+          "#roles by hand (it holds the old reaction roles and is no longer in server.json)."]),
+        ("Post the Server Guide resource pages and the #welcome orientation message (not pinned)",
+         ["python3 migrate.py resources", "python3 migrate.py resources --yes"]),
         ("Post and pin the rules in #rules",
          ["python3 migrate.py rules --rules-file <copy.md>", "python3 migrate.py rules --rules-file <copy.md> --yes"]),
         ("Post and pin one hub message per public repository in its product channel",
@@ -671,7 +831,7 @@ def cmd_checklist(args) -> None:
          ["python3 migrate.py unarchive", "python3 migrate.py unarchive --yes"]),
         ("Move self-picked firmware team roles to the user roles",
          ["python3 migrate.py firmware-roles", "python3 migrate.py firmware-roles --yes"]),
-        ("Backfill ping roles on one test member, check that account's roles, then everyone",
+        ("Backfill follower roles on one test member, check that account's roles, then everyone",
          ["python3 migrate.py backfill --only-user <your user id>",
           "python3 migrate.py backfill --only-user <your user id> --yes",
           "python3 migrate.py backfill", "python3 migrate.py backfill --yes"]),
@@ -707,7 +867,7 @@ def main(argv=None, api=None, sleep=None, clock=None, fetch=None) -> int:
     p.add_argument("--yes", action="store_true")
     p.add_argument("--since", default=ROLLOUT_START, metavar="ISO",
                    help=f"read role adds from this time on (default {ROLLOUT_START}, the onboarding rollout)")
-    p = sub.add_parser("backfill", help="grant ping roles to recent authors of the development chats")
+    p = sub.add_parser("backfill", help="grant follower roles to recent authors of the development chats")
     p.add_argument("--yes", action="store_true")
     p.add_argument("--days", type=int, default=90)
     p.add_argument("--only-user", metavar="ID", help="grant only to this one member (test mode)")
@@ -716,6 +876,8 @@ def main(argv=None, api=None, sleep=None, clock=None, fetch=None) -> int:
     p = sub.add_parser("hubs", help="post and pin one hub message per public repository in its product channel")
     p.add_argument("--yes", action="store_true")
     p.add_argument("--repos", type=Path, default=REPOS_JSON, help="bot/config/repos.json")
+    p = sub.add_parser("resources", help="post one message in each Server Guide resource channel and in #welcome")
+    p.add_argument("--yes", action="store_true")
     p = sub.add_parser("rules", help='post and pin the "4. #rules" section of a markdown file in #rules')
     p.add_argument("--yes", action="store_true")
     p.add_argument("--rules-file", type=Path, required=True, metavar="MD")
@@ -741,7 +903,7 @@ def main(argv=None, api=None, sleep=None, clock=None, fetch=None) -> int:
         api = api or client(dc.token())
         server = Server(api, desired, sleep, clock, fetch)
         {"unarchive": cmd_unarchive, "firmware-roles": cmd_firmware_roles, "backfill": cmd_backfill,
-         "hubs": cmd_hubs, "rules": cmd_rules}[args.command](args, server)
+         "hubs": cmd_hubs, "rules": cmd_rules, "resources": cmd_resources}[args.command](args, server)
     except dc.ConfigError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

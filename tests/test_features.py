@@ -255,6 +255,18 @@ class Roles(ToolCase):  # F3
         self.assertConfigError(minimal_desired(roles=[{"name": "X", "hoist": "yes"}]), "expected true or false")
         self.assertConfigError(minimal_desired(roles=[{"name": "@everyone"}]), "not managed")
 
+    def test_rename_keeps_the_role_and_its_members(self):
+        d = minimal_desired(roles=[{"name": "FPV pilot", "renamed_from": "FPV"}])
+        rid = self.fake.role_by_name("FPV")["id"]
+        [op] = self.plan(d)["ops"]["roles"]
+        self.assertEqual((op["action"], op["body"], op["diff"]), ("update", {"name": "FPV pilot"}, {"name": ("FPV", "FPV pilot")}))
+        self.assertNotIn("FPV", self.plan(d)["unmanaged"]["roles"])
+        self.assertIdempotent(d)
+        self.assertEqual(self.fake.role_by_name("FPV pilot")["id"], rid)
+        self.assertConfigError(minimal_desired(roles=[{"name": "Europe", "renamed_from": "FPV"}]), "both 'Europe'",
+                               fake=FakeDiscord(base_state()))
+        self.assertConfigError(minimal_desired(roles=[{"name": "X", "renamed_from": "X"}]), "renamed_from must be")
+
 
 class Positions(ToolCase):  # F4
     def test_reorders_channels_within_category(self):
@@ -385,6 +397,18 @@ class Onboarding(ToolCase):  # F6
         self.assertIn("prompt 'What do you fly?' option 'FPV': roles [FPV]; channels [#builds]", op["summary"])
         self.assertIdempotent(d)
         self.assertEqual([p["title"] for p in self.fake.onboarding["prompts"]][2], "Legacy prompt")
+
+    def test_prompt_rename_keeps_the_prompt(self):
+        d = self.onboarding_desired(prompts=[{"title": "Where do you live?", "renamed_from": "Where are you from?",
+                                              "single_select": True, "required": True,
+                                              "options": [{"title": "Europe", "emoji": "\U0001F1EA\U0001F1FA",
+                                                           "roles": ["Europe", "Member"]}]}])
+        plan = self.plan(d)
+        op = plan["ops"]["onboarding"][0]
+        self.assertIn("prompt 'Where are you from?': title -> 'Where do you live?'", op["summary"])
+        self.assertEqual([(p["id"], p["title"]) for p in op["body"]["prompts"]][0], ("4000", "Where do you live?"))
+        self.assertEqual(plan["unmanaged"]["onboarding prompts"], ["Legacy prompt"])
+        self.assertIdempotent(d)
 
     def test_unlisted_options_are_kept(self):
         d = self.onboarding_desired(prompts=[{"title": "Where are you from?", "single_select": True, "required": True,
@@ -624,6 +648,17 @@ class Guild(ToolCase):  # F9
     def test_description_alone_sends_no_community_fields(self):
         op = self.plan(minimal_desired(guild={"description": "Only this"}))["ops"]["guild"][0]
         self.assertEqual(op["body"], {"description": "Only this"})
+
+    def test_system_channel_flags_by_name_keep_unknown_bits(self):
+        d = minimal_desired(guild={"system_channel_flags": ["SUPPRESS_JOIN_NOTIFICATIONS",
+                                                            "SUPPRESS_JOIN_NOTIFICATION_REPLIES"]})
+        self.fake.guild["system_channel_flags"] = 2 | 128
+        op = self.plan(d)["ops"]["guild"][0]
+        self.assertEqual(op["body"], {"system_channel_flags": 1 | 8 | 128})
+        self.assertEqual(op["diff"]["system_channel_flags"],
+                         (["SUPPRESS_PREMIUM_SUBSCRIPTIONS"], ["SUPPRESS_JOIN_NOTIFICATIONS", "SUPPRESS_JOIN_NOTIFICATION_REPLIES"]))
+        self.assertIdempotent(d)
+        self.assertConfigError(minimal_desired(guild={"system_channel_flags": ["NOPE"]}), "system_channel_flags")
 
     def test_other_guild_settings_rejected(self):
         self.assertConfigError(minimal_desired(guild={"verification_level": 4}), "unknown keys")

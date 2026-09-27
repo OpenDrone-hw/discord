@@ -199,7 +199,7 @@ class FakeDiscord:
                 # sent only to carry the Community channel fields; it must never change features
                 assert sorted(value) == sorted(self.guild["features"]), value
                 continue
-            assert key in ("description", *dc.GUILD_CHANNELS.values()), key
+            assert key in ("description", "system_channel_flags", *dc.GUILD_CHANNELS.values()), key
             self.guild[key] = value
         return copy.deepcopy(self.guild)
 

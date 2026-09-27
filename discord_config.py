@@ -87,16 +87,21 @@ CATEGORY_KEYS = {"id", "name", "access", "channels"}
 CHANNEL_KEYS = {"id", "name", "type", "access", "topic", "slowmode", "bitrate", "user_limit", "forum"}
 FORUM_KEYS = {"tags", "default_reaction", "layout", "sort", "require_tag", "post_slowmode"}
 TAG_KEYS = {"name", "emoji", "moderated"}
-ROLE_KEYS = {"name", "color", "hoist", "mentionable", "permissions"}
+ROLE_KEYS = {"name", "renamed_from", "color", "hoist", "mentionable", "permissions"}
 ARCHIVE_KEYS = {"id", "category", "access", "channels"}
 ONBOARDING_KEYS = {"enabled", "mode", "default_channels", "prompts"}
-PROMPT_KEYS = {"title", "type", "single_select", "required", "in_onboarding", "options"}
+PROMPT_KEYS = {"title", "renamed_from", "type", "single_select", "required", "in_onboarding", "options"}
 OPTION_KEYS = {"title", "description", "emoji", "roles", "channels"}
 WELCOME_KEYS = {"enabled", "description", "channels"}
 WELCOME_CHANNEL_KEYS = {"channel", "description", "emoji"}
 AUTOMOD_KEYS = {"name", "event", "trigger", "metadata", "actions", "enabled", "exempt_roles", "exempt_channels"}
 ACTION_KEYS = {"type", "message", "channel", "seconds"}
-GUILD_KEYS = {"description", *GUILD_CHANNELS}
+# Guild system_channel_flags by name; bits the tool does not know are kept as live.
+SYSTEM_CHANNEL_FLAGS = {"SUPPRESS_JOIN_NOTIFICATIONS": 1 << 0, "SUPPRESS_PREMIUM_SUBSCRIPTIONS": 1 << 1,
+                        "SUPPRESS_GUILD_REMINDER_NOTIFICATIONS": 1 << 2, "SUPPRESS_JOIN_NOTIFICATION_REPLIES": 1 << 3,
+                        "SUPPRESS_ROLE_SUBSCRIPTION_PURCHASE_NOTIFICATIONS": 1 << 4,
+                        "SUPPRESS_ROLE_SUBSCRIPTION_PURCHASE_NOTIFICATION_REPLIES": 1 << 5}
+GUILD_KEYS = {"description", "system_channel_flags", *GUILD_CHANNELS}
 DEFAULT_GUARD = {"protected_roles": ["admin"], "gating_roles": ["Newbie", "Member"],
                  "must_see": ["welcome", "rules"], "protected_channels": [], "unassignable_roles": []}
 # Permissions that manage the server, act on other members or their messages, or ping everyone. Always
@@ -413,6 +418,9 @@ class Planner:
             if name == "@everyone":
                 raise ConfigError(f"{where}: @everyone is not managed")
             listed.add(name)
+            old = spec.get("renamed_from")
+            if old is not None and (not isinstance(old, str) or not old or old == name):
+                raise ConfigError(f"{where}: renamed_from must be the role's former name")
             want = {}
             if "color" in spec:
                 want["color"] = parse_color(spec["color"], where)
@@ -422,6 +430,14 @@ class Planner:
             if "permissions" in spec:
                 want["permissions"] = bits(spec["permissions"])
             rid = self.role_ids.get(name)
+            renamed = rid is None and old in self.role_ids
+            if rid is not None and old in self.role_ids:
+                raise ConfigError(f"{where}: both {name!r} and its former name {old!r} exist; merge them by hand")
+            if renamed:
+                # Match the live role by its former name; the rest of server.json uses the new one.
+                rid = self.role_ids.pop(old)
+                self.role_ids[name], self.role_names[rid] = rid, name
+                listed.add(old)
             if rid is None:
                 rid = placeholder("role", name)
                 self.role_ids[name], self.role_names[rid] = rid, name
@@ -443,6 +459,8 @@ class Planner:
             if "permissions" in want:
                 self.desired_role_perms[rid] = want["permissions"]
             diff, body = {}, {}
+            if renamed:
+                diff["name"], body["name"] = (old, name), name
             if "color" in want and role_color(live) != want["color"]:
                 diff["color"] = (f"#{role_color(live):06x}", f"#{want['color']:06x}")
                 body["colors"] = {"primary_color": want["color"]}
@@ -838,6 +856,15 @@ class Planner:
             if ptype not in PROMPT_TYPES:
                 raise ConfigError(f"{where}: type must be one of {sorted(PROMPT_TYPES)}")
             lp = live_prompts.get(ps["title"])
+            old = ps.get("renamed_from")
+            if old is not None and (not isinstance(old, str) or not old or old == ps["title"]):
+                raise ConfigError(f"{where}: renamed_from must be the prompt's former title")
+            if old in live_prompts:
+                if lp is not None:
+                    raise ConfigError(f"{where}: both it and its former title {old!r} are live prompts")
+                lp = live_prompts[old]
+                listed.add(old)
+                lines.append(f"prompt {old!r}: title -> {ps['title']!r}")
             live_opts = {o["title"]: o for o in (lp or {}).get("options", [])}
             options, seen = [], set()
             for os_ in ps["options"]:
@@ -1092,6 +1119,18 @@ class Planner:
         if "description" in spec and (live.get("description") or "") != spec["description"]:
             body["description"] = spec["description"]
             diff["description"] = (self.display("topic", live.get("description") or ""), self.display("topic", spec["description"]))
+        if "system_channel_flags" in spec:
+            flags = spec["system_channel_flags"]
+            if not isinstance(flags, list) or any(f not in SYSTEM_CHANNEL_FLAGS for f in flags):
+                raise ConfigError(f"guild.system_channel_flags: a list of {sorted(SYSTEM_CHANNEL_FLAGS)}")
+            known = sum(SYSTEM_CHANNEL_FLAGS.values())
+            have = int(live.get("system_channel_flags") or 0)
+            want = (have & ~known) | sum(SYSTEM_CHANNEL_FLAGS[f] for f in set(flags))
+            if want != have:
+                def flag_names(value):
+                    return [n for n, bit in SYSTEM_CHANNEL_FLAGS.items() if value & bit]
+                body["system_channel_flags"] = want
+                diff["system_channel_flags"] = (flag_names(have), flag_names(want))
         for key, api_key in GUILD_CHANNELS.items():
             if key in spec:
                 cid = self.resolve_channel(spec[key], f"guild.{key}") if spec[key] else None
