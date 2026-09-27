@@ -30,7 +30,10 @@ flowchart LR
 | `config/repos.json` loader and runtime name-to-id resolution | Working |
 | `src/github/` webhook handlers | Stub: none registered, deliveries get 202 |
 | `src/commands/` commands | Stub: none registered, `register-commands` has nothing to send |
-| `src/linked-roles/` | Stub: its three routes answer 501, no metadata |
+| `src/linked-roles/` routes | Working: `GET /linked-roles` runs Discord then GitHub OAuth and PUTs the role connection with metadata `merged_prs`, `org_member`, `maintainer`, `owner` |
+| `src/linked-roles/` storage | Working: D1 `users`, Discord and GitHub refresh tokens stored only AES-GCM sealed with a key derived from `SESSION_SECRET` |
+| `src/linked-roles/` refresh | Working: `refreshLinkedUser(services, login)` for the github module (`src/github/` does not call it); the cron refreshes 6 users per run whose last refresh is older than 24 h, oldest first (4 runs a day, so at most 24 users a day); a per-user lease in D1 runs overlapping refreshes of one user one after the other |
+| `owner` metadata | Always 0: nothing in this repository writes `users.owner` |
 
 ## Layout
 
@@ -164,6 +167,9 @@ issues; the Worker converts it.
 | `SESSION_SECRET` | `openssl rand -base64 32` |
 
 Vars (`GUILD_ID`, `APPLICATION_ID`, `PROMOTE_ENABLED`) are in `wrangler.toml`.
+The optional var `GITHUB_MAINTAINER_TEAM` names the OpenDrone-hw team whose
+active members get `maintainer` = 1; unset, it is `maintainers`. That team must
+exist on GitHub, otherwise `maintainer` is 0 for everyone.
 For `npm run dev`, copy `.dev.vars.example` to `.dev.vars` (git-ignored).
 
 ### 4. Deploy

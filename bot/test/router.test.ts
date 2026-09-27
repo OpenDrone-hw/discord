@@ -100,11 +100,15 @@ describe("routing", () => {
     expect((await call(new Request(`${BASE}/linked-roles`, { method: "POST" }))).status).toBe(405);
   });
 
-  it("serves the linked-role stub routes with 501", async () => {
+  it("serves the linked-role routes", async () => {
     const { call } = await setup([...modules]);
-    for (const route of MODULE_ROUTES) {
+    const start = await call(new Request(`${BASE}/linked-roles`));
+    expect(start.status).toBe(302);
+    expect(start.headers.get("Location")).toMatch(/^https:\/\/discord\.com\/oauth2\/authorize\?/);
+    // Callbacks without the session cookie are refused before any provider call.
+    for (const route of MODULE_ROUTES.slice(1)) {
       const path = route.split(" ")[1];
-      expect((await call(new Request(`${BASE}${path}`))).status).toBe(501);
+      expect((await call(new Request(`${BASE}${path}?code=x&state=y`))).status).toBe(400);
     }
   });
 
@@ -416,11 +420,11 @@ describe("scheduled", () => {
 });
 
 describe("Registry", () => {
-  it("accepts the shipped module stubs", () => {
+  it("accepts the shipped modules", () => {
     const registry = new Registry(modules);
     expect(registry.modules.map((m) => m.name)).toEqual(["github", "commands", "linked-roles"]);
     expect(registry.commandDefinitions()).toEqual([]);
-    expect(registry.roleConnectionMetadata()).toEqual([]);
+    expect(registry.roleConnectionMetadata().map((m) => m.key)).toEqual(["merged_prs", "org_member", "maintainer", "owner"]);
   });
 
   it("rejects duplicate modules, commands, prefixes, routes and metadata keys", () => {
