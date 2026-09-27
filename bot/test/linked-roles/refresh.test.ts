@@ -121,6 +121,50 @@ describe("refreshLinkedUser (for the github module)", () => {
     expect(h.providers.githubRefresh.has(refreshed.githubRefreshToken!)).toBe(true);
   });
 
+  it("raises merged_prs to a known lower bound when search has not indexed the merge yet", async () => {
+    const h = await harness();
+    await linked(h, A, "alice");
+    // Search still answers 0 right after the first merge.
+    const result = await refreshLinkedUser(h.services, "alice", h.options, { minMergedPrs: 1 });
+    expect(result).toMatchObject({ status: "updated", metadata: { merged_prs: 1 } });
+    expect(h.providers.roleConnections.get(A)?.metadata).toMatchObject({ merged_prs: "1" });
+  });
+
+  it("keeps a search count above the lower bound and ignores invalid bounds", async () => {
+    const h = await harness();
+    await linked(h, A, "alice");
+    h.providers.mergedPrs.set("alice", 4);
+    await refreshLinkedUser(h.services, "alice", h.options, { minMergedPrs: 1 });
+    expect(h.providers.roleConnections.get(A)?.metadata).toMatchObject({ merged_prs: "4" });
+    h.providers.mergedPrs.set("alice", 0);
+    for (const bound of [0, -3, Number.NaN, Number.POSITIVE_INFINITY]) {
+      await refreshLinkedUser(h.services, "alice", h.options, { minMergedPrs: bound });
+      expect(h.providers.roleConnections.get(A)?.metadata).toMatchObject({ merged_prs: "0" });
+    }
+    await refreshLinkedUser(h.services, "alice", h.options, { minMergedPrs: 2.7 });
+    expect(h.providers.roleConnections.get(A)?.metadata).toMatchObject({ merged_prs: "2" });
+  });
+
+  it("applies the lower bound only while the row is linked to the login it was given for", async () => {
+    const h = await harness();
+    await linked(h, A, "alice");
+    // The webhook named bob, but the row re-read under the lease is linked to alice.
+    const ctx = new LinkedRolesContext(h.services, h.options);
+    await refreshUser(ctx, { discordId: A }, { githubLogin: "bob", minMergedPrs: 1 });
+    expect(h.providers.roleConnections.get(A)?.metadata).toMatchObject({ merged_prs: "0" });
+    await refreshUser(ctx, { discordId: A }, { githubLogin: "ALICE", minMergedPrs: 1 });
+    expect(h.providers.roleConnections.get(A)?.metadata).toMatchObject({ merged_prs: "1" });
+  });
+
+  it("does not apply the lower bound once GitHub is unlinked", async () => {
+    const h = await harness();
+    await linked(h, A, "alice");
+    h.providers.githubRefresh.clear();
+    const result = await refreshLinkedUser(h.services, "alice", h.options, { minMergedPrs: 1 });
+    expect(result).toMatchObject({ status: "updated", githubLogin: null });
+    expect(h.providers.roleConnections.get(A)?.metadata).toMatchObject({ merged_prs: "0" });
+  });
+
   it("saves the rotated tokens even when the push fails", async () => {
     const h = await harness();
     await linked(h, A, "alice");

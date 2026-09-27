@@ -116,6 +116,7 @@ describe("refresh through the webhook", () => {
     expect(response.status).toBe(202);
     expect(await response.json()).toEqual({ ok: true, handlers: 2 });
     expect(world.refreshed).toEqual(["alice"]);
+    expect(world.refreshFacts).toEqual([{ minMergedPrs: 1 }]);
     expect(FakeWorld.text(world.messagesIn(EXISTING_THREAD)[0])).toContain("merged this pull request");
     expect(FakeWorld.text(world.messagesIn(FEED)[0])).toContain("#7 merged by carol");
     expect(errorLines()).toEqual([]);
@@ -135,6 +136,7 @@ describe("refresh through the webhook", () => {
     await deliver("membership", teamEvent("added", "dana"));
     await deliver("organization", orgEvent("member_invited", "frank"));
     expect(world.refreshed).toEqual(["bob", "erin", "dana"]);
+    expect(world.refreshFacts).toEqual([{}, {}, {}]);
     expect(world.calls).toEqual([]);
     expect(errorLines()).toEqual([]);
   });
@@ -233,6 +235,42 @@ describe("refresh end to end with the linked-roles module", () => {
     return response;
   }
 
+  function linkedWorker(h: Awaited<ReturnType<typeof linkedRolesHarness>>) {
+    const module = createGitHubModule({
+      linkedRoles: { refresh: (services, login, known) => refreshLinkedUser(services, login, h.options, known) },
+    });
+    return createWorker({ modules: [module], services: (_env, waitUntil) => ({ ...h.services, waitUntil }) });
+  }
+
+  it("pushes merged_prs 1 after a first merge that GitHub search has not indexed yet", async () => {
+    const h = await linkedRolesHarness();
+    expect((await link(h, DISCORD_ID, "alice")).status).toBe(200);
+    expect(h.providers.roleConnections.get(DISCORD_ID)?.metadata).toMatchObject({ merged_prs: "0" });
+
+    // The search fake keeps answering the pre-merge count (0) for alice.
+    const response = await sendSigned(linkedWorker(h), h.env, "pull_request", closedPr(merged(12, "alice")));
+    expect(response.status).toBe(202);
+    expect(h.providers.mergedPrs.get("alice") ?? 0).toBe(0);
+    expect(h.providers.roleConnections.get(DISCORD_ID)?.metadata).toEqual({
+      merged_prs: "1",
+      org_member: "0",
+      maintainer: "0",
+      owner: "0",
+    });
+    // This harness has no bot token, so only the posting handlers (merge card, feed line) fail.
+    expect(errorLines().filter((line) => !line.includes("linked-roles used the bot client"))).toEqual([]);
+    expect(String(logs.mock.calls.at(-1)?.[0])).toContain("linked-roles refresh for alice after pull_request.closed");
+    expect(String(logs.mock.calls.at(-1)?.[0])).toContain(": updated");
+  });
+
+  it("pushes the search count after a merge once search reports more than the lower bound", async () => {
+    const h = await linkedRolesHarness();
+    expect((await link(h, DISCORD_ID, "alice")).status).toBe(200);
+    h.providers.mergedPrs.set("alice", 6);
+    await sendSigned(linkedWorker(h), h.env, "pull_request", closedPr(merged(13, "alice")));
+    expect(h.providers.roleConnections.get(DISCORD_ID)?.metadata).toMatchObject({ merged_prs: "6" });
+  });
+
   it("pushes new metadata for the linked Discord user when they join the organisation", async () => {
     const h = await linkedRolesHarness();
     expect((await link(h, DISCORD_ID, "alice")).status).toBe(200);
@@ -240,8 +278,7 @@ describe("refresh end to end with the linked-roles module", () => {
 
     h.providers.orgMembers.add("alice");
     h.providers.mergedPrs.set("alice", 2);
-    const module = createGitHubModule({ linkedRoles: { refresh: (services, login) => refreshLinkedUser(services, login, h.options) } });
-    const worker = createWorker({ modules: [module], services: (_env, waitUntil) => ({ ...h.services, waitUntil }) });
+    const worker = linkedWorker(h);
 
     const response = await sendSigned(worker, h.env, "organization", orgEvent("member_added", "Alice"));
     expect(response.status).toBe(202);

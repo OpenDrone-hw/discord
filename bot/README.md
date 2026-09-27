@@ -126,8 +126,17 @@ cards never wait for it. A failed refresh is logged and the webhook carries on;
 a refresh still running after 25 s is logged as unfinished, before Cloudflare
 cancels it at 30 s. A login nobody linked is a D1 lookup and nothing else. A
 user whose webhook refresh failed is refreshed by the cron once their last
-refresh is older than 24 h. `merged_prs` comes from GitHub search, which can
-lag behind a merge; the count then catches up at that user's next refresh.
+refresh is older than 24 h.
+
+`merged_prs` comes from GitHub search, which indexes a merge asynchronously and
+can still return the pre-merge count when the refresh runs a second after the
+webhook. The merge refresh therefore passes a lower bound of 1
+(`refreshLinkedUser(services, login, options, { minMergedPrs: 1 })`): the
+pushed value is `max(search count, 1)`, so a first merged pull request moves
+`merged_prs` from 0 to 1 at once. The bound applies only while the Discord user
+is still linked to that login; after a GitHub unlink or rename the search count
+stands. For an author who already had merged PRs the count can stay one short
+until their next refresh.
 
 ## Behaviour every module inherits
 

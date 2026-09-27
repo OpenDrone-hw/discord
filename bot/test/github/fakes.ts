@@ -10,6 +10,7 @@ import type { Env } from "../../src/env.ts";
 import { GitHubApp } from "../../src/github.ts";
 import { createGitHubModule } from "../../src/github/index.ts";
 import type { RefreshLinkedUser } from "../../src/github/linked-roles.ts";
+import type { KnownFacts } from "../../src/linked-roles/index.ts";
 import { clearThreadParentCache } from "../../src/github/thread-link.ts";
 import { createWorker } from "../../src/index.ts";
 import type { Services } from "../../src/services.ts";
@@ -169,6 +170,8 @@ export class FakeWorld {
   readonly failing = new Set<string>();
   /** GitHub logins passed to the linked-role refresh, in order. */
   readonly refreshed: string[] = [];
+  /** Known facts passed with each refresh, in the same order as refreshed. */
+  readonly refreshFacts: KnownFacts[] = [];
   #nextId = 1700000000000000000n;
   #nextComment = 1;
 
@@ -355,8 +358,9 @@ export async function harness(
   const services: Services = { env, waitUntil: (p) => context.ctx.waitUntil(p), discord, github, directory };
   const refresh: RefreshLinkedUser =
     options.refresh ??
-    (async (_services, login) => {
+    (async (_services, login, known) => {
       world.refreshed.push(login);
+      world.refreshFacts.push(known);
       return { status: "not-linked", githubLogin: login };
     });
   const module = createGitHubModule({ linkedRoles: { refresh, deadlineMs: options.refreshDeadlineMs } });

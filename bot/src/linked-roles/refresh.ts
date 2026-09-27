@@ -22,7 +22,10 @@
  *
  * Discord re-evaluates a member's linked roles only when the app PUTs new
  * metadata, so this runs after GitHub events (refreshByGitHubLogin, called by
- * the github module) and from the cron (refreshStale).
+ * the github module) and from the cron (refreshStale). merged_prs comes from
+ * GitHub search, which indexes a merge seconds or more after the webhook, so
+ * the github module passes KnownFacts.minMergedPrs = 1 after a merge: a first
+ * merged pull request reaches Discord as 1 even when search still says 0.
  *
  * Discord and GitHub refresh tokens are single use. Two refreshes of one user
  * at the same time (two merges close together, a webhook during the cron)
@@ -62,14 +65,47 @@ export interface RefreshResult {
   metadata?: MetadataValues;
 }
 
+/**
+ * Facts the caller knows independently of GitHub search, e.g. from the
+ * webhook that triggered the refresh.
+ */
+export interface KnownFacts {
+  /**
+   * Lower bound for merged_prs. After a pull_request merge the author has at
+   * least 1: GitHub search indexes merges asynchronously, so a refresh a
+   * second after the webhook can still read the pre-merge count.
+   */
+  minMergedPrs?: number;
+}
+
+function lowerBound(value: number | undefined): number {
+  return value !== undefined && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+}
+
 export async function metadataFor(
   ctx: LinkedRolesContext,
   githubLogin: string | null,
   owner: boolean,
+  known: KnownFacts = {},
 ): Promise<MetadataValues> {
   if (!githubLogin) return { ...EMPTY_METADATA, owner };
   const facts = await ctx.stats().facts(githubLogin);
-  return { merged_prs: facts.mergedPrs, org_member: facts.orgMember, maintainer: facts.maintainer, owner };
+  const mergedPrs = Math.max(facts.mergedPrs, lowerBound(known.minMergedPrs));
+  return { merged_prs: mergedPrs, org_member: facts.orgMember, maintainer: facts.maintainer, owner };
+}
+
+/**
+ * Facts about one GitHub login. They apply only while the row is still linked
+ * to that login: a browser link that replaced the GitHub account during the
+ * refresh, or a GitHub rename, drops them and the search count stands.
+ */
+interface LoginFacts extends KnownFacts {
+  githubLogin: string;
+}
+
+function factsFor(login: string | null, known: LoginFacts | undefined): KnownFacts {
+  if (!known || !login || login.toLowerCase() !== known.githubLogin.toLowerCase()) return {};
+  return known;
 }
 
 /** Takes the user's refresh lease, polling up to ctx.lockWaitMs. */
@@ -88,7 +124,11 @@ async function acquire(ctx: LinkedRolesContext, store: UserStore, discordId: str
  * re-read under the lease, so a row the cron read earlier cannot bring back
  * old tokens. Throws on transient failures, after recording the attempt.
  */
-export async function refreshUser(ctx: LinkedRolesContext, user: Pick<LinkedUser, "discordId">): Promise<RefreshResult> {
+export async function refreshUser(
+  ctx: LinkedRolesContext,
+  user: Pick<LinkedUser, "discordId">,
+  known?: LoginFacts,
+): Promise<RefreshResult> {
   const store = await ctx.store();
   const { discordId } = user;
   const lease = await acquire(ctx, store, discordId);
@@ -97,13 +137,18 @@ export async function refreshUser(ctx: LinkedRolesContext, user: Pick<LinkedUser
   try {
     const current = await store.get(discordId);
     if (!current) return { status: "not-linked", discordId };
-    return await refreshLocked(ctx, store, current);
+    return await refreshLocked(ctx, store, current, known);
   } finally {
     await store.unlock(discordId);
   }
 }
 
-async function refreshLocked(ctx: LinkedRolesContext, store: UserStore, user: LinkedUser): Promise<RefreshResult> {
+async function refreshLocked(
+  ctx: LinkedRolesContext,
+  store: UserStore,
+  user: LinkedUser,
+  known: LoginFacts | undefined,
+): Promise<RefreshResult> {
   const { discordId, sealed } = user;
   if (!user.discordRefreshToken) {
     // Missing, or sealed under an old SESSION_SECRET: clear it so the cron stops picking the row.
@@ -133,7 +178,7 @@ async function refreshLocked(ctx: LinkedRolesContext, store: UserStore, user: Li
     if (user.githubRefreshToken && login) {
       login = await refreshGitHub(ctx, store, user, login);
     }
-    const metadata = await metadataFor(ctx, login, user.owner);
+    const metadata = await metadataFor(ctx, login, user.owner, factsFor(login, known));
     await ctx.discord.putRoleConnection(discordTokens.accessToken, ctx.env.APPLICATION_ID, roleConnectionBody(login, metadata));
     return { status: "updated", discordId, githubLogin: login, metadata };
   } finally {
@@ -179,12 +224,16 @@ async function refreshGitHub(ctx: LinkedRolesContext, store: UserStore, user: Li
 /**
  * Refreshes the Discord user linked to a GitHub login, e.g. after one of
  * their pull requests was merged. Returns status "not-linked" when nobody
- * linked that login.
+ * linked that login. `known` facts raise what GitHub search reports.
  */
-export async function refreshByGitHubLogin(ctx: LinkedRolesContext, githubLogin: string): Promise<RefreshResult> {
+export async function refreshByGitHubLogin(
+  ctx: LinkedRolesContext,
+  githubLogin: string,
+  known: KnownFacts = {},
+): Promise<RefreshResult> {
   const user = await (await ctx.store()).getByGitHubLogin(githubLogin);
   if (!user) return { status: "not-linked", githubLogin };
-  return refreshUser(ctx, user);
+  return refreshUser(ctx, user, { ...known, githubLogin });
 }
 
 export interface BatchSummary {
