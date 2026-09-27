@@ -14,8 +14,8 @@
  *   B->>W: callback + cookie
  *   W->>D: exchange code, GET /users/@me
  *   W->>W: D1: store sealed Discord refresh token
- *   W-->>B: 302 GitHub authorize, cookie {step github, state, Discord id + access token}
- *   B->>G: approve
+ *   W-->>B: 200 account check page, cookie {step github, state, Discord id + access token + name}
+ *   B->>G: Continue with GitHub link, approve
  *   G-->>B: 302 /linked-roles/github/callback?code&state
  *   B->>W: callback + cookie
  *   W->>G: exchange code, GET /user (login)
@@ -24,6 +24,11 @@
  *   W->>D: PUT role connection (platform GitHub)
  *   W-->>B: 200 result page, cookie cleared
  * ```
+ *
+ * The account check page names the Discord account the browser authorised.
+ * The Linked Roles buttons in the Discord app open this flow in the browser,
+ * where discord.com can be signed in to another account; the page lets the
+ * member notice that and start again before any role connection is written.
  *
  * Every callback checks the cookie's step, expiry and state before using the
  * code. Redirect URIs are built from the request origin, so they must match
@@ -34,7 +39,7 @@ import { errorText } from "../interactions.ts";
 import type { LinkedRolesContext } from "./context.ts";
 import { randomToken } from "./crypto.ts";
 import { roleConnectionBody } from "./metadata.ts";
-import { OAuthError } from "./oauth.ts";
+import { discordLabel, OAuthError } from "./oauth.ts";
 import { metadataFor } from "./refresh.ts";
 import { clearedCookie, readSession, SESSION_TTL_SECONDS, sessionCookie, stateMatches } from "./session.ts";
 
@@ -52,16 +57,23 @@ export function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 }
 
-/** A minimal result page. `lines` are plain text and escaped here. */
-export function page(status: number, title: string, lines: string[], cookie?: string): Response {
+/** A paragraph of plain text, or a link rendered as its own paragraph. */
+export type PageLine = string | { label: string; href: string };
+
+/** A minimal result page. Text, labels and hrefs are escaped here. */
+export function page(status: number, title: string, lines: PageLine[], cookie?: string): Response {
   const body = [
     "<!doctype html>",
     '<html lang="en"><head><meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
     `<title>${escapeHtml(title)}</title>`,
-    "<style>body{font-family:system-ui,sans-serif;background:#111;color:#eee;max-width:36rem;margin:4rem auto;padding:0 1rem;line-height:1.5}</style>",
+    "<style>body{font-family:system-ui,sans-serif;background:#111;color:#eee;max-width:36rem;margin:4rem auto;padding:0 1rem;line-height:1.5}a{color:#8ab4ff}</style>",
     `</head><body><h1>${escapeHtml(title)}</h1>`,
-    ...lines.map((line) => `<p>${escapeHtml(line)}</p>`),
+    ...lines.map((line) =>
+      typeof line === "string"
+        ? `<p>${escapeHtml(line)}</p>`
+        : `<p><a href="${escapeHtml(line.href)}">${escapeHtml(line.label)}</a></p>`,
+    ),
     "</body></html>",
   ].join("\n");
   const headers = new Headers({ "Content-Type": "text/html; charset=utf-8", ...SECURITY_HEADERS });
@@ -124,18 +136,31 @@ export async function discordCallback(ctx: LinkedRolesContext, request: Request)
     console.error("linked-roles: Discord returned no refresh token");
     return failed("Discord");
   }
-  const discordId = await ctx.discord.currentUserId(tokens.accessToken);
-  await (await ctx.store()).saveDiscord(discordId, tokens.refreshToken, ctx.nowSeconds());
+  const user = await ctx.discord.currentUser(tokens.accessToken);
+  await (await ctx.store()).saveDiscord(user.id, tokens.refreshToken, ctx.nowSeconds());
 
+  const name = discordLabel(user);
   const state = randomToken();
   const cookie = await sessionCookie(key, {
     step: "github",
     state,
     exp: ctx.nowSeconds() + SESSION_TTL_SECONDS,
-    discordId,
+    discordId: user.id,
     discordAccessToken: tokens.accessToken,
+    discordName: name,
   });
-  return redirect(ctx.github.authorizeUrl(url.origin + GITHUB_CALLBACK_PATH, state), cookie);
+  return page(
+    200,
+    "Check your Discord account",
+    [
+      `This browser is signed in to Discord as ${name}.`,
+      "The roles go to this account. It must be the account you use in the Discord app.",
+      { label: "Right account: continue with GitHub", href: ctx.github.authorizeUrl(url.origin + GITHUB_CALLBACK_PATH, state) },
+      "Wrong account: start again below and choose \"Not you?\" on the Discord page, or log out of discord.com in this browser first. No roles change until the GitHub step finishes.",
+      { label: "Start again with another Discord account", href: url.origin + "/linked-roles" },
+    ],
+    cookie,
+  );
 }
 
 /** GET /linked-roles/github/callback: link the GitHub login and push the first metadata. */
@@ -176,7 +201,7 @@ export async function githubCallback(ctx: LinkedRolesContext, request: Request):
       502,
       "Linked, roles pending",
       [
-        `Your Discord account is linked to GitHub account ${login}.`,
+        `Discord account ${session.discordName ?? discordId} is linked to GitHub account ${login}.`,
         "GitHub data could not be read just now. The bot retries on its next scheduled run, within 6 hours.",
       ],
       clearedCookie(),
@@ -188,7 +213,7 @@ export async function githubCallback(ctx: LinkedRolesContext, request: Request):
     200,
     "Linked",
     [
-      `Discord is now linked to GitHub account ${login}.`,
+      `Discord account ${session.discordName ?? discordId} is now linked to GitHub account ${login}.`,
       `Merged pull requests in ${ctx.org}: ${metadata.merged_prs}. Organisation member: ${metadata.org_member ? "yes" : "no"}. Maintainer: ${metadata.maintainer ? "yes" : "no"}.`,
       "You can close this tab. In Discord, claim the linked roles whose requirements these values meet.",
     ],

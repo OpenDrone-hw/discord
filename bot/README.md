@@ -27,8 +27,8 @@ flowchart LR
 |---|---|---|
 | `POST /interactions` | `src/interactions.ts` | 401 on a bad or missing Ed25519 signature or an interaction older than 300 s; PING gets PONG; any guild other than `GUILD_ID` gets an ephemeral refusal |
 | `POST /github` | `src/webhooks.ts` | 401 on a bad `X-Hub-Signature-256`; `ping` gets 200; otherwise 202 and the matching handlers run in `ctx.waitUntil` |
-| `GET /linked-roles` | `src/linked-roles/routes.ts` | 302 to Discord OAuth (`identify role_connections.write`) |
-| `GET /linked-roles/discord/callback` | same | Stores the sealed Discord refresh token, 302 to GitHub OAuth |
+| `GET /linked-roles` | `src/linked-roles/routes.ts` | 302 to Discord OAuth (`identify role_connections.write`, `prompt=consent`) |
+| `GET /linked-roles/discord/callback` | same | Stores the sealed Discord refresh token, 200 account check page: names the Discord account, links to GitHub OAuth and to a restart |
 | `GET /linked-roles/github/callback` | same | Stores the login and sealed GitHub refresh token, PUTs the role connection, 200 result page |
 | `scheduled()` | every module's `scheduled` | Cron `17 */6 * * *` (`wrangler.toml`) |
 
@@ -137,6 +137,23 @@ pushed value is `max(search count, 1)`, so a first merged pull request moves
 is still linked to that login; after a GitHub unlink or rename the search count
 stands. For an author who already had merged PRs the count can stay one short
 until their next refresh.
+
+### Which Discord account gets linked
+
+The Linked Roles buttons in the Discord app (connect, manage account) and
+`/verify` open the verification URL in the browser. Discord OAuth authorises
+whichever account is signed in to discord.com in that browser, which can
+differ from the account in the app. The flow never sees the app's account, so:
+
+| Step | Guard |
+|---|---|
+| Discord authorize | `prompt=consent` always shows Discord's screen, which names the signed-in account and offers "Not you?" |
+| Discord callback | Account check page: "signed in to Discord as Display (@username)", then "continue with GitHub" or "start again" |
+| GitHub callback | Result page names the Discord account again |
+
+A member who linked the wrong account runs the flow again with the right one:
+the GitHub login moves to the Discord account that linked it last, and the
+other account's metadata is emptied by the next cron run.
 
 ## Behaviour every module inherits
 

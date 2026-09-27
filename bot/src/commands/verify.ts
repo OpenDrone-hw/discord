@@ -42,7 +42,7 @@ export function verifyMessage(
     "",
     `Roles such as **${roles.contributor}**, **${roles.maintainer}** and **${roles.owner}** require some of these; the exact requirements are set in Server Settings, Roles.`,
     "",
-    "1. Open the verification page and sign in with Discord, then with GitHub.",
+    "1. Open the verification page and sign in with Discord, then with GitHub. The browser must be signed in to discord.com as this same account; the page names the account before the GitHub step, and \"Not you?\" on the Discord page switches it.",
     "2. In this server, open the server name menu, then Linked Roles, and claim the roles you qualify for.",
   ];
   if (!url) {

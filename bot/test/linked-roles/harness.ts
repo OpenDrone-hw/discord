@@ -133,6 +133,8 @@ export class FakeProviders {
   readonly discordCodes = new Map<string, { id: string; scope?: string; noRefresh?: boolean }>();
   readonly discordRefresh = new Map<string, string>();
   readonly discordAccess = new Map<string, string>();
+  /** Discord id to global_name (display name); absent means none set. */
+  readonly discordDisplayNames = new Map<string, string>();
   readonly roleConnections = new Map<string, Record<string, unknown>>();
 
   readonly githubCodes = new Map<string, string>();
@@ -227,7 +229,9 @@ export class FakeProviders {
       }
       const id = this.discordAccess.get(this.#bearer(headers) ?? "");
       if (method === "GET" && path === "/api/v10/users/@me") {
-        return id ? json({ id, username: `user${id}` }) : json({ message: "401: Unauthorized", code: 0 }, 401);
+        return id
+          ? json({ id, username: `user${id}`, global_name: this.discordDisplayNames.get(id) ?? null })
+          : json({ message: "401: Unauthorized", code: 0 }, 401);
       }
       const connection = /^\/api\/v10\/users\/@me\/applications\/(\d+)\/role-connection$/.exec(path);
       if (method === "PUT" && connection) {
@@ -382,6 +386,14 @@ export function cookieFrom(response: Response): string {
   return header.split(";")[0] ?? "";
 }
 
+/** The "continue with GitHub" link on the account check page, unescaped. */
+export async function continueUrl(response: Response): Promise<URL> {
+  const html = await response.clone().text();
+  const match = /href="(https:\/\/github\.com\/login\/oauth\/authorize[^"]*)"/.exec(html);
+  if (!match) throw new Error("no GitHub continue link on the page");
+  return new URL(match[1]!.replace(/&#(\d+);/g, (_, code: string) => String.fromCharCode(Number(code))));
+}
+
 export function get(path: string, cookie?: string): Request {
   return new Request(`${BASE}${path}`, cookie ? { headers: { Cookie: cookie } } : {});
 }
@@ -398,7 +410,7 @@ export async function link(h: Harness, discordId: string, login: string): Promis
   const afterDiscord = await h.call(
     get(`/linked-roles/discord/callback?code=${dcode}&state=${state1}`, cookieFrom(start)),
   );
-  const state2 = new URL(afterDiscord.headers.get("Location") ?? "").searchParams.get("state") ?? "";
+  const state2 = (await continueUrl(afterDiscord)).searchParams.get("state") ?? "";
   const gcode = `gcode-${discordId}-${login}`;
   h.providers.githubCodes.set(gcode, login);
   return h.call(get(`/linked-roles/github/callback?code=${gcode}&state=${state2}`, cookieFrom(afterDiscord)));

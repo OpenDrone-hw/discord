@@ -88,6 +88,18 @@ function tokenSet(provider: "discord" | "github", status: number, data: unknown,
   };
 }
 
+export interface DiscordUser {
+  id: string;
+  username: string;
+  /** Display name, when the user set one. */
+  globalName: string | null;
+}
+
+/** "Display (@username)", or "@username" without a display name. */
+export function discordLabel(user: Pick<DiscordUser, "username" | "globalName">): string {
+  return user.globalName ? `${user.globalName} (@${user.username})` : `@${user.username}`;
+}
+
 export interface OAuthClientOptions {
   fetch: FetchLike;
   clientId: string;
@@ -108,6 +120,9 @@ export class DiscordOAuth {
     url.searchParams.set("response_type", "code");
     url.searchParams.set("scope", DISCORD_SCOPES.join(" "));
     url.searchParams.set("state", state);
+    // Always show the authorization screen: it names the account signed in to
+    // discord.com in this browser and offers "Not you?" to switch.
+    url.searchParams.set("prompt", "consent");
     return url.toString();
   }
 
@@ -137,12 +152,15 @@ export class DiscordOAuth {
     return new DiscordClient({ fetch: this.#options.fetch });
   }
 
-  async currentUserId(accessToken: string): Promise<string> {
-    const user = await this.#client().request<{ id?: unknown }>("GET", "/users/@me", { bearer: accessToken });
+  /** The user the access token belongs to: the account signed in to discord.com in the browser. */
+  async currentUser(accessToken: string): Promise<DiscordUser> {
+    const user = await this.#client().request<Record<string, unknown>>("GET", "/users/@me", { bearer: accessToken });
     if (!isRecord(user) || typeof user.id !== "string" || !/^\d{15,25}$/.test(user.id)) {
       throw new Error("Discord /users/@me returned no user id");
     }
-    return user.id;
+    const username = typeof user.username === "string" && user.username ? user.username : user.id;
+    const globalName = typeof user.global_name === "string" && user.global_name ? user.global_name : null;
+    return { id: user.id, username, globalName };
   }
 
   putRoleConnection(accessToken: string, applicationId: string, body: RoleConnectionBody): Promise<unknown> {
