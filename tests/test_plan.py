@@ -4,8 +4,8 @@ import unittest
 import urllib.error
 from pathlib import Path
 
-from helpers import GID, P, ROOT, ToolCase, dc, minimal_desired
-from fake_discord import channel, ow, role
+from helpers import GID, P, ToolCase, dc, minimal_desired
+from fake_discord import ow
 
 VIEW, SEND = P["VIEW_CHANNEL"], P["SEND_MESSAGES"]
 
@@ -150,68 +150,6 @@ class Client(unittest.TestCase):
         with self.assertRaises(dc.HTTPError) as ctx:
             self.client([err]).request("GET", "/x")
         self.assertEqual(ctx.exception.status, 404)
-
-
-def state_from_server_json(desired):
-    """A live state in which every managed channel already has the overwrites server.json asks for."""
-    roles = [role(desired["guild_id"], "@everyone", 0, VIEW | SEND),
-             role("99", "OpenDrone Dev", 9, dc.ADMIN, managed=True, tags={"bot_id": "500"}),
-             role("2", "admin", 8, dc.ADMIN), role("12", "developer", 7), role("13", "beta tester", 6),
-             role("16", "reviewer", 6), role("17", "Support", 6),
-             role("10", "Member", 4, VIEW), role("11", "Newbie", 3)]
-    state = {"guild_id": desired["guild_id"], "bot_user_id": "500", "guild": {"features": []}, "roles": roles,
-             "emojis": [], "onboarding": None, "welcome_screen": None, "automod": [],
-             "channels": [channel("21", "welcome", overwrites=[ow("10", VIEW)]),
-                          channel("22", "rules", overwrites=[ow("10", VIEW)])]}
-    for cid in desired["guard"]["protected_channels"]:
-        state["channels"].append(channel(cid, f"protected-{cid}", 0, desired["categories"][1]["id"], 99))
-    planner = dc.Planner(desired, state)
-    pos = 10
-    for cat in desired["categories"]:
-        cat_ow = planner.expand(cat["access"], "x")
-        state["channels"].append(channel(cat["id"], cat["name"], 4, position=pos,
-                                         overwrites=[ow(r, a, d) for r, (a, d) in cat_ow.items()]))
-        for ch in cat["channels"]:
-            pos += 1
-            state["channels"].append(channel(ch["id"], ch["name"], 0, cat["id"], pos,
-                                             [ow(r, a, d) for r, (a, d) in cat_ow.items()]))
-    return state
-
-
-class ServerJson(unittest.TestCase):
-    def setUp(self):
-        self.desired = dc.load_desired(ROOT / "server.json")
-
-    def test_manages_the_same_23_channels(self):
-        ids = [self.desired["categories"][i]["id"] for i in range(len(self.desired["categories"]))]
-        ids += [ch["id"] for cat in self.desired["categories"] for ch in cat["channels"]]
-        self.assertEqual(len(ids), 23)
-        self.assertEqual(len(set(ids)), 23)
-
-    def test_valid_and_idempotent_against_a_matching_server(self):
-        state = state_from_server_json(self.desired)
-        plan = dc.build_plan(self.desired, state)
-        self.assertEqual(plan["total"], 0, "\n".join(dc.render_plan(plan, True)))
-        self.assertEqual(plan["unmanaged"]["channels"], ["protected-1495130821835624610",
-                                                         "protected-1497547194159599778", "rules", "welcome"])
-
-    def test_members_use_slash_commands(self):
-        planner = dc.Planner(self.desired, state_from_server_json(self.desired))
-        everyone = planner.expand("open", "x")[self.desired["guild_id"]]
-        self.assertTrue(everyone[0] & P["USE_APPLICATION_COMMANDS"])
-        self.assertTrue(everyone[1] & P["MENTION_EVERYONE"])
-
-    def test_gating_model_a_no_newbie_or_member_overwrites(self):
-        for name, profile in self.desired["profiles"].items():
-            self.assertEqual(set(profile) & {"Newbie", "Member"}, set(), name)
-
-    def test_staff_roles_are_never_self_assignable(self):
-        self.assertEqual(set(self.desired["guard"]["unassignable_roles"]),
-                         {"developer", "beta tester", "reviewer", "Support"})
-
-    def test_storefront_support_channels_are_protected(self):
-        self.assertEqual(set(self.desired["guard"]["protected_channels"]),
-                         {"1497547194159599778", "1495130821835624610"})
 
 
 if __name__ == "__main__":

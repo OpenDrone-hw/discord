@@ -5,120 +5,802 @@
     "gating_roles": ["Newbie", "Member"],
     "must_see": ["welcome", "rules"],
     "protected_channels": ["1497547194159599778", "1495130821835624610"],
-    "unassignable_roles": ["developer", "beta tester", "reviewer", "Support"]
+    "unassignable_roles": [
+      "developer",
+      "beta tester",
+      "reviewer",
+      "Support",
+      "Maintainer",
+      "Contributor",
+      "Verified Owner",
+      "Verified Builder"
+    ]
   },
   "profiles": {
     "open": {
       "@everyone": {
-        "allow": ["VIEW_CHANNEL", "SEND_MESSAGES", "READ_MESSAGE_HISTORY", "ADD_REACTIONS", "ATTACH_FILES", "EMBED_LINKS", "CREATE_PUBLIC_THREADS", "SEND_MESSAGES_IN_THREADS", "USE_APPLICATION_COMMANDS"],
+        "allow": [
+          "VIEW_CHANNEL",
+          "SEND_MESSAGES",
+          "READ_MESSAGE_HISTORY",
+          "ADD_REACTIONS",
+          "ATTACH_FILES",
+          "EMBED_LINKS",
+          "CREATE_PUBLIC_THREADS",
+          "SEND_MESSAGES_IN_THREADS",
+          "USE_APPLICATION_COMMANDS"
+        ],
         "deny": ["MENTION_EVERYONE"]
+      }
+    },
+    "readonly": {
+      "@everyone": {
+        "allow": ["VIEW_CHANNEL", "READ_MESSAGE_HISTORY", "ADD_REACTIONS"],
+        "deny": ["SEND_MESSAGES", "CREATE_PUBLIC_THREADS", "CREATE_PRIVATE_THREADS", "SEND_MESSAGES_IN_THREADS"]
+      },
+      "admin": {
+        "allow": [
+          "VIEW_CHANNEL",
+          "SEND_MESSAGES",
+          "READ_MESSAGE_HISTORY",
+          "EMBED_LINKS",
+          "ATTACH_FILES",
+          "SEND_MESSAGES_IN_THREADS"
+        ]
+      },
+      "OpenDrone Dev": {
+        "allow": [
+          "VIEW_CHANNEL",
+          "SEND_MESSAGES",
+          "READ_MESSAGE_HISTORY",
+          "EMBED_LINKS",
+          "ATTACH_FILES",
+          "SEND_MESSAGES_IN_THREADS",
+          "PIN_MESSAGES"
+        ]
+      }
+    },
+    "staff": {
+      "@everyone": {"deny": ["VIEW_CHANNEL"]},
+      "admin": {
+        "allow": [
+          "VIEW_CHANNEL",
+          "SEND_MESSAGES",
+          "READ_MESSAGE_HISTORY",
+          "EMBED_LINKS",
+          "ATTACH_FILES",
+          "SEND_MESSAGES_IN_THREADS"
+        ]
+      },
+      "Support": {
+        "allow": [
+          "VIEW_CHANNEL",
+          "SEND_MESSAGES",
+          "READ_MESSAGE_HISTORY",
+          "EMBED_LINKS",
+          "ATTACH_FILES",
+          "SEND_MESSAGES_IN_THREADS",
+          "ADD_REACTIONS"
+        ]
+      },
+      "OpenDrone Dev": {
+        "allow": [
+          "VIEW_CHANNEL",
+          "SEND_MESSAGES",
+          "READ_MESSAGE_HISTORY",
+          "EMBED_LINKS",
+          "ATTACH_FILES",
+          "SEND_MESSAGES_IN_THREADS"
+        ]
+      }
+    },
+    "testers": {
+      "@everyone": {
+        "allow": [
+          "VIEW_CHANNEL",
+          "READ_MESSAGE_HISTORY",
+          "ADD_REACTIONS",
+          "ATTACH_FILES",
+          "EMBED_LINKS",
+          "SEND_MESSAGES_IN_THREADS",
+          "USE_APPLICATION_COMMANDS"
+        ],
+        "deny": ["SEND_MESSAGES", "MENTION_EVERYONE"]
+      },
+      "beta tester": {
+        "allow": [
+          "VIEW_CHANNEL",
+          "SEND_MESSAGES",
+          "READ_MESSAGE_HISTORY",
+          "EMBED_LINKS",
+          "ATTACH_FILES",
+          "SEND_MESSAGES_IN_THREADS"
+        ]
+      },
+      "developer": {
+        "allow": [
+          "VIEW_CHANNEL",
+          "SEND_MESSAGES",
+          "READ_MESSAGE_HISTORY",
+          "EMBED_LINKS",
+          "ATTACH_FILES",
+          "SEND_MESSAGES_IN_THREADS"
+        ]
+      },
+      "admin": {
+        "allow": [
+          "VIEW_CHANNEL",
+          "SEND_MESSAGES",
+          "READ_MESSAGE_HISTORY",
+          "EMBED_LINKS",
+          "ATTACH_FILES",
+          "SEND_MESSAGES_IN_THREADS"
+        ]
       }
     }
   },
+  "roles": [
+    {"name": "Maintainer", "color": "#e67e22", "hoist": true, "mentionable": false, "permissions": []},
+    {"name": "Contributor", "color": "#3498db", "hoist": true, "mentionable": false, "permissions": []},
+    {"name": "Verified Owner", "color": "#f1c40f", "hoist": false, "mentionable": false, "permissions": []},
+    {"name": "Verified Builder", "color": "#2ecc71", "hoist": false, "mentionable": false, "permissions": []},
+    {"name": "FC dev", "hoist": false, "mentionable": false, "permissions": []},
+    {"name": "ESC dev", "hoist": false, "mentionable": false, "permissions": []},
+    {"name": "RX dev", "hoist": false, "mentionable": false, "permissions": []},
+    {"name": "Video dev", "hoist": false, "mentionable": false, "permissions": []},
+    {"name": "RemoteID-GPS dev", "hoist": false, "mentionable": false, "permissions": []},
+    {"name": "Frame dev", "hoist": false, "mentionable": false, "permissions": []},
+    {"name": "Power dev", "hoist": false, "mentionable": false, "permissions": []},
+    {"name": "Library dev", "hoist": false, "mentionable": false, "permissions": []},
+    {"name": "Web-Tools dev", "hoist": false, "mentionable": false, "permissions": []}
+  ],
   "categories": [
     {
+      "id": "1494019460850389073",
+      "name": "Start",
+      "access": "readonly",
+      "channels": [
+        {"id": "1494019460850389075", "name": "welcome", "access": "open"},
+        {"id": "1494792999844974800", "name": "rules"},
+        {"id": "1494032474626326548", "name": "announcements", "type": "announcement"}
+      ]
+    },
+    {
       "id": "1494779018111746188",
-      "name": "Chats",
+      "name": "Community",
       "access": "open",
       "channels": [
+        {"id": "1494779609131258048", "name": "gen-chat"},
+        {"id": "1494781139980779682", "name": "introduce-yourself"},
+        {"name": "flying", "type": "text", "topic": "FPV talk: gear, spots, tunes, videos. Anything that flies."},
+        {"name": "off-topic", "type": "text", "topic": "Everything that is not about flying or OpenDrone."},
         {
-          "id": "1494779609131258048",
-          "name": "gen-chat"
+          "name": "builds",
+          "type": "forum",
+          "topic": "Show your build: one post per quad or plane, with photos, the parts list and what you fly it for. Tag the flying style and the OpenDrone parts in it.",
+          "forum": {
+            "layout": "gallery",
+            "sort": "creation",
+            "require_tag": false,
+            "tags": [
+              {"name": "Plane", "emoji": ":planes:"},
+              {"name": "Camera", "emoji": ":camera:"},
+              {"name": "FPV", "emoji": ":fpv:"},
+              {"name": "Tinywhoop", "emoji": ":tinywhoop:"},
+              {"name": "Racing", "emoji": ":racing:"},
+              {"name": "Freestyle", "emoji": ":freestyle:"},
+              {"name": "Commercial", "emoji": ":commercial:"},
+              {"name": "Long Range", "emoji": ":longrange:"},
+              {"name": "Cinewhoop", "emoji": ":cinewhoop:"},
+              {"name": "Toothpick", "emoji": ":toothpick:"},
+              {"name": "Flight controller"},
+              {"name": "ESC"},
+              {"name": "Receiver"},
+              {"name": "Video"},
+              {"name": "Remote ID / GPS"},
+              {"name": "Frame"},
+              {"name": "Power"}
+            ]
+          }
         },
         {
-          "id": "1494782854117326969",
-          "name": "builds"
+          "name": "proposals",
+          "type": "forum",
+          "topic": "Propose a product or a change to one. Anyone can: a paragraph of what and why.\nIf it holds up, an admin creates the repository and you write the README, or you write it in a repository under your own account and it is transferred into the organisation.\nTag the product line and idea; switch to spec once a specification is written. Admins set accepted or declined.",
+          "forum": {
+            "layout": "list",
+            "sort": "activity",
+            "require_tag": true,
+            "tags": [
+              {"name": "Flight controller"},
+              {"name": "ESC"},
+              {"name": "Receiver"},
+              {"name": "Video"},
+              {"name": "Remote ID / GPS"},
+              {"name": "Frame"},
+              {"name": "Power"},
+              {"name": "KiCad library"},
+              {"name": "Firmware"},
+              {"name": "Web and tools"},
+              {"name": "idea", "emoji": "💡"},
+              {"name": "spec", "emoji": "📝"},
+              {"name": "accepted", "emoji": "✅", "moderated": true},
+              {"name": "declined", "emoji": "❌", "moderated": true}
+            ]
+          }
         }
       ]
     },
     {
       "id": "1497547320131190864",
-      "name": "Help",
+      "name": "Support",
       "access": "open",
       "channels": [
         {
-          "id": "1497547403140530237",
-          "name": "support"
+          "name": "help",
+          "type": "forum",
+          "topic": "One post per problem. Say which product and revision, the firmware and its version (for example Betaflight 4.5.1), what you expected, what happened and what you already tried. Add photos, a diff or a log when you can.\nTag the product and question or bug; add solved when it is fixed.",
+          "forum": {
+            "layout": "list",
+            "sort": "activity",
+            "require_tag": true,
+            "tags": [
+              {"name": "Flight controller"},
+              {"name": "ESC"},
+              {"name": "Receiver"},
+              {"name": "Video"},
+              {"name": "Remote ID / GPS"},
+              {"name": "Frame"},
+              {"name": "Power"},
+              {"name": "KiCad library"},
+              {"name": "Firmware"},
+              {"name": "Web and tools"},
+              {"name": "question", "emoji": "❓"},
+              {"name": "bug", "emoji": "🐛"},
+              {"name": "solved", "emoji": "✅"}
+            ]
+          }
         }
       ]
     },
     {
-      "id": "1550880981592973433",
-      "name": "Hardware",
+      "name": "Development",
       "access": "open",
       "channels": [
         {
-          "id": "1494783056026796262",
-          "name": "fc"
+          "name": "flight-controllers",
+          "type": "forum",
+          "topic": "One post per change: a new board, a revision or one feature.\nTitle: <product>: <change>, for example \"OpenFC-Lite: move the USB connector\".\nTag the product and the kind of work. The bot sets the lifecycle tag (planned, in progress, alpha, beta, launched) from the repository.\nSay it here before you start: KiCad files cannot be merged, so if two people edit the same board one of them loses their work. /editing lists the open pull requests that change KiCad files.\nWhen the pull request is open, run /link with its URL in the post so reviews, merges and releases show up here.",
+          "forum": {
+            "layout": "list",
+            "sort": "activity",
+            "require_tag": true,
+            "tags": [
+              {"name": "OpenFC-Lite"},
+              {"name": "OpenFC-Lite-Mini"},
+              {"name": "OpenFC"},
+              {"name": "OpenAIO"},
+              {"name": "OpenAIO-Whoop"},
+              {"name": "planned", "moderated": true},
+              {"name": "in progress", "moderated": true},
+              {"name": "alpha", "moderated": true},
+              {"name": "beta", "moderated": true},
+              {"name": "launched", "moderated": true},
+              {"name": "schematic"},
+              {"name": "layout"},
+              {"name": "bom"},
+              {"name": "firmware"},
+              {"name": "question", "emoji": "❓"},
+              {"name": "bug", "emoji": "🐛"}
+            ]
+          }
         },
         {
-          "id": "1494758396577058900",
-          "name": "vtx"
+          "name": "escs",
+          "type": "forum",
+          "topic": "One post per change: a new board, a revision or one feature.\nTitle: <product>: <change>, for example \"OpenFC-Lite: move the USB connector\".\nTag the product and the kind of work. The bot sets the lifecycle tag (planned, in progress, alpha, beta, launched) from the repository.\nSay it here before you start: KiCad files cannot be merged, so if two people edit the same board one of them loses their work. /editing lists the open pull requests that change KiCad files.\nWhen the pull request is open, run /link with its URL in the post so reviews, merges and releases show up here.",
+          "forum": {
+            "layout": "list",
+            "sort": "activity",
+            "require_tag": true,
+            "tags": [
+              {"name": "OpenESC-20x20"},
+              {"name": "OpenESC-30x30"},
+              {"name": "planned", "moderated": true},
+              {"name": "in progress", "moderated": true},
+              {"name": "alpha", "moderated": true},
+              {"name": "beta", "moderated": true},
+              {"name": "launched", "moderated": true},
+              {"name": "schematic"},
+              {"name": "layout"},
+              {"name": "bom"},
+              {"name": "firmware"},
+              {"name": "question", "emoji": "❓"},
+              {"name": "bug", "emoji": "🐛"}
+            ]
+          }
         },
         {
-          "id": "1494758355825328158",
-          "name": "frame"
+          "name": "receivers",
+          "type": "forum",
+          "topic": "One post per change: a new board, a revision or one feature.\nTitle: <product>: <change>, for example \"OpenFC-Lite: move the USB connector\".\nTag the product and the kind of work. The bot sets the lifecycle tag (planned, in progress, alpha, beta, launched) from the repository.\nSay it here before you start: KiCad files cannot be merged, so if two people edit the same board one of them loses their work. /editing lists the open pull requests that change KiCad files.\nWhen the pull request is open, run /link with its URL in the post so reviews, merges and releases show up here.",
+          "forum": {
+            "layout": "list",
+            "sort": "activity",
+            "require_tag": true,
+            "tags": [
+              {"name": "OpenRX"},
+              {"name": "OpenRX-Lite"},
+              {"name": "OpenRX-Lite-UFL"},
+              {"name": "OpenRX-Mono"},
+              {"name": "OpenRX-Gemini"},
+              {"name": "planned", "moderated": true},
+              {"name": "in progress", "moderated": true},
+              {"name": "alpha", "moderated": true},
+              {"name": "beta", "moderated": true},
+              {"name": "launched", "moderated": true},
+              {"name": "schematic"},
+              {"name": "layout"},
+              {"name": "bom"},
+              {"name": "firmware"},
+              {"name": "question", "emoji": "❓"},
+              {"name": "bug", "emoji": "🐛"}
+            ]
+          }
         },
         {
-          "id": "1538618173354414190",
-          "name": "aio"
+          "name": "video",
+          "type": "forum",
+          "topic": "One post per change: a new board, a revision or one feature.\nTitle: <product>: <change>, for example \"OpenFC-Lite: move the USB connector\".\nTag the product and the kind of work. The bot sets the lifecycle tag (planned, in progress, alpha, beta, launched) from the repository.\nSay it here before you start: KiCad files cannot be merged, so if two people edit the same board one of them loses their work. /editing lists the open pull requests that change KiCad files.\nWhen the pull request is open, run /link with its URL in the post so reviews, merges and releases show up here.",
+          "forum": {
+            "layout": "list",
+            "sort": "activity",
+            "require_tag": true,
+            "tags": [
+              {"name": "OpenVTX"},
+              {"name": "planned", "moderated": true},
+              {"name": "in progress", "moderated": true},
+              {"name": "alpha", "moderated": true},
+              {"name": "beta", "moderated": true},
+              {"name": "launched", "moderated": true},
+              {"name": "schematic"},
+              {"name": "layout"},
+              {"name": "bom"},
+              {"name": "firmware"},
+              {"name": "question", "emoji": "❓"},
+              {"name": "bug", "emoji": "🐛"}
+            ]
+          }
         },
         {
-          "id": "1494803018770809065",
-          "name": "digital-vtx"
+          "name": "remote-id-gps",
+          "type": "forum",
+          "topic": "One post per change: a new board, a revision or one feature.\nTitle: <product>: <change>, for example \"OpenFC-Lite: move the USB connector\".\nTag the product and the kind of work. The bot sets the lifecycle tag (planned, in progress, alpha, beta, launched) from the repository.\nSay it here before you start: KiCad files cannot be merged, so if two people edit the same board one of them loses their work. /editing lists the open pull requests that change KiCad files.\nWhen the pull request is open, run /link with its URL in the post so reviews, merges and releases show up here.",
+          "forum": {
+            "layout": "list",
+            "sort": "activity",
+            "require_tag": true,
+            "tags": [
+              {"name": "OpenRemoteID"},
+              {"name": "OpenGPS"},
+              {"name": "planned", "moderated": true},
+              {"name": "in progress", "moderated": true},
+              {"name": "alpha", "moderated": true},
+              {"name": "beta", "moderated": true},
+              {"name": "launched", "moderated": true},
+              {"name": "schematic"},
+              {"name": "layout"},
+              {"name": "bom"},
+              {"name": "firmware"},
+              {"name": "question", "emoji": "❓"},
+              {"name": "bug", "emoji": "🐛"}
+            ]
+          }
         },
         {
-          "id": "1494758377010757682",
-          "name": "remote-id"
+          "name": "frames",
+          "type": "forum",
+          "topic": "One post per change: a new board, a revision or one feature.\nTitle: <product>: <change>, for example \"OpenFC-Lite: move the USB connector\".\nTag the product and the kind of work. The bot sets the lifecycle tag (planned, in progress, alpha, beta, launched) from the repository.\nSay it here before you start: KiCad files cannot be merged, so if two people edit the same board one of them loses their work. /editing lists the open pull requests that change KiCad files.\nWhen the pull request is open, run /link with its URL in the post so reviews, merges and releases show up here.",
+          "forum": {
+            "layout": "list",
+            "sort": "activity",
+            "require_tag": true,
+            "tags": [
+              {"name": "OpenFrame-3F"},
+              {"name": "OpenFrame-5F"},
+              {"name": "planned", "moderated": true},
+              {"name": "in progress", "moderated": true},
+              {"name": "alpha", "moderated": true},
+              {"name": "beta", "moderated": true},
+              {"name": "launched", "moderated": true},
+              {"name": "schematic"},
+              {"name": "layout"},
+              {"name": "bom"},
+              {"name": "firmware"},
+              {"name": "question", "emoji": "❓"},
+              {"name": "bug", "emoji": "🐛"}
+            ]
+          }
         },
         {
-          "id": "1494758332903456969",
-          "name": "rx"
+          "name": "power",
+          "type": "forum",
+          "topic": "One post per change: a new board, a revision or one feature.\nTitle: <product>: <change>, for example \"OpenFC-Lite: move the USB connector\".\nTag the product and the kind of work. The bot sets the lifecycle tag (planned, in progress, alpha, beta, launched) from the repository.\nSay it here before you start: KiCad files cannot be merged, so if two people edit the same board one of them loses their work. /editing lists the open pull requests that change KiCad files.\nWhen the pull request is open, run /link with its URL in the post so reviews, merges and releases show up here.",
+          "forum": {
+            "layout": "list",
+            "sort": "activity",
+            "require_tag": true,
+            "tags": [
+              {"name": "Charger"},
+              {"name": "planned", "moderated": true},
+              {"name": "in progress", "moderated": true},
+              {"name": "alpha", "moderated": true},
+              {"name": "beta", "moderated": true},
+              {"name": "launched", "moderated": true},
+              {"name": "schematic"},
+              {"name": "layout"},
+              {"name": "bom"},
+              {"name": "firmware"},
+              {"name": "question", "emoji": "❓"},
+              {"name": "bug", "emoji": "🐛"}
+            ]
+          }
         },
         {
-          "id": "1494782966302507118",
-          "name": "esc"
+          "name": "library",
+          "type": "forum",
+          "topic": "One post per change: a new board, a revision or one feature.\nTitle: <product>: <change>, for example \"OpenFC-Lite: move the USB connector\".\nTag the product and the kind of work. The bot sets the lifecycle tag (planned, in progress, alpha, beta, launched) from the repository.\nSay it here before you start: KiCad files cannot be merged, so if two people edit the same board one of them loses their work. /editing lists the open pull requests that change KiCad files.\nWhen the pull request is open, run /link with its URL in the post so reviews, merges and releases show up here.",
+          "forum": {
+            "layout": "list",
+            "sort": "activity",
+            "require_tag": true,
+            "tags": [
+              {"name": "KiCad-Library"},
+              {"name": "hardware-template"},
+              {"name": "planned", "moderated": true},
+              {"name": "in progress", "moderated": true},
+              {"name": "alpha", "moderated": true},
+              {"name": "beta", "moderated": true},
+              {"name": "launched", "moderated": true},
+              {"name": "schematic"},
+              {"name": "layout"},
+              {"name": "bom"},
+              {"name": "firmware"},
+              {"name": "question", "emoji": "❓"},
+              {"name": "bug", "emoji": "🐛"}
+            ]
+          }
         },
         {
-          "id": "1550883307246461033",
-          "name": "gps"
+          "name": "firmware",
+          "type": "forum",
+          "topic": "One post per change: a new board, a revision or one feature.\nTitle: <product>: <change>, for example \"OpenFC-Lite: move the USB connector\".\nTag the product and the kind of work. The bot sets the lifecycle tag (planned, in progress, alpha, beta, launched) from the repository.\nSay it here before you start: KiCad files cannot be merged, so if two people edit the same board one of them loses their work. /editing lists the open pull requests that change KiCad files.\nWhen the pull request is open, run /link with its URL in the post so reviews, merges and releases show up here.",
+          "forum": {
+            "layout": "list",
+            "sort": "activity",
+            "require_tag": true,
+            "tags": [
+              {"name": "betaflight"},
+              {"name": "AM32"},
+              {"name": "ExpressLRS"},
+              {"name": "planned", "moderated": true},
+              {"name": "in progress", "moderated": true},
+              {"name": "alpha", "moderated": true},
+              {"name": "beta", "moderated": true},
+              {"name": "launched", "moderated": true},
+              {"name": "schematic"},
+              {"name": "layout"},
+              {"name": "bom"},
+              {"name": "firmware"},
+              {"name": "question", "emoji": "❓"},
+              {"name": "bug", "emoji": "🐛"}
+            ]
+          }
         },
         {
-          "id": "1550883427220197396",
-          "name": "motors"
+          "name": "web-and-tools",
+          "type": "forum",
+          "topic": "One post per change: a new board, a revision or one feature.\nTitle: <product>: <change>, for example \"OpenFC-Lite: move the USB connector\".\nTag the product and the kind of work. The bot sets the lifecycle tag (planned, in progress, alpha, beta, launched) from the repository.\nSay it here before you start: KiCad files cannot be merged, so if two people edit the same board one of them loses their work. /editing lists the open pull requests that change KiCad files.\nWhen the pull request is open, run /link with its URL in the post so reviews, merges and releases show up here.",
+          "forum": {
+            "layout": "list",
+            "sort": "activity",
+            "require_tag": true,
+            "tags": [
+              {"name": "OpenDrone-Web"},
+              {"name": "OpenDrone-Brand"},
+              {"name": "OpenDrone-Fixtures"},
+              {"name": ".github"},
+              {"name": "discord"},
+              {"name": "planned", "moderated": true},
+              {"name": "in progress", "moderated": true},
+              {"name": "alpha", "moderated": true},
+              {"name": "beta", "moderated": true},
+              {"name": "launched", "moderated": true},
+              {"name": "schematic"},
+              {"name": "layout"},
+              {"name": "bom"},
+              {"name": "firmware"},
+              {"name": "question", "emoji": "❓"},
+              {"name": "bug", "emoji": "🐛"}
+            ]
+          }
         },
         {
-          "id": "1550884618322972693",
-          "name": "charger"
+          "name": "alpha-testing",
+          "type": "forum",
+          "access": "testers",
+          "topic": "Alpha boards in the hands of testers. Testers, developers and admins open one post per board and revision; everyone can read and reply.\nA report says: board and revision, firmware and version, the setup, what was tested, what worked and what failed, with photos, logs or a diff.",
+          "forum": {
+            "layout": "list",
+            "sort": "activity",
+            "require_tag": true,
+            "tags": [
+              {"name": "Flight controller"},
+              {"name": "ESC"},
+              {"name": "Receiver"},
+              {"name": "Video"},
+              {"name": "Remote ID / GPS"},
+              {"name": "Frame"},
+              {"name": "Power"},
+              {"name": "report"},
+              {"name": "bug", "emoji": "🐛"},
+              {"name": "fixed", "emoji": "✅", "moderated": true}
+            ]
+          }
+        },
+        {
+          "name": "git-feed",
+          "type": "announcement",
+          "access": "readonly",
+          "topic": "Pull requests, merges and releases from github.com/OpenDrone-hw, posted by the bot."
         }
       ]
     },
     {
-      "id": "1550881887050928248",
-      "name": "Software",
+      "id": "1494019460850389074",
+      "name": "Voice",
       "access": "open",
       "channels": [
-        {
-          "id": "1510002456849813595",
-          "name": "chatfpv"
-        },
-        {
-          "id": "1494758297885212832",
-          "name": "esc-am32"
-        },
-        {
-          "id": "1494783023114096821",
-          "name": "fc-betaflight"
-        },
-        {
-          "id": "1494796004615131237",
-          "name": "opendrone-web"
-        },
-        {
-          "id": "1550882869839134810",
-          "name": "rx-expresslrs"
-        }
+        {"id": "1494019460850389076", "name": "General"},
+        {"id": "1494786474028044469", "name": "Troubleshooting"},
+        {"name": "dev-call", "type": "voice"},
+        {"name": "community-call", "type": "stage"}
       ]
+    },
+    {
+      "name": "Staff",
+      "access": "staff",
+      "channels": [{"name": "mod-log", "type": "text", "topic": "AutoMod alerts and moderation notes. Staff only."}]
+    },
+    {"id": "1550880981592973433", "name": "Hardware", "access": "readonly", "channels": []},
+    {"id": "1550881887050928248", "name": "Software", "access": "readonly", "channels": []}
+  ],
+  "archive": {
+    "category": "Archive",
+    "access": "readonly",
+    "channels": [
+      "1494780931498705057",
+      "1494033189532860707",
+      "1494782854117326969",
+      "1497547403140530237",
+      "1494783056026796262",
+      "1494758396577058900",
+      "1494758355825328158",
+      "1538618173354414190",
+      "1494803018770809065",
+      "1494758377010757682",
+      "1494758332903456969",
+      "1494782966302507118",
+      "1550883307246461033",
+      "1550883427220197396",
+      "1550884618322972693",
+      "1510002456849813595",
+      "1494758297885212832",
+      "1494783023114096821",
+      "1494796004615131237",
+      "1550882869839134810"
+    ]
+  },
+  "onboarding": {
+    "enabled": true,
+    "mode": "advanced",
+    "default_channels": ["welcome", "rules", "announcements", "gen-chat", "introduce-yourself", "off-topic", "flying", "help", "builds"],
+    "prompts": [
+      {
+        "title": "Where are you from?",
+        "type": "multiple_choice",
+        "single_select": true,
+        "required": true,
+        "in_onboarding": true,
+        "options": [
+          {"title": "North America", "emoji": "🗽", "roles": ["North America", "Member"]},
+          {"title": "Europe", "emoji": "🇪🇺", "roles": ["Europe", "Member"]},
+          {"title": "Asia", "emoji": "🐼", "roles": ["Asia", "Member"]},
+          {"title": "South America", "emoji": "🇧🇷", "roles": ["South America", "Member"]},
+          {"title": "Oceania", "emoji": "🦘", "roles": ["Oceania", "Member"]},
+          {"title": "Africa", "emoji": "🌴", "roles": ["Africa", "Member"]}
+        ]
+      },
+      {
+        "title": "What do you fly?",
+        "type": "multiple_choice",
+        "single_select": false,
+        "required": false,
+        "in_onboarding": true,
+        "options": [
+          {"title": "Plane", "emoji": ":planes:", "roles": ["Plane"]},
+          {"title": "Camera", "emoji": ":camera:", "roles": ["Camera"]},
+          {"title": "FPV", "emoji": ":fpv:", "roles": ["FPV"]},
+          {"title": "Tinywhoop", "emoji": ":tinywhoop:", "roles": ["Tinywhoop"]},
+          {"title": "Racing", "emoji": ":racing:", "roles": ["Racing"]},
+          {"title": "Freestyle", "emoji": ":freestyle:", "roles": ["Freestyle"]},
+          {"title": "Commercial", "emoji": ":commercial:", "roles": ["Commercial"]},
+          {"title": "Long Range", "emoji": ":longrange:", "roles": ["Long Range"]},
+          {"title": "Cinewhoop", "emoji": ":cinewhoop:", "roles": ["Cinewhoop"]},
+          {"title": "Toothpick", "emoji": ":toothpick:", "roles": ["Toothpick"]}
+        ]
+      },
+      {
+        "title": "Follow OpenDrone development",
+        "type": "multiple_choice",
+        "single_select": false,
+        "required": false,
+        "in_onboarding": true,
+        "options": [
+          {
+            "title": "Flight controllers",
+            "description": "OpenFC, OpenFC-Lite, OpenAIO: #flight-controllers and the FC dev ping",
+            "emoji": "🧠",
+            "roles": ["FC dev"],
+            "channels": ["flight-controllers"]
+          },
+          {
+            "title": "ESCs",
+            "description": "OpenESC: #escs and the ESC dev ping",
+            "emoji": "⚡",
+            "roles": ["ESC dev"],
+            "channels": ["escs"]
+          },
+          {
+            "title": "Receivers",
+            "description": "OpenRX: #receivers and the RX dev ping",
+            "emoji": "📡",
+            "roles": ["RX dev"],
+            "channels": ["receivers"]
+          },
+          {
+            "title": "Video",
+            "description": "OpenVTX: #video and the Video dev ping",
+            "emoji": "🎥",
+            "roles": ["Video dev"],
+            "channels": ["video"]
+          },
+          {
+            "title": "Remote ID and GPS",
+            "description": "OpenRemoteID, OpenGPS: #remote-id-gps and the RemoteID-GPS dev ping",
+            "emoji": "📍",
+            "roles": ["RemoteID-GPS dev"],
+            "channels": ["remote-id-gps"]
+          },
+          {
+            "title": "Frames",
+            "description": "OpenFrame: #frames and the Frame dev ping",
+            "emoji": "🔧",
+            "roles": ["Frame dev"],
+            "channels": ["frames"]
+          },
+          {
+            "title": "Power",
+            "description": "Charger: #power and the Power dev ping",
+            "emoji": "🔋",
+            "roles": ["Power dev"],
+            "channels": ["power"]
+          },
+          {
+            "title": "KiCad library",
+            "description": "KiCad-Library, hardware-template: #library and the Library dev ping",
+            "emoji": "📚",
+            "roles": ["Library dev"],
+            "channels": ["library"]
+          },
+          {
+            "title": "Web and tools",
+            "description": "opendrone.be, brand, fixtures, this Discord: #web-and-tools and the Web-Tools dev ping",
+            "emoji": "💻",
+            "roles": ["Web-Tools dev"],
+            "channels": ["web-and-tools"]
+          },
+          {
+            "title": "Proposals",
+            "description": "New products and changes: #proposals",
+            "emoji": "💡",
+            "channels": ["proposals"]
+          },
+          {
+            "title": "Alpha testing",
+            "description": "Alpha board reports: #alpha-testing",
+            "emoji": "🧪",
+            "channels": ["alpha-testing"]
+          }
+        ]
+      },
+      {
+        "title": "Firmware",
+        "type": "multiple_choice",
+        "single_select": false,
+        "required": false,
+        "in_onboarding": true,
+        "options": [
+          {
+            "title": "Betaflight",
+            "description": "Flight controller firmware: #firmware",
+            "emoji": "🟥",
+            "roles": ["Betaflight"],
+            "channels": ["firmware"]
+          },
+          {
+            "title": "AM32",
+            "description": "ESC firmware: #firmware",
+            "emoji": "🟩",
+            "roles": ["AM32"],
+            "channels": ["firmware"]
+          },
+          {
+            "title": "ExpressLRS",
+            "description": "Radio link firmware: #firmware",
+            "emoji": "🟪",
+            "roles": ["ExpressLRS"],
+            "channels": ["firmware"]
+          }
+        ]
+      }
+    ]
+  },
+  "welcome_screen": {
+    "enabled": true,
+    "description": "Open source FPV hardware, designed in the open. Read the rules, then say hi.",
+    "channels": [
+      {"channel": "rules", "description": "Read these first", "emoji": "📜"},
+      {"channel": "announcements", "description": "News and releases", "emoji": "📢"},
+      {"channel": "help", "description": "Ask for help with a product", "emoji": "❓"},
+      {"channel": "builds", "description": "Show your build", "emoji": "📸"},
+      {"channel": "gen-chat", "description": "Talk to the community", "emoji": "💬"}
+    ]
+  },
+  "automod": [
+    {
+      "name": "Block Mention Spam",
+      "trigger": "mention_spam",
+      "metadata": {"mention_total_limit": 5, "mention_raid_protection_enabled": true},
+      "actions": [{"type": "block"}, {"type": "alert", "channel": "mod-log"}],
+      "exempt_roles": ["admin", "Support", "developer"]
+    },
+    {
+      "name": "Block Harmful Words",
+      "trigger": "keyword_preset",
+      "metadata": {"presets": ["profanity", "sexual_content", "slurs"]},
+      "actions": [{"type": "block"}],
+      "exempt_roles": ["admin", "Support", "developer"]
+    },
+    {
+      "name": "Block Spam",
+      "trigger": "spam",
+      "actions": [{"type": "block"}],
+      "exempt_roles": ["admin", "Support", "developer"]
+    },
+    {
+      "name": "Block Invite Links",
+      "trigger": "keyword",
+      "metadata": {
+        "regex_patterns": ["(?i)(discord\\.gg|discord(app)?\\.com/invite|dsc\\.gg)/[a-z0-9-]+"],
+        "allow_list": ["discord.gg/v3sWmTcx3R"]
+      },
+      "actions": [
+        {"type": "block", "message": "Invite links to other servers are not allowed here."},
+        {"type": "alert", "channel": "mod-log"}
+      ],
+      "exempt_roles": ["admin", "Support", "developer"]
     }
-  ]
+  ],
+  "guild": {"rules_channel": "rules", "public_updates_channel": "announcements", "safety_alerts_channel": "mod-log"}
 }
