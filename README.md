@@ -38,7 +38,9 @@ and AutoMod rules. In compact output, permission lists longer than 4 show
 `MANAGE_WEBHOOKS`, `MENTION_EVERYONE`, `BAN_MEMBERS`, `KICK_MEMBERS` and
 `MODERATE_MEMBERS` by name and count the rest; identical overwrite changes are
 grouped. A role create line lists the role's permissions and an update line the
-added and removed ones, in the same form.
+added and removed ones, in the same form. A new onboarding prompt or option is
+printed with the roles and channels each option gives, by name, for example
+`prompt 'Where are you from?': new option 'Asia': roles [Asia, Member]`.
 
 `--config <path>` (before the command) uses another file than `server.json`.
 Every write carries the audit log reason `OpenDrone-hw/discord discord_config.py`.
@@ -92,16 +94,40 @@ conservative estimate of Discord's rule:
 | `guard` key | Default | Rule |
 |---|---|---|
 | `protected_roles` | `["admin"]` | Never denied `VIEW_CHANNEL` by any planned overwrite and never lose `ADMINISTRATOR` or `VIEW_CHANNEL`; the bot's own role is always included |
-| `gating_roles` | `["Newbie", "Member"]` | A member holding `@everyone` plus any mix of these roles (none included) must be able to view every `must_see` channel and every onboarding default channel in the planned state |
+| `gating_roles` | `["Newbie", "Member"]` | A member holding `@everyone` plus any mix of these roles (none included) must be able to view the channels in the table below, in the planned state |
 | `must_see` | `["welcome", "rules"]` | Channels every gating mix must see |
 | `protected_channels` | `[]` | Ids of existing channels that are never managed or archived; a name or unknown id is refused |
+| `unassignable_roles` | `[]` | Roles no onboarding option may give; each must exist or be listed in `roles` |
 
-A default category must be visible itself, and every channel in it that
-`@everyone` alone can see must be visible to every mix. A violation is refused
-when the channel is managed or archived by `server.json`, when the plan changes
-a gating role's permissions, or, for default channels, when the plan changes
-onboarding. A violation in an unmanaged channel the plan does not change is
-printed as a note instead.
+Channels every gating mix must view (gating model A):
+
+| Channel | Checked when |
+|---|---|
+| `must_see` channel, onboarding default channel, default category | Always |
+| Channel inside a default category | `@everyone` alone can view it |
+| Any category or channel managed or archived by `server.json` | `@everyone` alone can view it |
+
+So a leftover `Newbie` or `Member` deny on a channel `@everyone` can see is
+refused; staff and private channels, which `@everyone` alone cannot see, are
+skipped. A violation is refused when the channel is managed or archived by
+`server.json`, when the plan changes a gating role's permissions, or, for
+default channels, when the plan changes onboarding. A violation in an unmanaged
+channel the plan does not change is printed as a note instead.
+
+Onboarding options give their roles to any member who picks them. Every option
+in the planned onboarding, listed or kept from the live server, is refused when
+a role it gives is:
+
+| Role | Example |
+|---|---|
+| `@everyone` | |
+| A `protected_roles` role or the bot's role | `admin`, `OpenDrone Dev` |
+| Managed by an integration | `carl-bot`, `Server Booster` |
+| In `unassignable_roles` | `developer`, `reviewer` |
+| Holding a privileged permission after the plan | `ADMINISTRATOR`, `MANAGE_GUILD`, `MANAGE_ROLES`, `MANAGE_CHANNELS`, `MANAGE_WEBHOOKS`, `MENTION_EVERYONE`, `BAN_MEMBERS`, `KICK_MEMBERS`, `MODERATE_MEMBERS` |
+
+The check is strict when the plan changes onboarding or that role's
+permissions; otherwise a live violation is printed as a note.
 
 ## Safety rules
 

@@ -98,10 +98,11 @@ AUTOMOD_KEYS = {"name", "event", "trigger", "metadata", "actions", "enabled", "e
 ACTION_KEYS = {"type", "message", "channel", "seconds"}
 GUILD_KEYS = {"description", *GUILD_CHANNELS}
 DEFAULT_GUARD = {"protected_roles": ["admin"], "gating_roles": ["Newbie", "Member"],
-                 "must_see": ["welcome", "rules"], "protected_channels": []}
+                 "must_see": ["welcome", "rules"], "protected_channels": [], "unassignable_roles": []}
 # Always spelled out in compact plan output, whatever the list length.
 PRIVILEGED = ("ADMINISTRATOR", "MANAGE_GUILD", "MANAGE_ROLES", "MANAGE_CHANNELS", "MANAGE_WEBHOOKS",
               "MENTION_EVERYONE", "BAN_MEMBERS", "KICK_MEMBERS", "MODERATE_MEMBERS")
+PRIVILEGED_BITS = sum(PERMISSIONS[n] for n in PRIVILEGED)
 MAX_GATING_ROLES = 4  # the guard checks every subset of these roles
 
 
@@ -283,6 +284,8 @@ class Planner:
         self.entries: list[dict] = []  # managed categories and channels, list order
         self.archived: list[dict] = []
         self.desired_role_perms: dict[str, int] = {}
+        self.final_prompts: list[dict] | None = None  # onboarding prompts as planned, None when unmanaged
+        self.final_default_ids: list[str] | None = None
 
     # -- helpers --
 
@@ -857,6 +860,7 @@ class Planner:
                 lines.append(f"mode: {body['mode']} -> {ONBOARDING_MODES[spec['mode']]} ({spec['mode']})")
                 body["mode"] = ONBOARDING_MODES[spec["mode"]]
         self.final_default_ids = list(body["default_channel_ids"])
+        self.final_prompts = prompts
         if lines and body["enabled"]:
             settings_change = before != (set(body["default_channel_ids"]), body["enabled"], body["mode"])
             if settings_change or live.get("below_requirements") is not False:
@@ -1086,12 +1090,63 @@ class Planner:
             if rid in protected and live and int(live["permissions"]) & ~perms & (ADMIN | VIEW):
                 raise ConfigError(f"lockout guard: role {protected[rid]} would lose "
                                   f"{names(int(live['permissions']) & ~perms & (ADMIN | VIEW))}")
+        self.check_onboarding_roles(protected)
         self.check_gating()
+
+    def role_perms(self, rid: str) -> int:
+        """A role's permissions after the plan."""
+        if rid in self.desired_role_perms:
+            return self.desired_role_perms[rid]
+        return int(self.live_roles.get(rid, {}).get("permissions", 0))
+
+    def check_onboarding_roles(self, protected: dict) -> None:
+        """Onboarding options hand their roles to any member who picks them. Refuse an option that grants
+        @everyone, a protected or integration-managed role, a role listed in guard.unassignable_roles, or a
+        role whose planned permissions include a PRIVILEGED bit."""
+        unassignable = self.guard["unassignable_roles"]
+        if not isinstance(unassignable, list) or not all(isinstance(n, str) for n in unassignable):
+            raise ConfigError("guard.unassignable_roles: a list of role names")
+        blocked = {}
+        for name in unassignable:
+            if name not in self.role_ids:
+                raise ConfigError(f"lockout guard: unassignable role {name!r} does not exist and is not in \"roles\"")
+            blocked[self.role_ids[name]] = name
+        live = self.s.get("onboarding") or {}
+        prompts = self.final_prompts if self.final_prompts is not None else live.get("prompts", [])
+        changed_roles = {rid for rid, perms in self.desired_role_perms.items()
+                         if rid not in self.live_roles or int(self.live_roles[rid]["permissions"]) != perms}
+        onboarding_changes = bool(self.ops["onboarding"])
+        refused, kept = [], []
+        for p in prompts:
+            for o in p.get("options", []):
+                for rid in o.get("role_ids", []):
+                    name = self.role_names.get(rid, rid)
+                    if rid == self.gid:
+                        why = "it is @everyone"
+                    elif rid in protected:
+                        why = "it is a protected role"
+                    elif self.live_roles.get(rid, {}).get("managed"):
+                        why = "it is managed by an integration"
+                    elif rid in blocked:
+                        why = "it is in guard.unassignable_roles"
+                    elif self.role_perms(rid) & PRIVILEGED_BITS:
+                        why = f"it holds {', '.join(names(self.role_perms(rid) & PRIVILEGED_BITS))}"
+                    else:
+                        continue
+                    line = (f"onboarding prompt {p['title']!r} option {o['title']!r} would give role {name} "
+                            f"to any member who picks it; {why}")
+                    (refused if onboarding_changes or rid in changed_roles else kept).append(line)
+        if refused:
+            raise ConfigError("lockout guard: " + " | ".join(refused))
+        for line in kept:
+            self.notes.append(f"lockout guard: {line}; onboarding is unchanged by this plan")
 
     def check_gating(self) -> None:
         """Gating model A: whatever mix of gating roles a member holds (none included), they see every
         must_see channel and every onboarding default channel. A category must be visible itself, and each
-        channel in it that @everyone alone can see must be visible to every mix too."""
+        channel in it that @everyone alone can see must be visible to every mix too. The same conditional
+        rule covers every managed or archived category and channel: if @everyone alone can see it, a
+        leftover Newbie or Member deny must not hide it from anyone."""
         gating = self.guard["gating_roles"]
         if not isinstance(gating, list) or len(gating) > MAX_GATING_ROLES:
             raise ConfigError(f"guard.gating_roles: a list of at most {MAX_GATING_ROLES} role names")
@@ -1108,7 +1163,7 @@ class Planner:
         final = self.final_channels()
         managed = {e["id"] for e in self.entries + self.archived}
         onboarding_changes = bool(self.ops["onboarding"])
-        default_ids = getattr(self, "final_default_ids", None)
+        default_ids = self.final_default_ids
         if default_ids is None:
             default_ids = list((self.s.get("onboarding") or {}).get("default_channel_ids", []))
 
@@ -1123,6 +1178,9 @@ class Planner:
                 for child, (ctype, parent, _) in final.items():
                     if parent == cid and ctype != 4:
                         checks.setdefault(child, (f"in {why} {self.label(cid)}", True))
+        archived = {a["id"] for a in self.archived}
+        for e in self.entries + self.archived:
+            checks.setdefault(e["id"], ("archived" if e["id"] in archived or e.get("archive") else "managed", True))
 
         refused, kept = [], []
         for cid, (why, conditional) in checks.items():
@@ -1130,7 +1188,7 @@ class Planner:
                 continue
             ow = final[cid][2]
             if conditional and not effective(everyone, 0, ow, self.gid, set()) & VIEW:
-                continue  # private channel inside a default category
+                continue  # staff or private channel: @everyone alone cannot see it either
             blind = []
             for combo in role_sets:
                 role_perms = 0
@@ -1189,10 +1247,21 @@ def norm_prompt(p: dict) -> tuple:
             bool(p.get("in_onboarding", True)), tuple(norm_option(o) for o in p.get("options", [])))
 
 
+def option_grants(o: dict, planner: Planner) -> str:
+    """'roles [Europe, Member]; channels [#builds]': what picking the option gives, by name."""
+    parts = []
+    if o.get("role_ids"):
+        parts.append(f"roles [{', '.join(planner.role_names.get(r, r) for r in o['role_ids'])}]")
+    if o.get("channel_ids"):
+        parts.append(f"channels [{', '.join(planner.label(c) for c in o['channel_ids'])}]")
+    return "; ".join(parts) or "no roles, no channels"
+
+
 def prompt_lines(live: dict | None, want: dict, planner: Planner) -> list[str]:
     title = want["title"]
     if live is None:
-        return [f"prompt {title!r}: new, options {[o['title'] for o in want['options']]}"]
+        return [f"prompt {title!r}: new, {len(want['options'])} option(s)"] + [
+            f"prompt {title!r} option {o['title']!r}: {option_grants(o, planner)}" for o in want["options"]]
     lines = []
     have = dict(zip(("title", "type", "single_select", "required", "in_onboarding"), norm_prompt(live)))
     for key in ("type", "single_select", "required", "in_onboarding"):
@@ -1202,7 +1271,7 @@ def prompt_lines(live: dict | None, want: dict, planner: Planner) -> list[str]:
     for o in want["options"]:
         lo = old.get(o["title"])
         if lo is None:
-            lines.append(f"prompt {title!r}: new option {o['title']!r}")
+            lines.append(f"prompt {title!r}: new option {o['title']!r}: {option_grants(o, planner)}")
             continue
         a, b = norm_option(lo), norm_option(o)
         for idx, field in ((1, "description"), (2, "emoji")):

@@ -363,7 +363,9 @@ class Onboarding(ToolCase):  # F6
         self.assertEqual(body["prompts"][1]["options"][0]["emoji_id"], "700")
         self.assertEqual(body["mode"], 1)
         self.assertIn("default channels: +['#support'] -[]", op["summary"])
-        self.assertIn("prompt 'Where are you from?': new option 'Asia'", op["summary"])
+        self.assertIn("prompt 'Where are you from?': new option 'Asia': roles [Member]", op["summary"])
+        self.assertIn("prompt 'What do you fly?': new, 1 option(s)", op["summary"])
+        self.assertIn("prompt 'What do you fly?' option 'FPV': roles [FPV]; channels [#builds]", op["summary"])
         self.assertIdempotent(d)
         self.assertEqual([p["title"] for p in self.fake.onboarding["prompts"]][2], "Legacy prompt")
 
@@ -389,6 +391,71 @@ class Onboarding(ToolCase):  # F6
         self.assertIdempotent(d)
         follow = next(p for p in self.fake.onboarding["prompts"] if p["title"] == "Follow")
         self.assertEqual(follow["options"][0]["channel_ids"], [self.fake.by_name("dev-fc")["id"]])
+
+    def test_new_option_roles_and_channels_are_named_in_the_plan(self):
+        d = self.onboarding_desired(prompts=[{"title": "Follow development", "options": [
+            {"title": "Flight controllers", "roles": ["OpenFC", "FPV"], "channels": ["dev-fc"]},
+            {"title": "Just looking"}]}])
+        d["roles"] = [{"name": "OpenFC", "mentionable": True}]
+        d["categories"][0]["channels"].append({"name": "dev-fc", "type": "forum"})
+        code, out, err = self.run_cli(d, "plan")
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("prompt 'Follow development': new, 2 option(s)", out)
+        self.assertIn("prompt 'Follow development' option 'Flight controllers': roles [OpenFC, FPV]; "
+                      "channels [#dev-fc]", out)
+        self.assertIn("prompt 'Follow development' option 'Just looking': no roles, no channels", out)
+
+    def self_assign(self, option_roles, prompt="Follow development", **top):
+        d = self.onboarding_desired(prompts=[{"title": prompt, "options": [{"title": "Pick me", "roles": option_roles}]}])
+        d.update(top)
+        return d
+
+    def test_option_granting_a_protected_role_is_refused(self):
+        self.assertConfigError(self.self_assign(["admin"]),
+                               "onboarding prompt 'Follow development' option 'Pick me' would give role admin to "
+                               "any member who picks it; it is a protected role")
+        d = self.onboarding_desired(prompts=[{"title": "Where are you from?", "single_select": True, "required": True,
+                                              "options": [{"title": "Asia", "roles": ["admin"]}]}])
+        self.assertConfigError(d, "option 'Asia' would give role admin")
+        self.assertEqual(self.fake.writes(), [])
+
+    def test_option_granting_everyone_managed_or_bot_roles_is_refused(self):
+        self.assertConfigError(self.self_assign(["@everyone"]), "role @everyone to any member who picks it; it is @everyone")
+        self.assertConfigError(self.self_assign(["Integration"]), "it is managed by an integration")
+        self.assertConfigError(self.self_assign(["OpenDrone Dev"]), "role OpenDrone Dev to any member")
+
+    def test_option_granting_a_privileged_role_is_refused(self):
+        for perm in dc.PRIVILEGED:
+            d = self.self_assign(["Pingers"], roles=[{"name": "Pingers", "permissions": ["VIEW_CHANNEL", perm]}])
+            self.assertConfigError(d, f"role Pingers to any member who picks it; it holds {perm}")
+        state = base_state()
+        state["roles"][3]["permissions"] = str(P["MANAGE_CHANNELS"])  # developer, live
+        state["onboarding"]["enabled"] = False
+        self.assertConfigError(self.self_assign(["developer"]), "it holds MANAGE_CHANNELS", fake=FakeDiscord(state))
+
+    def test_unassignable_roles(self):
+        self.assertConfigError(self.self_assign(["beta tester"], guard={"unassignable_roles": ["beta tester"]}),
+                               "role beta tester to any member who picks it; it is in guard.unassignable_roles")
+        self.assertConfigError(self.self_assign(["FPV"], guard={"unassignable_roles": ["Maintainer"]}),
+                               "unassignable role 'Maintainer' does not exist")
+        d = self.self_assign(["FPV"], guard={"unassignable_roles": ["Maintainer"]},
+                             roles=[{"name": "Maintainer", "hoist": True}])
+        self.assertEqual(self.plan(d)["ops"]["onboarding"][0]["label"], "onboarding")
+
+    def test_kept_live_option_is_checked(self):
+        state = base_state()
+        state["roles"][9]["permissions"] = str(dc.ADMIN)  # Europe, granted by the live option 'Europe'
+        fake = FakeDiscord(state)
+        fake.onboarding["enabled"] = False
+        plan = self.plan(minimal_desired(), fake)  # onboarding unmanaged and unchanged: a note
+        self.assertTrue(any("option 'Europe' would give role Europe" in n and "onboarding is unchanged" in n
+                            for n in plan["notes"]), plan["notes"])
+        # a prompt-only change re-sends the kept 'Where are you from?' prompt and its options
+        self.assertConfigError(self.self_assign(["FPV"]), "option 'Europe' would give role Europe to any member who "
+                               "picks it; it holds ADMINISTRATOR", fake=fake)
+        state["roles"][9]["permissions"] = "0"
+        self.assertConfigError(minimal_desired(roles=[{"name": "Europe", "permissions": ["BAN_MEMBERS"]}]),
+                               "it holds BAN_MEMBERS", fake=FakeDiscord(state))
 
     def open_forums(self, d, count):
         d["categories"].append({"name": "Showcase", "access": "open", "channels": [
@@ -578,6 +645,39 @@ class LockoutGuard(ToolCase):  # F10
         self.assertTrue(self.blind_sets(d).endswith(
             "#gen-chat (in onboarding default channel Chats) would be hidden from a member holding @everyone + Newbie; "
             "@everyone + Newbie + Member"))  # #builds is private to staff, so it is not checked
+
+    def test_newbie_deny_on_a_managed_channel_everyone_can_see(self):
+        # the reviewer's repro: #gen-chat is neither must_see nor an onboarding default channel
+        d = minimal_desired(guard={"must_see": []})
+        d["categories"][0]["channels"][0]["access"] = {
+            "@everyone": {"allow": ["VIEW_CHANNEL", "SEND_MESSAGES"]}, "Newbie": {"deny": ["VIEW_CHANNEL"]}}
+        self.assertTrue(self.blind_sets(d).endswith(
+            "#gen-chat (managed) would be hidden from a member holding @everyone + Newbie; "
+            "@everyone + Newbie + Member"))
+        self.assertEqual(self.fake.writes(), [])
+
+    def test_member_deny_on_a_managed_category_everyone_can_see(self):
+        d = minimal_desired(guard={"must_see": []})
+        d["categories"][0]["access"] = {"@everyone": {"allow": ["VIEW_CHANNEL"]}, "Member": {"deny": ["VIEW_CHANNEL"]}}
+        d["categories"][0]["channels"] = [{"id": "101", "name": "gen-chat", "access": "open"}]
+        self.assertTrue(self.blind_sets(d).endswith(
+            "Chats (managed) would be hidden from a member holding @everyone + Member; @everyone + Newbie + Member"))
+
+    def test_gating_deny_on_an_archived_channel_everyone_can_see(self):
+        d = minimal_desired(guard={"must_see": []}, archive={"category": "Archive", "channels": ["102"], "access": {
+            "@everyone": {"allow": ["VIEW_CHANNEL"], "deny": ["SEND_MESSAGES"]}, "Newbie": {"deny": ["VIEW_CHANNEL"]}}})
+        d["categories"][0]["channels"].pop()
+        msg = self.blind_sets(d)
+        self.assertIn("#builds (archived) would be hidden from a member holding @everyone + Newbie", msg)
+        self.assertIn("Archive (archived) would be hidden", msg)
+
+    def test_staff_channels_are_not_gating_checked(self):
+        d = minimal_desired(guard={"must_see": []})
+        d["categories"][0]["access"] = "open"
+        d["categories"][0]["channels"][1]["access"] = {"@everyone": {"deny": ["VIEW_CHANNEL"]},
+                                                       "Newbie": {"deny": ["VIEW_CHANNEL"]},
+                                                       "admin": {"allow": ["VIEW_CHANNEL"]}}
+        self.assertIdempotent(d)
 
     def test_unmanaged_default_channel_is_a_note_until_the_plan_touches_it(self):
         state = base_state()

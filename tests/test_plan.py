@@ -156,7 +156,8 @@ def state_from_server_json(desired):
     """A live state in which every managed channel already has the overwrites server.json asks for."""
     roles = [role(desired["guild_id"], "@everyone", 0, VIEW | SEND),
              role("99", "OpenDrone Dev", 9, dc.ADMIN, managed=True, tags={"bot_id": "500"}),
-             role("2", "admin", 8, dc.ADMIN), role("12", "developer", 7),
+             role("2", "admin", 8, dc.ADMIN), role("12", "developer", 7), role("13", "beta tester", 6),
+             role("16", "reviewer", 6), role("17", "Support", 6),
              role("10", "Member", 4, VIEW), role("11", "Newbie", 3)]
     state = {"guild_id": desired["guild_id"], "bot_user_id": "500", "guild": {"features": []}, "roles": roles,
              "emojis": [], "onboarding": None, "welcome_screen": None, "automod": [],
@@ -198,6 +199,10 @@ class ServerJson(unittest.TestCase):
         planner = dc.Planner(self.desired, state_from_server_json(self.desired))
         member = planner.expand("community", "x")["10"]
         self.assertTrue(member[0] & P["USE_APPLICATION_COMMANDS"])
+
+    def test_staff_roles_are_never_self_assignable(self):
+        self.assertEqual(set(self.desired["guard"]["unassignable_roles"]),
+                         {"developer", "beta tester", "reviewer", "Support"})
 
     def test_storefront_support_channels_are_protected(self):
         self.assertEqual(set(self.desired["guard"]["protected_channels"]),
