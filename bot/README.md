@@ -103,7 +103,7 @@ that failed.
 | `merged_prs` | Integer, greater than or equal | GitHub search `is:pr is:merged org:OpenDrone-hw author:<login>` |
 | `org_member` | Boolean | `GET /orgs/OpenDrone-hw/members/<login>` |
 | `maintainer` | Boolean | Active member of the team `GITHUB_MAINTAINER_TEAM` (default `maintainers`) |
-| `owner` | Boolean | `users.owner` in D1; nothing in this repository writes it, so it is 0 |
+| `owner` | Boolean | `users.owner` in D1. Owner means any paid order on opendrone.be, preorders included; the storefront is to fill it, and nothing in this repository writes it, so it is 0 |
 
 The cron refreshes 6 users per run whose last refresh is older than 24 h, oldest
 first (4 runs a day, at most 24 users a day). A per-user lease in D1 serialises
@@ -155,7 +155,12 @@ until their next refresh.
 
 All are guild-only. Role checks run in the Worker; `default_member_permissions`
 only decides who sees a command until an override is added in Server
-Settings, Integrations, OpenDrone Dev. Staff means admin or developer.
+Settings, Integrations, OpenDrone Dev.
+
+| Word in the table | Roles (`config/repos.json` keys), or Administrator for `admin` |
+|---|---|
+| members | `member`, `admin`, `developer`, `reviewer`, `betaTester`. `Member` comes from the onboarding region answer, so every member who finished onboarding counts |
+| staff | `admin`, `developer` |
 
 | Command | Where | Who | What it does |
 |---|---|---|---|
@@ -192,8 +197,10 @@ lifecycle tags exceed Discord's 20.
 
 ### Server prerequisites
 
-The names in `config/repos.json` must exist on the server; `server.json` on this
-branch does not create them.
+The names in `config/repos.json` must exist on the server. The repository's
+`server.json` creates all of them (every channel, forum, role, product tag and
+lifecycle tag), and `tests/test_server_json.py` fails when the two files drift
+apart. Until `discord_config.py apply --yes` has run, they are missing:
 
 | Missing on the server | Effect |
 |---|---|
@@ -306,9 +313,18 @@ the Worker converts it.
 
 ### Discord permissions of the bot role
 
-View Channels, Send Messages, Send Messages in Threads and Create Public Threads
-(forum posts) in the development forums, `#git-feed` and `#announcements`.
-Approve build also needs Manage Roles, with the bot's role above Verified Builder.
+The `OpenDrone Dev` role holds Administrator and sits at the top while the
+layout is built. Without Administrator the Worker needs:
+
+| Permission | Where | Used by |
+|---|---|---|
+| View Channels, Send Messages, Send Messages in Threads, Create Public Threads (forum posts) | Development forums (the `open` profile grants these to `@everyone`) | PR threads and cards, collision warnings |
+| View Channels, Send Messages | `#git-feed`, `#announcements` (the `readonly` profile allows the bot role explicitly) | Feed lines, release and lifecycle cards |
+| Manage Roles, role above Verified Builder | Server | Approve build |
+
+`discord_config.py` and `migrate.py` use the same application's token and need
+more (Manage Channels, Manage Roles, Manage Server, Pin Messages in archived
+channels), so the role keeps Administrator while the layout is applied and migrated.
 
 ### 3. Secrets
 
