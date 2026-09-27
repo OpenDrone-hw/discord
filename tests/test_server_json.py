@@ -65,8 +65,44 @@ ROLE_NAMES = ["admin", "developer", "beta tester", "ExpressLRS", "Betaflight", "
 MANAGED_ROLES = ["carl-bot", "OpenDrone Support", "OpenBrain", "Server Booster"]
 EMOJIS = ["quad", "fpv", "tinywhoop", "freestyle", "commercial", "longrange", "cinewhoop", "toothpick", "camera",
           "planes", "racing"]
+HARDWARE, SOFTWARE = "1550880981592973433", "1550881887050928248"
+# Channel id -> (category, name in server.json) for every channel the archive held until it was emptied.
+RESTORED = {
+    "1494780931498705057": ("Staff", "roles"),
+    "1494033189532860707": ("Community", "proposal-chat"),
+    "1494782854117326969": ("Community", "build-chat"),
+    "1497547403140530237": ("Support", "support-chat"),
+    **{cid: ("Hardware", name) for cid, name, _t, parent in CHANNELS if parent == HARDWARE},
+    **{cid: ("Software", name) for cid, name, _t, parent in CHANNELS if parent == SOFTWARE and cid != CHATFPV},
+}
+FIRMWARE = {"Betaflight": "Betaflight user", "AM32": "AM32 user", "ExpressLRS": "ExpressLRS user"}
 REGIONS = [("North America", "\U0001F5FD"), ("Europe", "\U0001F1EA\U0001F1FA"), ("Asia", "\U0001F43C"),
            ("South America", "\U0001F1E7\U0001F1F7"), ("Oceania", "\U0001F998"), ("Africa", "\U0001F334")]
+
+
+def previous_desired():
+    """The layout that was live before the archive was emptied: the 19 channels in a read-only Archive
+    category, Hardware and Software empty staff categories, the Firmware prompt giving the team roles."""
+    d = copy.deepcopy(DESIRED)
+    for cat in d["categories"]:
+        cat["channels"] = [ch for ch in cat.get("channels", []) if ch.get("id") not in RESTORED]
+    cats = [c for c in d["categories"] if c["name"] not in ("Hardware", "Software")]
+    d["categories"] = cats + [{"id": HARDWARE, "name": "Hardware", "access": "staff", "channels": []},
+                              {"id": SOFTWARE, "name": "Software", "access": "staff", "channels": []}]
+    d["archive"] = {"category": "Archive", "access": "readonly", "channels": list(RESTORED)}
+    d["onboarding"]["default_channels"] = ["welcome", "rules", "announcements", "gen-chat", "introduce-yourself",
+                                           "off-topic", "flying", "help", "builds"]
+    for option in next(p for p in d["onboarding"]["prompts"] if p["title"] == "Firmware")["options"]:
+        option["roles"] = [team for team, user in FIRMWARE.items() if option["roles"] == [user]]
+    d["guard"]["unassignable_roles"] = [r for r in d["guard"]["unassignable_roles"] if r not in FIRMWARE]
+    d["roles"] = [r for r in d["roles"] if r["name"] not in FIRMWARE.values()]
+    return d
+
+
+def fake_state(fake):
+    return {"guild_id": fake.gid, "bot_user_id": fake.bot_user_id, "guild": fake.guild, "roles": fake.roles,
+            "emojis": fake.emojis, "channels": fake.channels, "onboarding": fake.onboarding,
+            "welcome_screen": fake.welcome, "automod": fake.automod}
 
 
 def live_state():
@@ -181,23 +217,38 @@ class ServerJson(ToolCase):
         gen = fake.chan("1494779609131258048")
         self.assertIn(ow("777001", P["SEND_MESSAGES"], 0, 1), gen["permission_overwrites"])
 
-    def test_old_channels_are_archived_read_only(self):
+    def test_old_channels_are_restored_open_and_roles_is_staff_only(self):
+        self.assertNotIn("archive", DESIRED)
         fake = self.applied()
-        archive = fake.by_name("Archive")
-        everyone = GID
-        for ref in DESIRED["archive"]["channels"]:
-            ch = fake.chan(ref)
-            self.assertEqual(ch["parent_id"], archive["id"], ch["name"])
+        cats = {c["name"]: c["id"] for c in fake.channels if c["type"] == 4}
+        self.assertNotIn("Archive", cats)
+        self.assertEqual(len(RESTORED), 19)
+        self.assertNotIn(CHATFPV, RESTORED)
+        for cid, (category, name) in RESTORED.items():
+            ch = fake.chan(cid)
+            self.assertEqual((ch["name"], ch["parent_id"], ch["type"]), (name, cats[category], 0), cid)
             ows = {o["id"]: (int(o["allow"]), int(o["deny"])) for o in ch["permission_overwrites"] if o["type"] == 0}
-            allow, deny = ows[everyone]
-            self.assertTrue(allow & P["VIEW_CHANNEL"] and allow & P["READ_MESSAGE_HISTORY"], ch["name"])
-            self.assertTrue(deny & P["SEND_MESSAGES"] and deny & P["SEND_MESSAGES_IN_THREADS"], ch["name"])
-        archived = {fake.chan(r)["name"] for r in DESIRED["archive"]["channels"]}
-        hardware_software = {name for _, name, _, parent in CHANNELS
-                             if parent in ("1550880981592973433", "1550881887050928248")}
-        self.assertLessEqual((hardware_software - {"chatfpv"}) | {"roles", "proposals", "builds", "support"}, archived)
-        self.assertEqual(len(DESIRED["archive"]["channels"]), 19)
-        self.assertNotIn(CHATFPV, DESIRED["archive"]["channels"])
+            allow, deny = ows[GID]
+            if category == "Staff":
+                self.assertTrue(deny & P["VIEW_CHANNEL"], name)
+                continue
+            for perm in ("VIEW_CHANNEL", "SEND_MESSAGES", "READ_MESSAGE_HISTORY", "SEND_MESSAGES_IN_THREADS"):
+                self.assertTrue(allow & P[perm], (name, perm))
+            self.assertTrue(deny & P["MENTION_EVERYONE"], name)
+
+    def test_hardware_and_software_follow_development(self):
+        fake = self.applied()
+        cats = [c["name"] for c in sorted(fake.channels, key=lambda c: c["position"]) if c["type"] == 4]
+        i = cats.index("Development")
+        self.assertEqual(cats[i:i + 3], ["Development", "Hardware", "Software"])
+
+    def test_firmware_user_roles_are_plain(self):
+        fake = self.applied()
+        roles = {r["name"]: r for r in fake.roles}
+        for user in FIRMWARE.values():
+            r = roles[user]
+            self.assertEqual((dc.role_color(r), r["hoist"], r["mentionable"], int(r["permissions"])),
+                             (0, False, False, 0), user)
 
     def test_chatfpv_stays_open_for_members_and_bots(self):
         # ChatFPV (OpenBrain) and the storefront support bot post in #chatfpv through their role permissions
@@ -264,6 +315,11 @@ class ServerJson(ToolCase):
         self.assertLessEqual(set(REPOS["forums"]) | {"proposals", "alpha-testing"}, granted)
         self.assertTrue(all(o["role_ids"] for o in follow["options"] if by_id[o["channel_ids"][0]]["name"]
                             in REPOS["forums"]))
+        names = {by_id[c]["name"] for c in ob["default_channel_ids"]}
+        self.assertLessEqual({"Hardware", "Software", "build-chat", "proposal-chat", "support-chat"}, names)
+        role_names = {r["id"]: r["name"] for r in fake.roles}
+        given = [[role_names[r] for r in o["role_ids"]] for o in firmware["options"]]
+        self.assertEqual(sorted(given), sorted([u] for u in FIRMWARE.values()))
 
     def test_automod_leaves_the_system_mention_rule_alone(self):
         # Discord's own "Block Mention Spam" rule answers PATCH with 404, and the cap is one
@@ -290,13 +346,73 @@ class ServerJson(ToolCase):
 
     def test_staff_and_linked_roles_are_never_self_assignable(self):
         self.assertLessEqual({"developer", "beta tester", "reviewer", "Support", "Maintainer", "Contributor",
-                              "Verified Owner", "Verified Builder"}, set(DESIRED["guard"]["unassignable_roles"]))
+                              "Verified Owner", "Verified Builder", *FIRMWARE},
+                             set(DESIRED["guard"]["unassignable_roles"]))
+
+    def test_an_option_giving_a_firmware_team_role_is_refused(self):
+        d = copy.deepcopy(DESIRED)
+        firmware = next(p for p in d["onboarding"]["prompts"] if p["title"] == "Firmware")
+        firmware["options"][0]["roles"] = ["Betaflight"]
+        with self.assertRaises(dc.ConfigError) as ctx:
+            dc.build_plan(d, copy.deepcopy(self.live))
+        self.assertIn("would give role Betaflight", str(ctx.exception))
 
     def test_open_profile_allows_slash_commands_and_blocks_everyone_pings(self):
         planner = dc.Planner(DESIRED, copy.deepcopy(self.live))
         allow, deny = planner.expand("open", "x")[GID]
         self.assertTrue(allow & P["USE_APPLICATION_COMMANDS"])
         self.assertTrue(deny & P["MENTION_EVERYONE"])
+
+
+class FromThePreviousLayout(ToolCase):
+    """The live server before this layout: server.json as it was with the Archive category, applied."""
+
+    def setUp(self):
+        super().setUp()
+        self.fake = FakeDiscord(live_state())
+        self.apply(previous_desired())
+        self.before = copy.deepcopy(fake_state(self.fake))
+
+    def plan(self, desired, fake=None):
+        return dc.build_plan(desired, dc.fetch(fake or self.fake, GID))
+
+    def test_plan_moves_renames_creates_roles_and_changes_onboarding(self):
+        plan = self.plan(DESIRED)
+        ops = plan["ops"]
+        self.assertEqual(ops["archive"], [])
+        self.assertEqual(sorted(op["label"] for op in ops["roles"]), sorted(f"role {u}" for u in FIRMWARE.values()))
+        self.assertTrue(all(op["action"] == "create" for op in ops["roles"]))
+        moved = {op["path"].rsplit("/", 1)[1]: op for op in ops["channels"]}
+        self.assertEqual(set(moved), set(RESTORED))
+        renames = {cid: op["diff"]["name"] for cid, op in moved.items() if "name" in op["diff"]}
+        self.assertEqual(renames, {"1494782854117326969": ("builds", "build-chat"),
+                                   "1494033189532860707": ("proposals", "proposal-chat"),
+                                   "1497547403140530237": ("support", "support-chat")})
+        for cid, op in moved.items():
+            self.assertEqual(op["diff"]["parent"], ("Archive", RESTORED[cid][0]), cid)
+        self.assertEqual(sorted(op["label"] for op in ops["categories"]),
+                         [f"Hardware ({HARDWARE})", f"Software ({SOFTWARE})"])
+        [onboarding] = ops["onboarding"]
+        text = "\n".join(onboarding["summary"])
+        for team, user in FIRMWARE.items():
+            self.assertIn(f"option {team!r}: roles +[{user!r}] -[{team!r}]", text)
+        self.assertIn("default channels: +['#build-chat', '#proposal-chat', '#support-chat', 'Hardware', 'Software']",
+                      text)
+        self.assertEqual(plan["unmanaged"]["channels"], ["Archive", "web-support", "web-support-admin"])
+        self.assertEqual(plan["notes"], [])
+
+    def test_apply_reads_back_deletes_nothing_and_leaves_the_archive_category_empty(self):
+        self.apply(DESIRED)
+        again = self.plan(DESIRED)
+        self.assertEqual(again["total"], 0, "\n".join(dc.render_plan(again, True)))
+        self.assertLessEqual({c["id"] for c in self.before["channels"]}, {c["id"] for c in self.fake.channels})
+        self.assertLessEqual({r["id"] for r in self.before["roles"]}, {r["id"] for r in self.fake.roles})
+        archive = self.fake.by_name("Archive")["id"]
+        self.assertEqual([c["name"] for c in self.fake.channels if c.get("parent_id") == archive], [])
+        for cid in PROTECTED:
+            self.assertEqual(self.fake.chan(cid), next(c for c in self.before["channels"] if c["id"] == cid))
+        team = {r["id"] for r in self.fake.roles if r["name"] in FIRMWARE}
+        self.assertFalse(team & {r for p in self.fake.onboarding["prompts"] for o in p["options"] for r in o["role_ids"]})
 
 
 if __name__ == "__main__":

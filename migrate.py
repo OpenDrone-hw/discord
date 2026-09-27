@@ -1,57 +1,67 @@
 #!/usr/bin/env python3
-"""One-off member-facing steps that follow applying the server.json layout.
+"""Member-facing steps that follow applying the server.json layout.
 
-Every subcommand is a dry run unless --yes. Messages the bot posts carry a
-marker line, so a rerun finds its own earlier message instead of posting a
-second one; role grants skip members who already hold the role. Nothing is
-deleted: the REST client from discord_config.py refuses DELETE.
+Every subcommand is a dry run unless --yes, and a rerun writes nothing that is
+already done: messages the bot wrote carry a marker line so a rerun finds them,
+and role changes skip members who already have the result. Nothing is deleted.
+The REST client is discord_config.py's with one exception: DELETE is allowed
+only to unpin a message and to take a role off a member.
 """
 
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import discord_config as dc
 
 AUDIT_REASON = "OpenDrone-hw/discord migrate.py"
 MARKER = "opendrone-migration"
-ANNOUNCE_MARK = f"{MARKER}:announce-1"
-NOTICE_MARK = f"{MARKER}:notice-1"
+NOTICE_MARK = f"{MARKER}:notice-1"  # the archive notice the earlier notices step posted and pinned
+UNARCHIVE_MARK = f"{MARKER}:unarchive-1"  # the same message after unarchive edited it
 WRITE_DELAY = 0.5  # seconds after every write, on top of the client's 429 and bucket handling
-PAGE = 100  # Discord's maximum for GET /channels/{id}/messages
-ANNOUNCE_PAGES = 3  # how far back announce looks for its own earlier message
-NOTICE_PAGES = 1  # archived channels are read-only, so a notice stays among the newest messages
+PAGE = 100  # Discord's maximum for GET /channels/{id}/messages and the audit log
+NOTICE_PAGES = 5  # how far back unarchive looks for a notice that is no longer pinned
 USER_MESSAGE_TYPES = {0, 19}  # default and reply; joins, pins and other system messages are not authorship
 CUSTOMIZE = "<id:customize>"  # opens Channels & Roles
-GUIDE = "<id:guide>"  # opens the Server Guide
-ANNOUNCE_CHANNELS = ("announcements", "help", "builds", "proposals")
+MEMBER_ROLE_UPDATE = 25  # audit log action type
+ROLLOUT_START = "2026-09-27T16:40:00Z"  # onboarding with the Firmware prompt went live
+# DELETE paths the client allows; neither removes a message, channel or role.
+UNDO_PATHS = (re.compile(r"/channels/\d+/pins/\d+"), re.compile(r"/guilds/\d+/members/\d+/roles/\d+"))
 
-# Archived channel id -> (old name, successor, ping role). The successor is a channel name from
-# server.json's categories or CUSTOMIZE; the ping role is the role the onboarding option for that
-# product line gives together with the successor forum. Tests check both against server.json.
-SUCCESSORS = {
-    "1494780931498705057": ("roles", CUSTOMIZE, None),
-    "1494033189532860707": ("proposals", "proposals", None),
-    "1494782854117326969": ("builds", "builds", None),
-    "1497547403140530237": ("support", "help", None),
-    "1494783056026796262": ("fc", "flight-controllers", "FC dev"),
-    "1538618173354414190": ("aio", "flight-controllers", "FC dev"),
-    "1494782966302507118": ("esc", "escs", "ESC dev"),
-    "1494758332903456969": ("rx", "receivers", "RX dev"),
-    "1494758396577058900": ("vtx", "video", "Video dev"),
-    "1494803018770809065": ("digital-vtx", "video", "Video dev"),
-    "1494758377010757682": ("remote-id", "remote-id-gps", "RemoteID-GPS dev"),
-    "1550883307246461033": ("gps", "remote-id-gps", "RemoteID-GPS dev"),
-    "1494758355825328158": ("frame", "frames", "Frame dev"),
-    "1550884618322972693": ("charger", "power", "Power dev"),
-    "1550883427220197396": ("motors", "gen-chat", None),  # no OpenDrone motor product line
-    "1494758297885212832": ("esc-am32", "firmware", "AM32"),
-    "1494783023114096821": ("fc-betaflight", "firmware", "Betaflight"),
-    "1550882869839134810": ("rx-expresslrs", "firmware", "ExpressLRS"),
-    "1494796004615131237": ("opendrone-web", "web-and-tools", "Web-Tools dev"),
+# The firmware team roles belong to the projects' maintainers. The Firmware onboarding prompt and
+# backfill give the matching "user" role instead; firmware-roles moves members over.
+FIRMWARE_ROLES = {"Betaflight": "Betaflight user", "AM32": "AM32 user", "ExpressLRS": "ExpressLRS user"}
+
+# Channel id -> (name before the migration, name in server.json, what the chat is for, the forum of the
+# same topic or CUSTOMIZE or None, unit of one forum post, ping role). The archive notice in each is
+# rewritten by unarchive; backfill grants the ping role to recent authors. Tests check the names against
+# server.json and each ping role against the onboarding option that adds its forum.
+CHATS = {
+    "1494780931498705057": ("roles", "roles", None, CUSTOMIZE, None, None),
+    "1494033189532860707": ("proposals", "proposal-chat", "proposals", "proposals", "idea", None),
+    "1494782854117326969": ("builds", "build-chat", "builds", "builds", "build", None),
+    "1497547403140530237": ("support", "support-chat", "support", "help", "problem", None),
+    "1494783056026796262": ("fc", "fc", "flight controllers", "flight-controllers", "change", "FC dev"),
+    "1538618173354414190": ("aio", "aio", "AIO boards", "flight-controllers", "change", "FC dev"),
+    "1494782966302507118": ("esc", "esc", "ESCs", "escs", "change", "ESC dev"),
+    "1494758332903456969": ("rx", "rx", "receivers", "receivers", "change", "RX dev"),
+    "1494758396577058900": ("vtx", "vtx", "video transmitters", "video", "change", "Video dev"),
+    "1494803018770809065": ("digital-vtx", "digital-vtx", "digital video", "video", "change", "Video dev"),
+    "1494758377010757682": ("remote-id", "remote-id", "Remote ID", "remote-id-gps", "change", "RemoteID-GPS dev"),
+    "1550883307246461033": ("gps", "gps", "GPS", "remote-id-gps", "change", "RemoteID-GPS dev"),
+    "1494758355825328158": ("frame", "frame", "frames", "frames", "change", "Frame dev"),
+    "1550884618322972693": ("charger", "charger", "chargers", "power", "change", "Power dev"),
+    "1550883427220197396": ("motors", "motors", "motors", None, None, None),  # no OpenDrone motor product line
+    "1494758297885212832": ("esc-am32", "esc-am32", "AM32", "firmware", "change", "AM32 user"),
+    "1494783023114096821": ("fc-betaflight", "fc-betaflight", "Betaflight", "firmware", "change", "Betaflight user"),
+    "1550882869839134810": ("rx-expresslrs", "rx-expresslrs", "ExpressLRS", "firmware", "change", "ExpressLRS user"),
+    "1494796004615131237": ("opendrone-web", "opendrone-web", "opendrone.be and the web tools", "web-and-tools",
+                            "change", "Web-Tools dev"),
 }
 
 SERVER_GUIDE = """\
@@ -70,28 +80,15 @@ Resource pages
   #rules, #announcements, help"""
 
 
-def announce_text(ids: dict) -> str:
-    """ids maps help, builds and proposals to a channel mention such as <#123>."""
-    return "\n".join([
-        "**The OpenDrone server has been reorganised.**",
-        f"- Pick what you follow in {CUSTOMIZE}: each product line has a development forum and a ping role,"
-        " and you can add what you fly and the firmware you use.",
-        f"- New here? The Server Guide is in {GUIDE}.",
-        f"- Questions go to {ids['help']}, builds to {ids['builds']}, ideas to {ids['proposals']}.",
-        "- The old channels are in the Archive category: read-only history, nothing was deleted.",
-        f"-# {ANNOUNCE_MARK}",
-    ])
-
-
-def notice_text(successor: str | None) -> str:
-    """successor is a channel mention such as <#123>, or None for #roles."""
-    if successor is None:
-        body = (f"Roles are now picked in {CUSTOMIZE} (Channels & Roles). The reaction roles in this channel"
-                " stop working when the old role bot is removed.")
+def chat_text(line: str | None, forum: str | None, unit: str | None) -> str:
+    """forum is a channel mention such as <#123>, CUSTOMIZE for #roles, or None."""
+    if forum == CUSTOMIZE:
+        body = f"Roles are picked in {CUSTOMIZE} (Channels & Roles)."
+    elif forum is None:
+        body = f"Chat for {line}."
     else:
-        body = f"Continue in {successor}. Pick the product lines you follow in {CUSTOMIZE}."
-    return "\n".join(["**This channel is archived.** It stays as read-only history; nothing was deleted.",
-                      body, f"-# {NOTICE_MARK}"])
+        body = f"Chat for {line}. Structured posts, one per {unit}, go in {forum}."
+    return f"{body}\n-# {UNARCHIVE_MARK}"
 
 
 # --- server state ----------------------------------------------------------
@@ -109,9 +106,12 @@ class Server:
         self.channels = api.request("GET", f"/guilds/{self.gid}/channels")
         self.by_id = {c["id"]: c for c in self.channels}
         self.roles = {r["name"]: r for r in api.request("GET", f"/guilds/{self.gid}/roles")}
-        name = desired.get("archive", {}).get("category")
-        cats = [c for c in self.channels if c["type"] == 4 and c["name"] == name]
-        self.archive_id = cats[0]["id"] if len(cats) == 1 else None
+
+    def category_id(self, cat: dict) -> str | None:
+        if cat.get("id") in self.by_id:
+            return cat["id"]
+        parents = [c["id"] for c in self.channels if c["type"] == 4 and c["name"] == cat["name"]]
+        return parents[0] if len(parents) == 1 else None
 
     def managed(self, name: str) -> dict | None:
         """The live channel for one server.json category channel, matched like discord_config.py does."""
@@ -122,21 +122,27 @@ class Server:
         cat, ch = hits[0]
         if ch.get("id"):
             return self.by_id.get(ch["id"])
-        if cat.get("id") in self.by_id:
-            parent = cat["id"]
-        else:
-            parents = [c["id"] for c in self.channels if c["type"] == 4 and c["name"] == cat["name"]]
-            if len(parents) != 1:
-                return None
-            parent = parents[0]
+        parent = self.category_id(cat)
+        if parent is None:
+            return None
         ctype = dc.CHANNEL_TYPES[ch.get("type", "text")]
         found = [c for c in self.channels
                  if c["name"] == name and c["type"] == ctype and c.get("parent_id") == parent]
         return found[0] if len(found) == 1 else None
 
-    def archived(self, cid: str) -> bool:
-        ch = self.by_id.get(cid)
-        return bool(ch and self.archive_id and ch.get("parent_id") == self.archive_id)
+    def placed(self, cid: str) -> str | None:
+        """Why a channel listed by id in server.json is not where server.json puts it, or None."""
+        hits = [(cat, ch) for cat in self.desired["categories"] for ch in cat.get("channels", [])
+                if ch.get("id") == cid]
+        if len(hits) != 1:
+            raise dc.ConfigError(f"server.json: channel {cid} must be listed by id exactly once in categories")
+        cat, ch = hits[0]
+        live = self.by_id.get(cid)
+        if live is None:
+            return "the channel does not exist"
+        if live["name"] != ch["name"] or live.get("parent_id") != self.category_id(cat):
+            return f"not yet #{ch['name']} in {cat['name']}"
+        return None
 
     def history(self, cid: str, pages: int | None = None, after_ms: int | None = None):
         """Messages newest first, stopping at the page limit or the first message older than after_ms."""
@@ -153,30 +159,38 @@ class Server:
                 return
             before = min(batch, key=lambda m: int(m["id"]))["id"]
 
-    def own_message(self, cid: str, mark: str, pages: int) -> dict | None:
-        for msg in self.history(cid, pages=pages):
-            if msg.get("author", {}).get("id") == self.bot_id and mark in (msg.get("content") or ""):
+    def notice(self, cid: str) -> dict | None:
+        """The bot's archive notice in a channel, before or after unarchive rewrote it: pins first, then
+        the newest NOTICE_PAGES pages of history (an unpinned notice sinks as members post)."""
+        def mine(msg):
+            text = msg.get("content") or ""
+            return msg.get("author", {}).get("id") == self.bot_id and (NOTICE_MARK in text or UNARCHIVE_MARK in text)
+
+        for msg in self.api.request("GET", f"/channels/{cid}/pins") or []:
+            if mine(msg):
                 return msg
-        return None
+        return next((msg for msg in self.history(cid, pages=NOTICE_PAGES) if mine(msg)), None)
 
     def write(self, method: str, path: str, body=None):
         result = self.api.request(method, path, body)
         self.sleep(WRITE_DELAY)
         return result
 
-    def post(self, cid: str, content: str) -> dict:
-        return self.write("POST", f"/channels/{cid}/messages",
-                          {"content": content, "allowed_mentions": {"parse": []}})
 
-    def pin(self, cid: str, mid: str) -> None:
-        self.write("PUT", f"/channels/{cid}/pins/{mid}")
+class Client(dc.Discord):
+    """discord_config.py's REST client with this tool's audit log reason. DELETE is allowed only on
+    UNDO_PATHS: unpinning a message and taking a role off a member."""
+
+    def __init__(self, tok: str, urlopen=None, sleep=None):
+        super().__init__(tok, urlopen=urlopen, sleep=sleep)
+        self.headers["X-Audit-Log-Reason"] = AUDIT_REASON
+
+    def allowed(self, method: str, path: str) -> bool:
+        return super().allowed(method, path) or (method == "DELETE" and any(p.fullmatch(path) for p in UNDO_PATHS))
 
 
-def client(tok: str, urlopen=None, sleep=None):
-    """discord_config.py's REST client with this tool's audit log reason."""
-    api = dc.Discord(tok, urlopen=urlopen, sleep=sleep)
-    api.headers["X-Audit-Log-Reason"] = AUDIT_REASON
-    return api
+def client(tok: str, urlopen=None, sleep=None) -> Client:
+    return Client(tok, urlopen=urlopen, sleep=sleep)
 
 
 def snowflake_ms(sid: str) -> int:
@@ -189,7 +203,7 @@ def plural(n: int, word: str) -> str:
 
 def label(server: Server, cid: str) -> str:
     ch = server.by_id.get(cid)
-    return "#" + (ch["name"] if ch else SUCCESSORS.get(cid, (cid,))[0])
+    return "#" + (ch["name"] if ch else CHATS.get(cid, (cid,))[0])
 
 
 def dry_run_footer(yes: bool, what: str) -> None:
@@ -204,93 +218,159 @@ def show(text: str) -> None:
     print("\n".join("  " + line for line in text.splitlines()))
 
 
-def cmd_announce(args, server: Server) -> None:
-    found = {name: server.managed(name) for name in ANNOUNCE_CHANNELS}
-    missing = [f"#{name}" for name, ch in found.items() if ch is None]
-    if server.archive_id is None:
-        missing.append(f"category {server.desired.get('archive', {}).get('category')}")
-    if missing:
-        print(f"blocked: the layout is not applied yet, missing {', '.join(missing)}")
-        if args.yes:
-            raise dc.ConfigError("apply server.json first; nothing was posted")
-        print("\nText, with channel names where the ids will go:\n")
-        show(announce_text({name: f"#{name}" for name in ANNOUNCE_CHANNELS}))
-        return
-    target = found["announcements"]
-    if target["type"] != dc.CHANNEL_TYPES["announcement"]:
-        print(f"note: #{target['name']} is not an announcement channel yet")
-    if server.own_message(target["id"], ANNOUNCE_MARK, ANNOUNCE_PAGES):
-        print(f"announce: already posted in #{target['name']}, nothing to do")
-        return
-    text = announce_text({k: f"<#{v['id']}>" for k, v in found.items()})
-    print(f"announce: post to #{target['name']}, no mentions:\n")
-    show(text)
-    if args.yes:
-        server.post(target["id"], text)
-        print(f"\nposted to #{target['name']}")
-    dry_run_footer(args.yes, "post it")
-
-
-def cmd_notices(args, server: Server) -> None:
-    archive = server.desired.get("archive", {}).get("channels", [])
+def cmd_unarchive(args, server: Server) -> None:
     ready, blocked = [], []
-    for cid, (_old, successor, _role) in SUCCESSORS.items():
-        if cid not in archive:
-            raise dc.ConfigError(f"{label(server, cid)} ({cid}) is not in server.json's archive block")
-        where = "Channels & Roles" if successor == CUSTOMIZE else f"#{successor}"
-        if not server.archived(cid):
-            blocked.append(f"{label(server, cid)} -> {where}: not in the archive category yet")
+    for cid, (_old, name, line, forum, unit, _role) in CHATS.items():
+        why = server.placed(cid)
+        if why:
+            blocked.append(f"#{name}: {why}")
             continue
-        target = None
-        if successor != CUSTOMIZE:
-            ch = server.managed(successor)
+        target = forum
+        if forum not in (None, CUSTOMIZE):
+            ch = server.managed(forum)
             if ch is None:
-                blocked.append(f"{label(server, cid)} -> {where}: the successor does not exist yet")
+                blocked.append(f"#{name}: forum {forum} does not exist")
                 continue
             target = f"<#{ch['id']}>"
-        ready.append((cid, where, target))
+        ready.append((cid, name, chat_text(line, target, unit)))
     for line in blocked:
         print(f"  blocked {line}")
     if blocked and args.yes:
-        raise dc.ConfigError(f"{len(blocked)} channel(s) not ready. Apply server.json first; nothing was posted")
-    todo = 0
-    for cid, where, target in ready:
-        name = label(server, cid)
-        existing = server.own_message(cid, NOTICE_MARK, NOTICE_PAGES)
-        if existing and existing.get("pinned"):
-            print(f"  {name} -> {where}: notice posted and pinned, nothing to do")
+        raise dc.ConfigError(f"{len(blocked)} channel(s) not ready. Apply server.json first; nothing was written")
+    todo = done = missing = 0
+    for cid, name, text in ready:
+        msg = server.notice(cid)
+        if msg is None:
+            missing += 1
+            print(f"  #{name}: no notice found, nothing to do")
+            continue
+        steps = (["edit"] if msg.get("content") != text else []) + (["unpin"] if msg.get("pinned") else [])
+        if not steps:
+            done += 1
+            print(f"  #{name}: notice rewritten and unpinned, nothing to do")
             continue
         todo += 1
-        if existing:
-            print(f"  {name} -> {where}: pin the existing notice")
-            if args.yes:
-                server.pin(cid, existing["id"])
-            continue
-        print(f"  {name} -> {where}: post and pin a notice")
+        print(f"  #{name}: {' and '.join(steps)} the notice")
         if args.yes:
-            msg = server.post(cid, notice_text(target))
-            server.pin(cid, msg["id"])
-    print(f"\nnotices: {todo} to write, {len(ready) - todo} done, {len(blocked)} blocked")
+            if "edit" in steps:
+                server.write("PATCH", f"/channels/{cid}/messages/{msg['id']}",
+                             {"content": text, "allowed_mentions": {"parse": []}})
+            if "unpin" in steps:
+                server.write("DELETE", f"/channels/{cid}/pins/{msg['id']}")
+    print(f"\nunarchive: {todo} to update, {done} done, {missing} without a notice, {len(blocked)} blocked")
     if not args.yes:
-        print("\nText, product line channels:\n")
-        show(notice_text("#<successor>"))
-        print("\nText, #roles:\n")
-        show(notice_text(None))
+        fc = next((text for cid, _name, text in ready if cid == "1494783056026796262"), None)
+        print("\nNew text in #fc:\n")
+        show(fc or chat_text("flight controllers", "#flight-controllers", "change"))
     if todo:
-        dry_run_footer(args.yes, "post and pin them")
+        dry_run_footer(args.yes, "edit and unpin them")
+
+
+def parse_since(value: str) -> int:
+    """ISO 8601 timestamp (UTC when no offset is given) -> Unix milliseconds."""
+    try:
+        when = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise dc.ConfigError(f"--since {value!r}: not an ISO 8601 timestamp") from exc
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return int(when.timestamp() * 1000)
+
+
+def role_adds(server: Server, since_ms: int, team: dict[str, str]):
+    """(member id, team role name, how) for each audit log $add of a team role since since_ms. how is
+    "picked" (the member, through onboarding or Channels & Roles), "backfill" (this tool, recognised by its
+    audit log reason) or "moderator" (anyone else, the bot's other code included)."""
+    before = None
+    while True:
+        query = f"?action_type={MEMBER_ROLE_UPDATE}&limit={PAGE}" + (f"&before={before}" if before else "")
+        entries = server.api.request("GET", f"/guilds/{server.gid}/audit-logs{query}")["audit_log_entries"]
+        for entry in entries:
+            if snowflake_ms(entry["id"]) < since_ms:
+                return
+            target, actor = entry.get("target_id"), entry.get("user_id")
+            backfill = actor == server.bot_id and entry.get("reason") == AUDIT_REASON
+            how = "picked" if actor == target else "backfill" if backfill else "moderator"
+            for change in entry.get("changes") or []:
+                if change.get("key") != "$add":
+                    continue
+                for r in change.get("new_value") or []:
+                    if r.get("id") in team and target:
+                        yield target, team[r["id"]], how
+        if len(entries) < PAGE:
+            return
+        before = min(entries, key=lambda e: int(e["id"]))["id"]
+
+
+def cmd_firmware_roles(args, server: Server) -> None:
+    since_ms = parse_since(args.since)
+    missing = [n for pair in FIRMWARE_ROLES.items() for n in pair if n not in server.roles]
+    problems = [f"{n} {why}" for n in FIRMWARE_ROLES.values() if n in server.roles and (why := grantable(server, n))]
+    team = {server.roles[n]["id"]: n for n in FIRMWARE_ROLES if n in server.roles}
+    mode = "dry run" if not args.yes else "moving"
+    print(f"firmware-roles: team roles added since {args.since}, {mode}")
+    for n in missing:
+        print(f"  blocked: role {n} does not exist (apply server.json first)")
+    for text in problems:
+        print(f"  blocked: {text}")
+    if (missing or problems) and args.yes:
+        raise dc.ConfigError("apply server.json first; nothing was changed")
+    counts = {n: {"picked": set(), "backfill": set(), "moderator": set()} for n in FIRMWARE_ROLES}
+    for uid, name, how in role_adds(server, since_ms, team):
+        counts[name][how].add(uid)
+    wanted: dict[str, set[str]] = {}  # member id -> team role names to move
+    for name, by in counts.items():
+        move = (by["picked"] | by["backfill"]) - by["moderator"]  # a moderator's grant is deliberate
+        for uid in move:
+            wanted.setdefault(uid, set()).add(name)
+        print(f"  {name} -> {FIRMWARE_ROLES[name]}: {plural(len(move), 'member')} to move "
+              f"(picked {len(by['picked'])}, backfill {len(by['backfill'])}), "
+              f"{plural(len(by['moderator']), 'member')} given it by a moderator left alone")
+    if not args.yes:
+        if wanted:
+            print("With --yes, members who left or already have the result are skipped.")
+            dry_run_footer(False, "move them")
+        return
+    result = {n: {"removed": 0, "not held": 0, "granted": 0, "held": 0, "left": 0} for n in FIRMWARE_ROLES}
+    for uid, names in wanted.items():
+        try:
+            member = server.api.request("GET", f"/guilds/{server.gid}/members/{uid}")
+        except dc.HTTPError as exc:
+            if exc.status != 404:
+                raise
+            for name in names:
+                result[name]["left"] += 1
+            continue
+        held = set(member.get("roles", []))
+        for name in sorted(names):
+            team_id, user_id = server.roles[name]["id"], server.roles[FIRMWARE_ROLES[name]]["id"]
+            if user_id in held:
+                result[name]["held"] += 1
+            else:
+                server.write("PUT", f"/guilds/{server.gid}/members/{uid}/roles/{user_id}")
+                result[name]["granted"] += 1
+            if team_id in held:
+                server.write("DELETE", f"/guilds/{server.gid}/members/{uid}/roles/{team_id}")
+                result[name]["removed"] += 1
+            else:
+                result[name]["not held"] += 1
+    print("\nmoved:")
+    for name, r in result.items():
+        print(f"  {name}: removed {r['removed']}, not held {r['not held']}; {FIRMWARE_ROLES[name]}: "
+              f"granted {r['granted']}, already held {r['held']}; not in the server {r['left']}")
 
 
 def backfill_channels(server: Server, only: list[str]) -> list[tuple[str, str]]:
-    """(channel id, ping role name) for each archived channel with a ping role, limited by --channel."""
-    mapped = [(cid, role) for cid, (_o, _s, role) in SUCCESSORS.items() if role]
+    """(channel id, ping role name) for each development chat with a ping role, limited by --channel."""
+    mapped = [(cid, chat[5]) for cid, chat in CHATS.items() if chat[5]]
     if not only:
         return mapped
     picked = []
     for ref in only:
         hits = [(cid, role) for cid, role in mapped
-                if ref in (cid, SUCCESSORS[cid][0], "#" + SUCCESSORS[cid][0])]
+                if ref.lstrip("#") in (cid, CHATS[cid][0], CHATS[cid][1])]
         if not hits:
-            raise dc.ConfigError(f"--channel {ref}: not an archived development channel with a ping role")
+            raise dc.ConfigError(f"--channel {ref}: not a development chat with a ping role")
         picked += [h for h in hits if h not in picked]
     return picked
 
@@ -378,12 +458,11 @@ def cmd_checklist(args) -> None:
         ("Apply the layout",
          ["python3 discord_config.py plan", "python3 discord_config.py apply --yes   # only after the plan was seen"]),
         ("Paste the Server Guide copy: Server Settings > Onboarding > Server Guide",
-         ["Copy below. Discord has no API for the Server Guide.",
-          "Before announce: the live guide's first to-do sends members to #roles, which apply archives."]),
-        ("Announce the reorganisation in #announcements",
-         ["python3 migrate.py announce", "python3 migrate.py announce --yes"]),
-        ("Post and pin a notice in each archived channel",
-         ["python3 migrate.py notices", "python3 migrate.py notices --yes"]),
+         ["Copy below. Discord has no API for the Server Guide."]),
+        ("Rewrite and unpin the archive notices in the restored chats",
+         ["python3 migrate.py unarchive", "python3 migrate.py unarchive --yes"]),
+        ("Move self-picked firmware team roles to the user roles",
+         ["python3 migrate.py firmware-roles", "python3 migrate.py firmware-roles --yes"]),
         ("Backfill ping roles on one test member, check that account's roles, then everyone",
          ["python3 migrate.py backfill --only-user <your user id>",
           "python3 migrate.py backfill --only-user <your user id> --yes",
@@ -414,16 +493,18 @@ def main(argv=None, api=None, sleep=None, clock=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--config", type=Path, default=dc.ROOT / "server.json")
     sub = parser.add_subparsers(dest="command", required=True)
-    p = sub.add_parser("announce", help="post the reorganisation message to #announcements")
+    p = sub.add_parser("unarchive", help="rewrite and unpin the archive notice in each restored chat")
     p.add_argument("--yes", action="store_true")
-    p = sub.add_parser("notices", help="post and pin a successor notice in each archived channel")
+    p = sub.add_parser("firmware-roles", help="move members who picked a firmware team role to its user role")
     p.add_argument("--yes", action="store_true")
-    p = sub.add_parser("backfill", help="grant ping roles to recent authors of archived development channels")
+    p.add_argument("--since", default=ROLLOUT_START, metavar="ISO",
+                   help=f"read role adds from this time on (default {ROLLOUT_START}, the onboarding rollout)")
+    p = sub.add_parser("backfill", help="grant ping roles to recent authors of the development chats")
     p.add_argument("--yes", action="store_true")
     p.add_argument("--days", type=int, default=90)
     p.add_argument("--only-user", metavar="ID", help="grant only to this one member (test mode)")
     p.add_argument("--channel", action="append", default=[], metavar="NAME_OR_ID",
-                   help="limit to this archived channel; repeatable")
+                   help="limit to this development chat; repeatable")
     sub.add_parser("checklist", help="print the manual migration steps in order")
     args = parser.parse_args(argv)
     try:
@@ -435,10 +516,13 @@ def main(argv=None, api=None, sleep=None, clock=None) -> int:
                 raise dc.ConfigError("--days must be at least 1")
             if args.only_user and not args.only_user.isdigit():
                 raise dc.ConfigError("--only-user takes a numeric user id")
+        if args.command == "firmware-roles":
+            parse_since(args.since)
         desired = dc.load_desired(args.config)
         api = api or client(dc.token())
         server = Server(api, desired, sleep, clock)
-        {"announce": cmd_announce, "notices": cmd_notices, "backfill": cmd_backfill}[args.command](args, server)
+        {"unarchive": cmd_unarchive, "firmware-roles": cmd_firmware_roles,
+         "backfill": cmd_backfill}[args.command](args, server)
     except dc.ConfigError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
