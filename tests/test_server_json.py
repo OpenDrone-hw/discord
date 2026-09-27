@@ -407,7 +407,7 @@ class ServerJson(ToolCase):
         names = {by_id[c]["name"] for c in ob["default_channel_ids"]}
         # Product channels come from the Follow and firmware options, not from the defaults.
         self.assertEqual(names, {"welcome", "rules", "announcements", "gen-chat", "introduce-yourself", "off-topic",
-                                 "flying", "help", "builds", "proposals"})
+                                 "flying", "help", "builds", "proposals", "Voice"})
         self.assertIn(BUILDS, ob["default_channel_ids"])
         self.assertIn(BUILDS, [c["channel_id"] for c in fake.welcome["welcome_channels"]])
         role_names = {r["id"]: r["name"] for r in fake.roles}
@@ -485,7 +485,7 @@ class FromTheCurrentLayout(ToolCase):
         self.assertEqual([op["label"] for op in ops["channels"] if op["action"] == "create"], ["#kicad-library (text)"])
         [onboarding] = ops["onboarding"]
         text = "\n".join(onboarding["summary"])
-        self.assertIn("default channels: +[] -['#builds (forum)', '#support-chat']", text)
+        self.assertIn("default channels: +['Voice'] -['#builds (forum)', '#support-chat']", text)
         self.assertIn("option 'Proposals': channels +['#proposals (text)'] -['#proposals (forum)']", text)
         self.assertIn("option 'Flight controllers': channels +['#fc', '#aio'] -['#flight-controllers']", text)
         self.assertIn("option 'Betaflight': channels +['#fc-betaflight'] -['#firmware']", text)
