@@ -12,7 +12,7 @@ flowchart LR
   B[Member browser] -->|GET /linked-roles/*| W
   C[Cron every 6 h] -->|scheduled| W
   W --> R[Registry src/registry.ts]
-  R --> M1[src/commands: empty]
+  R --> M1[src/commands]
   R --> M2[src/github]
   R --> M3[src/linked-roles]
   M1 & M2 & M3 -->|src/discord.ts| DA[Discord API]
@@ -38,7 +38,7 @@ Any other path is 404; a known path with the wrong method is 405.
 
 | Module | Does |
 |---|---|
-| `src/commands/` | Registers nothing: no slash or context-menu command exists |
+| `src/commands/` | Slash and context-menu commands (see [Commands](#commands)); Discord shows them only after `register-commands --yes` |
 | `src/github/` | Posts GitHub activity into Discord and runs the KiCad collision guard (tables below) |
 | `src/linked-roles/` | Discord + GitHub OAuth, role connection metadata, D1 storage of sealed refresh tokens, cron refresh |
 
@@ -116,6 +116,30 @@ overlapping refreshes of one user.
 | Channel, role and tag ids are resolved by name at runtime; no id is hard-coded | `src/config.ts` |
 | A module conflict (same command, custom_id prefix or route) fails at startup | `src/registry.ts` |
 
+## Commands
+
+All are guild-only. Role checks run in the Worker; `default_member_permissions`
+only decides who sees a command until an override is added in Server
+Settings, Integrations, OpenDrone Dev. Staff means admin or developer.
+
+| Command | Where | Who | What it does |
+|---|---|---|---|
+| `/link pr:<url>` | thread of the forum the PR's repository maps to | members; private repos: refused | Writes `Discussion: <thread url>` into the PR description; a repository of another forum is refused before any GitHub call. Replaces an existing line only when it points at a post the bot created or at a deleted thread, and leaves a "moved to" note in the replaced post |
+| `/branch [repo]` | development forum thread | anyone who can use it | Fork and branch commands, and the `Discussion:` line to put in the PR description. `repo` accepts and autocompletes only repositories mapped to the thread's forum (tagged ones first) |
+| `/editing repo:<name>` | anywhere | anyone; private repos: staff | Open PRs that change `.kicad_pcb` or `.kicad_sch` files |
+| `/verify` | anywhere | anyone who can use it | Link to the Linked Roles verification page |
+| `/promote name summary [private]` | anywhere | admin | Creates a repository from `hardware-template` with topic `status-planned`. Refuses while `PROMOTE_ENABLED` is `"false"` |
+| To GitHub issue | message in a development forum thread | members; private repos: staff | Modal, then an issue with a link back to the message |
+| Approve build | message | reviewer or admin | Grants Verified Builder to the message author |
+
+Approve build and `/promote` are visible to Administrators only until an
+override is added.
+
+The GitHub module follows a `Discussion:` line only to a thread in the
+repository's own forum (`linkState` in `src/github/thread-link.ts`), so
+`/link` and `/branch` refuse any other repository instead of writing or
+handing out a line it would ignore.
+
 ## `config/repos.json`
 
 | Key | Meaning |
@@ -156,6 +180,7 @@ branch does not create them.
 | `src/github.ts` | GitHub App client: RS256 JWT via WebCrypto, installation token cache |
 | `src/config.ts` | `config/repos.json` validation, `findRepo`, `Directory` (name to id, cached per isolate) |
 | `src/services.ts` | Per-request bundle of env, clients and directory |
+| `src/commands/` | Commands; table at the top of `src/commands/index.ts` |
 | `src/github/` | Webhook handlers; file table at the top of `src/github/index.ts` |
 | `src/linked-roles/` | Linked roles; file table at the top of `src/linked-roles/index.ts` |
 | `config/repos.json` | Repository to forum and product tag, channel and role names |
@@ -211,11 +236,12 @@ These are the permissions and events the merged code uses. Grant nothing more.
 
 | Repository permission | Access | Used for |
 |---|---|---|
-| Metadata | Read | Required; the repository event |
-| Pull requests | Read and write | Read PRs and their files, list open PRs, append the `Discussion:` line to a PR body, post the collision comment (issue comments API on a PR) |
+| Metadata | Read | Required; the repository event; the `private` flag read by `/editing` and "To GitHub issue" |
+| Pull requests | Read and write | Read PRs and their files, list open PRs, append the `Discussion:` line to a PR body (webhooks and `/link`), post the collision comment (issue comments API on a PR), `/editing` |
+| Issues | Read and write | "To GitHub issue" creates the issue |
 | Checks | Read | `check_suite` events |
 | Contents | Read | `push` and `release` events |
-| Administration | No access | Without it the App cannot create, delete, rename or transfer repositories or change settings and branch protection |
+| Administration | No access | Only `/promote` needs it (see below). Without it the App cannot create, delete, rename or transfer repositories or change settings and branch protection |
 
 | Organization permission | Access | Used for |
 |---|---|---|
@@ -230,6 +256,13 @@ These are the permissions and events the merged code uses. Grant nothing more.
 | Repository | edited (only `changes.topics` is read) |
 | Push | every push; only the default branch is posted |
 
+`/promote` is implemented but disabled: `PROMOTE_ENABLED` is `"false"` in
+`wrangler.toml`, and the command then refuses before any GitHub call. Enabling
+it needs `PROMOTE_ENABLED = "true"` and "Administration: Read and write" on the
+App, which is why Administration stays at No access until then. Setting the
+`status-planned` topic also needs the new repository to be inside the App
+installation, so install the App on all repositories of the organisation.
+
 After creating it: generate a private key and a client secret, then install the
 App on OpenDrone-hw. The private key can stay in the PKCS#1 form GitHub issues;
 the Worker converts it.
@@ -238,6 +271,7 @@ the Worker converts it.
 
 View Channels, Send Messages, Send Messages in Threads and Create Public Threads
 (forum posts) in the development forums, `#git-feed` and `#announcements`.
+Approve build also needs Manage Roles, with the bot's role above Verified Builder.
 
 ### 3. Secrets
 
@@ -260,7 +294,7 @@ View Channels, Send Messages, Send Messages in Threads and Create Public Threads
 |---|---|
 | `GUILD_ID` | `1494019459822653512` |
 | `APPLICATION_ID` | `1553748824470851644` |
-| `PROMOTE_ENABLED` | `"false"`; read only by `promoteEnabled()` in `src/env.ts`, which nothing calls |
+| `PROMOTE_ENABLED` | `"false"`; `/promote` refuses unless it is `"true"` |
 | `GITHUB_MAINTAINER_TEAM` | Optional team slug for `maintainer`; unset means `maintainers`. The team must exist, otherwise `maintainer` is 0 for everyone |
 
 For `npm run dev`, copy `.dev.vars.example` to `.dev.vars` (git-ignored).
@@ -296,10 +330,16 @@ the environment or `wrangler.toml`, and the token from `DISCORD_BOT_TOKEN`,
 else `OPENDRONE_DISCORD_BOT_TOKEN` from the environment or
 `~/.config/incutec/credentials.env`. The token is never printed.
 
+`register-commands -- --dry-run` prints only the JSON body and cannot be
+combined with `--yes`. A command without `default_member_permissions` or the
+guild-only context is refused.
+
 ```sh
 npm run register-metadata
 npm run register-metadata -- --yes
-npm run register-commands          # prints "No module registers a command."
+npm run register-commands
+npm run register-commands -- --dry-run
+npm run register-commands -- --yes
 ```
 
 ### 7. Attach linked roles
@@ -311,19 +351,18 @@ its requirements. This has no API.
 
 | Item | State in this branch |
 |---|---|
-| Commands `/link`, `/branch`, `/editing`, `/verify`, `/promote`, context menus "To GitHub issue" and "Approve build" | Absent; `src/commands/` registers nothing and `register-commands` has nothing to send |
 | Metadata refresh on GitHub events | `refreshLinkedUser(services, login)` exists in `src/linked-roles/index.ts`; `src/github/` does not call it. Refresh happens only in the browser flow and the cron |
 | `owner` metadata | Always 0: nothing writes `users.owner` |
 | `status`, `organization`, `membership` webhooks | No handler; do not subscribe |
 | Message, reaction and member events | Need a gateway connection; the Worker has none |
 | Work longer than 30 s | No Cloudflare Queue is configured; only the cron (15 min per invocation) runs longer |
-| `channels.modLog`, `roles` in `config/repos.json` | Validated and resolvable, used by no handler |
+| `channels.modLog` in `config/repos.json` | Validated and resolvable, used by no handler; `roles` is read by the commands' role checks |
 
 ## Adding to a module
 
 Each module's `index.ts` exports one `BotModule`; the contract, the dispatch
-table and the time budgets are documented in `src/registry.ts`, with an example
-at the top of `src/commands/index.ts`.
+table and the time budgets are documented in `src/registry.ts`. `src/commands/`
+is a complete example of commands, autocomplete and a modal component.
 
 ## Licence
 

@@ -423,7 +423,15 @@ describe("Registry", () => {
   it("accepts the shipped modules", () => {
     const registry = new Registry(modules);
     expect(registry.modules.map((m) => m.name)).toEqual(["github", "commands", "linked-roles"]);
-    expect(registry.commandDefinitions()).toEqual([]);
+    expect(registry.commandDefinitions().map((c) => c.name)).toEqual([
+      "link",
+      "branch",
+      "editing",
+      "verify",
+      "promote",
+      "To GitHub issue",
+      "Approve build",
+    ]);
     expect(registry.roleConnectionMetadata().map((m) => m.key)).toEqual(["merged_prs", "org_member", "maintainer", "owner"]);
   });
 
