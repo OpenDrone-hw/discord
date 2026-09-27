@@ -101,11 +101,13 @@ export function describePullEvent(action: string, pull: PullRequest, sender: str
   }
 }
 
-/** Starter message in the product channel: one line; the thread started from it holds the cards. */
+/**
+ * Starter message in the product channel: one line; the thread started from it holds the cards.
+ * It never says "draft": it is not edited later, and the cards show the state.
+ */
 export function pullStarter(scope: Scope, pull: PullRequest): MessagePayload {
-  const kind = pull.draft ? "Draft pull request" : "Pull request";
   return feedLine(
-    `${kind} **${escapeMarkdown(scope.repo.name)}** #${pull.number} by ${escapeMarkdown(pull.author)}: ${link(pull.title, pull.htmlUrl)}`,
+    `Pull request **${escapeMarkdown(scope.repo.name)}** #${pull.number} by ${escapeMarkdown(pull.author)}: ${link(pull.title, pull.htmlUrl)}`,
   );
 }
 

@@ -232,6 +232,7 @@
           "forum": {
             "layout": "list",
             "sort": "activity",
+            "default_reaction": "👍",
             "require_tag": true,
             "tags": [
               {"name": "Flight controller"},
@@ -271,6 +272,7 @@
           "forum": {
             "layout": "list",
             "sort": "activity",
+            "default_reaction": "👍",
             "require_tag": true,
             "tags": [
               {"name": "Flight controller"},
