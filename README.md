@@ -5,7 +5,7 @@ Configuration as code for the [OpenDrone Discord server](https://discord.gg/v3sW
 | Part | What it is |
 |---|---|
 | `server.json` + `discord_config.py` | Channels, roles, permissions, onboarding, welcome screen, AutoMod and guild settings, planned and applied from Git |
-| `migrate.py` | Posts the bot-owned texts: #rules, #welcome, the Server Guide resource pages and one hub message per repository |
+| `texts.py` | Posts the bot-owned texts: #rules, #welcome, the Server Guide resource pages and one hub message per repository |
 | `bot/` | Cloudflare Worker: pull request threads, `#git-feed`, KiCad collision guard, commands, linked roles. See [bot/README.md](bot/README.md) |
 
 ## Change the server
@@ -115,19 +115,16 @@ gate, and the region answer gives `Member`.
 Roles are referenced by name, channels by id, `Category/name` or a unique name.
 An unknown key, role, permission or emoji stops the run before any write.
 
-## Bot-owned texts (`migrate.py`)
+## Bot-owned texts (`texts.py`)
 
 Each subcommand is a dry run without `--yes` and edits its message in place
 when the text changed; nothing is reposted or pinned twice.
 
 | Command | Posts |
 |---|---|
-| `python3 migrate.py resources` | #welcome and the four resource pages; texts are `RESOURCES` in `migrate.py` |
-| `python3 migrate.py rules --rules-file <md>` | #rules, pinned |
-| `python3 migrate.py hubs` | One pinned hub per public repository in its product channel: link, description, lifecycle, releases |
-
-`unarchive`, `firmware-roles`, `backfill` and `checklist` were one-off
-migration steps and have run.
+| `python3 texts.py resources` | #welcome and the four resource pages; texts are `RESOURCES` in `texts.py` |
+| `python3 texts.py rules --rules-file <md>` | #rules, pinned |
+| `python3 texts.py hubs` | One pinned hub per public repository in its product channel: link, description, lifecycle, releases |
 
 ## Discord UI only
 
