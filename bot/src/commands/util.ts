@@ -118,7 +118,7 @@ function threadFromInteraction(interaction: Interaction, channelId: string): Cha
 
 const NAME_CHAR = /[a-z0-9_-]/;
 /** Thread name the GitHub module gives a pull request thread: "<repo> #<number>: <title>". */
-const PULL_THREAD_NAME = /^([A-Za-z0-9._-]+) #(\d+): ([\s\S]*)$/;
+const PULL_THREAD_NAME = /^(?!PR #)([A-Za-z0-9._-]+) #(\d+): ([\s\S]*)$/;
 
 /**
  * Repository, number and title of a thread named by the GitHub module
