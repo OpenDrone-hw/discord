@@ -44,7 +44,7 @@ export function makeEnv(overrides: Partial<Env> = {}): Env {
     SESSION_SECRET: "session-secret",
     DB: {} as D1Database,
     GUILD_ID: "1494019459822653512",
-    APPLICATION_ID: "1553748824470851644",
+    APPLICATION_ID: "1553826696673759344",
     PROMOTE_ENABLED: "false",
     ...overrides,
   };

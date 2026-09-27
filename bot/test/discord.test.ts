@@ -13,7 +13,7 @@ import { BOT_TOKEN, jsonResponse, mockFetch } from "./helpers.ts";
 const CHANNEL = "1494779609131258048";
 const MESSAGE = "1500000000000000001";
 const GUILD = "1494019459822653512";
-const APP = "1553748824470851644";
+const APP = "1553826696673759344";
 const INTERACTION_TOKEN = "aW50ZXJhY3Rpb24tdG9rZW4tc2VjcmV0";
 
 function clock(start = 1_000_000) {

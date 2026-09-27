@@ -13,7 +13,7 @@ import type { Interaction, InteractionResponse } from "../../src/types.ts";
 import { fakeContext, jsonResponse, makeEnv, mockFetch, type RecordedCall } from "../helpers.ts";
 
 export const GUILD = "1494019459822653512";
-export const APP = "1553748824470851644";
+export const APP = "1553826696673759344";
 
 export const FORUM_RX = "1700000000000000001";
 export const FORUM_POWER = "1700000000000000002";

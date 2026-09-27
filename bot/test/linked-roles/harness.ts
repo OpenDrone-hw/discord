@@ -318,7 +318,7 @@ export function appPrivateKey(): Promise<string> {
 }
 
 export const BASE = "https://bot.example.workers.dev";
-export const APP = "1553748824470851644";
+export const APP = "1553826696673759344";
 
 export class Clock {
   ms = Date.UTC(2026, 8, 27, 12, 0, 0);

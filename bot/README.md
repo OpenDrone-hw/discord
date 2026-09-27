@@ -373,7 +373,7 @@ layout is applied and migrated.
 | Var (`wrangler.toml`) | Value |
 |---|---|
 | `GUILD_ID` | `1494019459822653512` |
-| `APPLICATION_ID` | `1553748824470851644` |
+| `APPLICATION_ID` | `1553826696673759344` |
 | `PROMOTE_ENABLED` | `"false"`; `/promote` refuses unless it is `"true"` |
 | `GITHUB_MAINTAINER_TEAM` | Optional team slug for `maintainer`; unset means `maintainers`. The team must exist, otherwise `maintainer` is 0 for everyone |
 
@@ -387,7 +387,7 @@ npx wrangler deploy
 
 ### 5. Discord Developer Portal
 
-Application `OpenDrone Dev` (1553748824470851644).
+Application `OpenDrone Dev` (1553826696673759344).
 
 | Page | Field | Value |
 |---|---|---|

@@ -423,8 +423,8 @@ These have no API, or are outside what the scripts manage.
 
 ## Bot application
 
-`OpenDrone Dev` (application id `1553748824470851644`) is private: only its owner
-can install it. `discord_config.py` and the Worker in `bot/` use the same
+`OpenDrone Dev` (application id `1553826696673759344`) is private and owned by the server owner's
+Discord account: only that account can install it or change its settings. `discord_config.py` and the Worker in `bot/` use the same
 application. Its role must stay above every role it assigns, and it holds
 Administrator while the layout is built.
 
