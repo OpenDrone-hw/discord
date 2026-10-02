@@ -179,11 +179,11 @@ class Hubs(Case):
     def test_dry_run_counts_only_and_writes_nothing(self):
         out = self.ok("hubs")
         self.assertEqual(self.fake.writes(), [])
-        self.assertIn("hubs: 22 to post, 0 to edit, 22 to pin, 0 done; 5 private skipped, 1 not found on GitHub, "
+        self.assertIn("hubs: 26 to post, 0 to edit, 26 to pin, 0 done; 2 private skipped, 1 not found on GitHub, "
                       "0 channel(s) blocked", out)
         self.assertIn("#fc: 2 hubs, 2 to post", out)
         self.assertIn("#kicad-library: 3 hubs, 3 to post", out)
-        self.assertNotIn("#frame:", out)  # both frame repositories are private
+        self.assertIn("#motors: 1 hub, 1 to post", out)
         for repo in texts.PRIVATE_REPOS:
             self.assertNotIn(f"repos/OpenDrone-hw/{repo}", self.github.calls)
         self.assertIn("Dry run", out)
@@ -192,8 +192,8 @@ class Hubs(Case):
         self.ok("hubs", "--yes")
         posts = self.posts()
         pins = [c for c in self.fake.writes() if c[0] == "PUT"]
-        self.assertEqual((len(posts), len(pins)), (22, 22))
-        self.assertEqual(len(self.sleeps), 44)
+        self.assertEqual((len(posts), len(pins)), (26, 26))
+        self.assertEqual(len(self.sleeps), 52)
         by_channel = {}
         for _m, path, body in posts:
             self.assertEqual(body["allowed_mentions"], {"parse": []})
@@ -215,7 +215,7 @@ class Hubs(Case):
         before = len(self.fake.writes())
         out = self.ok("hubs", "--yes")
         self.assertEqual(len(self.fake.writes()), before)
-        self.assertIn("hubs: 0 to post, 0 to edit, 0 to pin, 22 done", out)
+        self.assertIn("hubs: 0 to post, 0 to edit, 0 to pin, 26 done", out)
 
     def test_edits_a_hub_whose_lifecycle_changed_and_repins_an_unpinned_one(self):
         self.ok("hubs", "--yes")

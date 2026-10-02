@@ -41,6 +41,7 @@
     "OpenGPS": {"channel": "gps"},
     "OpenFrame-3F": {"channel": "frame"},
     "OpenFrame-5F": {"channel": "frame"},
+    "OpenMotor": {"channel": "motors"},
     "Charger": {"channel": "charger"},
     "KiCad-Library": {"channel": "kicad-library"},
     "hardware-template": {"channel": "kicad-library"},

@@ -342,7 +342,7 @@ class ServerJson(ToolCase):
         fake = self.applied()
         cats = {c["id"]: c["name"] for c in fake.channels if c["type"] == 4}
         self.assertNotIn("forums", REPOS)
-        self.assertEqual(len(PRODUCT_CHANNELS), 14)
+        self.assertEqual(len(PRODUCT_CHANNELS), 15)
         for name in PRODUCT_CHANNELS:
             ch = fake.by_name(name)
             self.assertEqual(ch["type"], 0, name)
