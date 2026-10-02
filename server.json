@@ -672,7 +672,6 @@
     "public_updates_channel": "mod-log",
     "safety_alerts_channel": "mod-log",
     "system_channel_flags": [
-      "SUPPRESS_JOIN_NOTIFICATIONS",
       "SUPPRESS_GUILD_REMINDER_NOTIFICATIONS",
       "SUPPRESS_JOIN_NOTIFICATION_REPLIES"
     ]

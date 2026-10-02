@@ -598,7 +598,7 @@ class FromThePreviousLayout(ToolCase):
     def test_guild_description_system_channel_flags_and_automod_alerts(self):
         plan = self.plan()
         [guild] = plan["ops"]["guild"]
-        self.assertEqual(guild["body"]["system_channel_flags"], 1 | 4 | 8)
+        self.assertEqual(guild["body"]["system_channel_flags"], 4 | 8)
         self.assertTrue(guild["body"]["description"].startswith("Development, testing and support for OpenDrone"))
         self.fake.guild["system_channel_flags"] = 2 | 64  # boost messages off, an unknown bit
         [guild] = self.plan()["ops"]["guild"]
