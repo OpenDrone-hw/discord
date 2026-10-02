@@ -26,7 +26,7 @@ BARE_CHANNEL = re.compile(r"(?<![<{\w&#])#([a-z0-9][a-z0-9_-]*)")
 REPOS_JSON = dc.ROOT / "bot" / "config" / "repos.json"
 # Private repositories get no hub: nothing of theirs is posted to Discord. A repository GitHub reports
 # as private or answers 404 for is skipped as well.
-PRIVATE_REPOS = ("OpenFC", "OpenGPS", "OpenFrame-3F", "OpenFrame-5F")
+PRIVATE_REPOS = ("OpenFC",)
 LIFECYCLE_TOPICS = ("status-planned", "status-in-progress", "status-alpha", "status-beta", "status-launched")
 HUB_FOOTER = "Discuss changes in threads: the bot opens one per pull request; link an existing thread with /link."
 MESSAGE_LIMIT = 2000
@@ -75,7 +75,7 @@ Anyone can propose a new product: post a paragraph of what and why in {#proposal
 Roadmap: https://opendrone.be/roadmap""",
     "buying-and-support": """\
 ## Buying and support
-The products are sold at https://opendrone.be. Incutec handles production, quality control, parts sourcing, packing and shipping, and the legal responsibility for a product sold.
+The products are sold at https://opendrone.be. Incutec is responsible for production, quality and delivery of every order, and carries the legal responsibility for a product sold.
 
 Alpha boards may be offered as a preorder against a funding target. The first production batch is built once the target is met.
 
@@ -89,7 +89,7 @@ Where to go:
 ## Licence, names and AI
 Hardware is CERN-OHL-S-2.0, a reciprocal copyleft licence. You can modify a board and ship your version. If someone asks for your sources, you hand them over on the same terms. The goal is not to stop clones but for everyone to share their improvements.
 
-incutec is a registered trademark. OpenDrone is not. Build the designs, sell them, call them what you like. You cannot present your product as an official incutec product, or use incutec branding in a way that suggests we made, tested or support it. Saying what your board is based on is fine.
+incutec is a trademark. OpenDrone is not. Build the designs, sell them, call them what you like. You cannot present your product as an official incutec product, or use incutec branding in a way that suggests we made, tested or support it. Saying what your board is based on is fine.
 
 Some bundled 3D models have their own upstream licence (CC-BY-SA-4.0 or GPL), noted inside the file. Those notices still apply.
 
@@ -103,7 +103,7 @@ What it is used for: research and datasheet reading, component search and sourci
 What it does not do (yet): make schematics, place parts or route a board.""",
     "welcome": f"""\
 ## Welcome to OpenDrone
-This server is where OpenDrone, a fully open source FPV stack, is developed, tested and supported.
+This server is where OpenDrone, an open source FPV stack, is developed, tested and supported.
 Start with {{#rules}}, say hi in {{#introduce-yourself}}, ask board questions in {{#help}} and propose products or changes in {{#proposals}}.
 Pick the product channels you follow in Channels & Roles: {CUSTOMIZE}
 Development happens in the product channels, one thread per pull request. For every GitHub pull request, merge and release in one channel, pick GitHub feed in Channels & Roles.

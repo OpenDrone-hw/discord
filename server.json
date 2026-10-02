@@ -409,10 +409,10 @@
         {"id": "1494758396577058900", "name": "vtx", "topic": "Analog video transmitters: OpenVTX hardware. One thread per pull request."},
         {"id": "1494803018770809065", "name": "digital-vtx", "topic": "Digital video transmission: research and discussion. No OpenDrone repository yet."},
         {"id": "1494758377010757682", "name": "remote-id", "topic": "Remote ID: OpenRemoteID hardware. One thread per pull request."},
-        {"id": "1550883307246461033", "name": "gps", "topic": "GPS: OpenGPS hardware. The repository is private until release."},
-        {"id": "1494758355825328158", "name": "frame", "topic": "Frames: OpenFrame-3F and OpenFrame-5F CAD. The repositories are private until release."},
+        {"id": "1550883307246461033", "name": "gps", "topic": "GPS: OpenGPS hardware, https://github.com/OpenDrone-hw/OpenGPS. One thread per pull request."},
+        {"id": "1494758355825328158", "name": "frame", "topic": "Frames: OpenFrame-3F and OpenFrame-5F CAD, https://github.com/OpenDrone-hw/OpenFrame-3F and https://github.com/OpenDrone-hw/OpenFrame-5F. One thread per pull request."},
         {"id": "1550884618322972693", "name": "charger", "topic": "Chargers: the OpenDrone Charger hardware, its firmware and pull request threads."},
-        {"id": "1550883427220197396", "name": "motors", "topic": "Motors: design discussion. No OpenDrone motor product line yet."},
+        {"id": "1550883427220197396", "name": "motors", "topic": "Motors: OpenMotor, OEM brushless motors for OpenFrame, on preorder. Bench test data: https://github.com/OpenDrone-hw/OpenMotor. One thread per pull request."},
         {"name": "kicad-library", "type": "text", "topic": "KiCad-Library parts and footprints, hardware-template and OpenDrone-Fixtures. One thread per pull request."}
       ]
     },
@@ -516,7 +516,7 @@
         "options": [
           {
             "title": "Flight controllers",
-            "description": "OpenFC-Lite, OpenFC-Lite-Mini, OpenFC, OpenAIO: #fc and #aio",
+            "description": "OpenFC-Lite, OpenFC-Lite-Mini, OpenAIO: #fc and #aio",
             "emoji": "🧠",
             "roles": ["FC follower"],
             "channels": ["fc", "aio"]
@@ -667,7 +667,7 @@
     }
   ],
   "guild": {
-    "description": "Development, testing and support for OpenDrone, a fully open source FPV stack: flight controllers, ESCs, receivers, frames and more, designed and made in Europe.",
+    "description": "Development, testing and support for OpenDrone, an open source FPV stack: flight controllers, ESCs, receivers, frames and more, designed in Europe.",
     "rules_channel": "rules",
     "public_updates_channel": "mod-log",
     "safety_alerts_channel": "mod-log",
