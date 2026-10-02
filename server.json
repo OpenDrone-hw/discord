@@ -402,7 +402,7 @@
       "name": "Hardware",
       "access": "open",
       "channels": [
-        {"id": "1494783056026796262", "name": "fc", "topic": "Flight controllers: OpenFC-Lite, OpenFC-Lite-Mini and OpenFC hardware. One thread per pull request."},
+        {"id": "1494783056026796262", "name": "fc", "topic": "Flight controllers: OpenFC-Lite, https://github.com/OpenDrone-hw/OpenFC-Lite, and OpenFC-Lite-Mini, https://github.com/OpenDrone-hw/OpenFC-Lite-Mini. One thread per pull request."},
         {"id": "1538618173354414190", "name": "aio", "topic": "AIO boards: OpenAIO and OpenAIO-Whoop hardware. One thread per pull request."},
         {"id": "1494782966302507118", "name": "esc", "topic": "ESCs: OpenESC-20x20 and OpenESC-30x30 hardware. One thread per pull request."},
         {"id": "1494758332903456969", "name": "rx", "topic": "Receivers: OpenRX, OpenRX-Lite, OpenRX-Lite-UFL, OpenRX-Mono and OpenRX-Gemini hardware. One thread per pull request."},
