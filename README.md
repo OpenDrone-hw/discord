@@ -6,7 +6,7 @@ Configuration as code for the [OpenDrone Discord server](https://discord.gg/v3sW
 |---|---|
 | `server.json` + `discord_config.py` | Channels, roles, permissions, onboarding, welcome screen, AutoMod and guild settings, planned and applied from Git |
 | `texts.py` | Posts the bot-owned texts: #rules, #welcome, the Server Guide resource pages and one hub message per repository |
-| `bot/` | Cloudflare Worker: pull request threads, `#git-feed`, KiCad collision guard, commands, linked roles. See [bot/README.md](bot/README.md) |
+| `bot/` | Cloudflare Worker: pull request and issue threads, `#git-feed`, KiCad collision guard, commands, linked roles. See [bot/README.md](bot/README.md) |
 
 ## Change the server
 

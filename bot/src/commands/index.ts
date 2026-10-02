@@ -8,6 +8,7 @@
  * | /editing repo:<name>     | slash        | anyone; private repos: staff  | ephemeral                              |
  * | /verify                  | slash        | anyone who can use it         | ephemeral                              |
  * | /promote name summary    | slash        | admin, PROMOTE_ENABLED="true" | ephemeral                              |
+ * | /posting [state]         | slash        | admin                         | ephemeral                              |
  * | To GitHub issue          | message menu | members; private repos: staff | modal, then ephemeral and a reply      |
  * | Approve build            | message menu | reviewer or admin             | ephemeral                              |
  *
@@ -19,12 +20,13 @@ import { approveBuildCommand } from "./approve-build.ts";
 import { branchCommand } from "./branch.ts";
 import { editingCommand } from "./editing.ts";
 import { linkCommand } from "./link.ts";
+import { postingCommand } from "./posting.ts";
 import { promoteCommand } from "./promote.ts";
 import { toIssueCommand, toIssueModal } from "./to-issue.ts";
 import { verifyCommand } from "./verify.ts";
 
 export const commandsModule: BotModule = {
   name: "commands",
-  commands: [linkCommand, branchCommand, editingCommand, verifyCommand, promoteCommand, toIssueCommand, approveBuildCommand],
+  commands: [linkCommand, branchCommand, editingCommand, verifyCommand, promoteCommand, postingCommand, toIssueCommand, approveBuildCommand],
   components: [toIssueModal],
 };

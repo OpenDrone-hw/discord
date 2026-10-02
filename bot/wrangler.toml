@@ -3,6 +3,7 @@
 #   DISCORD_PUBLIC_KEY DISCORD_BOT_TOKEN DISCORD_CLIENT_ID DISCORD_CLIENT_SECRET
 #   GITHUB_APP_ID GITHUB_APP_PRIVATE_KEY GITHUB_WEBHOOK_SECRET
 #   GITHUB_OAUTH_CLIENT_ID GITHUB_OAUTH_CLIENT_SECRET SESSION_SECRET
+# Optional: DISCORD_POSTING ("off" stops GitHub posting to Discord; README "Kill switch").
 name = "opendrone-discord-bot"
 main = "src/index.ts"
 compatibility_date = "2026-09-01"

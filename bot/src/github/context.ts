@@ -62,6 +62,21 @@ export async function postToChannel(services: Services, key: ChannelKey, message
 }
 
 /**
+ * Posts to the product text channel config/repos.json maps the scope's
+ * repository to. A repository that is not listed posts nothing; a listed one
+ * whose channel is missing throws ConfigError (Directory.resolveRepo).
+ */
+export async function postToProductChannel(scope: Scope, message: MessagePayload): Promise<boolean> {
+  const resolved = await scope.services.directory.resolveRepo(scope.repo.fullName);
+  if (!resolved) {
+    console.warn(`${scope.repo.fullName} is not in config/repos.json; product channel message dropped`);
+    return false;
+  }
+  await scope.services.discord.sendMessage(resolved.channelId, message);
+  return true;
+}
+
+/**
  * Posts into a linked thread. A thread that was deleted or that the bot
  * cannot reach is logged and skipped; the PR keeps its link.
  */

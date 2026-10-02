@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 import { githubModule } from "../../src/github/index.ts";
 import { previousTopics } from "../../src/github/repository.ts";
 import type { Services } from "../../src/services.ts";
-import { ANNOUNCEMENTS, FEED, FakeWorld, brokenD1, harness, repoPayload, sqliteD1 } from "./fakes.ts";
+import { ANNOUNCEMENTS, CHANNEL_RX, FEED, FakeWorld, brokenD1, harness, repoPayload, sqliteD1 } from "./fakes.ts";
 
 let errors: MockInstance;
 beforeEach(() => {
@@ -29,11 +29,12 @@ function release(overrides: Record<string, unknown> = {}) {
 }
 
 describe("release.published", () => {
-  it("announces the release with asset links and posts a feed line", async () => {
+  it("posts the release card with asset links to the product channel and a feed line, never to #announcements", async () => {
     const { world, deliver } = await harness();
     await deliver("release", { action: "published", release: release(), repository: repoPayload() });
     expect(errors).not.toHaveBeenCalled();
-    const [announcement] = world.messagesIn(ANNOUNCEMENTS);
+    expect(world.messagesIn(ANNOUNCEMENTS)).toEqual([]);
+    const [announcement] = world.messagesIn(CHANNEL_RX);
     const text = FakeWorld.text(announcement);
     expect(text).toContain("## [OpenRX v1.2.0](https://github.com/OpenDrone-hw/OpenRX/releases/tag/v1.2.0)");
     expect(text).toContain("Release published by **carol**");
@@ -55,7 +56,7 @@ describe("release.published", () => {
     await deliver("release", { action: "published", release: release({ prerelease: true, name: "", tag_name: "v2.0.0-rc1", assets }), repository: repoPayload() });
     await deliver("release", { action: "published", release: release({ draft: true }), repository: repoPayload() });
     await deliver("release", { action: "published", release: release(), repository: repoPayload("OpenRX", { private: true }) });
-    const messages = world.messagesIn(ANNOUNCEMENTS);
+    const messages = world.messagesIn(CHANNEL_RX);
     expect(messages).toHaveLength(1);
     const text = FakeWorld.text(messages[0]);
     expect(text).toContain("## [OpenRX v2.0.0-rc1]");
@@ -70,17 +71,16 @@ describe("release.published", () => {
     const payload = { action: "published", release: release(), repository: repoPayload() };
     await deliver("release", payload, "r-1");
     await deliver("release", payload, "r-1");
-    expect(world.messagesIn(ANNOUNCEMENTS)).toHaveLength(1);
+    expect(world.messagesIn(CHANNEL_RX)).toHaveLength(1);
     expect(world.messagesIn(FEED)).toHaveLength(1);
   });
 
-  it("drops the post with a warning when #announcements is missing", async () => {
-    const world = new FakeWorld();
-    world.channels = world.channels.filter((c) => c.name !== "announcements");
-    const { deliver } = await harness({ world });
-    await deliver("release", { action: "published", release: release(), repository: repoPayload() });
+  it("posts only the feed line for a repository that config/repos.json does not list", async () => {
+    const { world, deliver } = await harness();
+    await deliver("release", { action: "published", release: release(), repository: repoPayload("Unlisted") });
     expect(errors).not.toHaveBeenCalled();
     expect(world.messagesIn(FEED)).toHaveLength(1);
+    expect(world.discordPosts()).toHaveLength(1);
   });
 });
 
@@ -97,11 +97,12 @@ describe("repository.edited", () => {
     expect(previousTopics({})).toBeNull();
   });
 
-  it("announces a lifecycle move", async () => {
+  it("posts a lifecycle move to the product channel, never to #announcements", async () => {
     const { world, deliver } = await harness();
     await deliver("repository", edited(["kicad", "status-alpha"], ["kicad", "status-beta"]));
     expect(errors).not.toHaveBeenCalled();
-    expect(FakeWorld.text(world.messagesIn(ANNOUNCEMENTS)[0])).toBe(
+    expect(world.messagesIn(ANNOUNCEMENTS)).toEqual([]);
+    expect(FakeWorld.text(world.messagesIn(CHANNEL_RX)[0])).toBe(
       "### [OpenRX](https://github.com/OpenDrone-hw/OpenRX) moved from **alpha** to **beta**",
     );
     expect(FakeWorld.text(world.messagesIn(FEED)[0])).toContain("moved from **alpha** to **beta**");
@@ -110,7 +111,7 @@ describe("repository.edited", () => {
   it("announces a first status and uses the most advanced one", async () => {
     const { world, deliver } = await harness();
     await deliver("repository", edited(null, ["status-planned", "status-launched"]));
-    expect(FakeWorld.text(world.messagesIn(ANNOUNCEMENTS)[0])).toContain("is now **launched**");
+    expect(FakeWorld.text(world.messagesIn(CHANNEL_RX)[0])).toContain("is now **launched**");
   });
 
   it("ignores other topic changes, a removed status, other edits and private repositories", async () => {

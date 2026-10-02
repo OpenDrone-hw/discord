@@ -164,7 +164,7 @@ describe("Directory", () => {
   const GUILD = "1494019459822653512";
   const channels = [
     { id: "100", type: ChannelType.GUILD_ANNOUNCEMENT, name: "git-feed" },
-    { id: "101", type: ChannelType.GUILD_ANNOUNCEMENT, name: "announcements" },
+    { id: "101", type: ChannelType.GUILD_TEXT, name: "mod-log" },
     { id: "200", type: ChannelType.GUILD_FORUM, name: "rx", available_tags: [] },
     { id: "201", type: ChannelType.GUILD_TEXT, name: "rx" },
     { id: "202", type: ChannelType.GUILD_FORUM, name: "vtx", available_tags: [] },
@@ -188,8 +188,7 @@ describe("Directory", () => {
   it("resolves channels and roles by configured name", async () => {
     const { directory } = setup();
     expect(await directory.channelId("gitFeed")).toBe("100");
-    expect(await directory.channelId("announcements")).toBe("101");
-    expect(await directory.channelId("modLog")).toBeNull();
+    expect(await directory.channelId("modLog")).toBe("101");
     expect(await directory.roleId("verifiedBuilder")).toBe("r1");
     expect(await directory.roleId("maintainer")).toBeNull();
   });
@@ -216,7 +215,7 @@ describe("Directory", () => {
   it("caches lists for the TTL and refetches after it or after invalidate()", async () => {
     const { directory, calls, now } = setup();
     await directory.channelId("gitFeed");
-    await directory.channelId("announcements");
+    await directory.channelId("modLog");
     await directory.roleId("reviewer");
     await directory.roleId("verifiedBuilder");
     expect(calls).toHaveLength(2);

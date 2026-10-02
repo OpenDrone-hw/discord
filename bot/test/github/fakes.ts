@@ -46,6 +46,9 @@ export function sqliteD1(db = new DatabaseSync(":memory:")): D1Database & { sqli
     async first<T>() {
       return (db.prepare(sql).get(...args) ?? null) as T | null;
     },
+    async all<T>() {
+      return { success: true, results: db.prepare(sql).all(...args) as T[], meta: {} };
+    },
   });
   return { prepare: (sql: string) => statement(sql, []), sqlite: db } as unknown as D1Database & { sqlite: DatabaseSync };
 }
@@ -55,7 +58,7 @@ export function brokenD1(): D1Database {
   const fail = async () => {
     throw new Error("D1_ERROR: database unavailable");
   };
-  const statement = { bind: () => statement, run: fail, first: fail };
+  const statement = { bind: () => statement, run: fail, first: fail, all: fail };
   return { prepare: () => statement } as unknown as D1Database;
 }
 
@@ -254,6 +257,15 @@ export class FakeWorld {
       const id = m[1] as string;
       const channel = this.goneThreads.has(id) ? undefined : (this.threadChannels.get(id) ?? this.channels.find((c) => c.id === id));
       return channel ? jsonResponse(channel) : jsonResponse({ code: 10003, message: "Unknown Channel" }, 404);
+    }
+    if (call.method === "PATCH" && (m = /^\/channels\/(\d+)$/.exec(path))) {
+      const id = m[1] as string;
+      const thread = this.goneThreads.has(id) ? undefined : this.threadChannels.get(id);
+      if (!thread) return jsonResponse({ code: 10003, message: "Unknown Channel" }, 404);
+      const meta = { ...((thread.thread_metadata as Record<string, unknown> | undefined) ?? {}) };
+      if (typeof body.archived === "boolean") meta.archived = body.archived;
+      thread.thread_metadata = meta;
+      return jsonResponse(thread);
     }
     if (call.method === "POST" && (m = /^\/channels\/(\d+)\/messages\/(\d+)\/threads$/.exec(path))) {
       const [channelId, messageId] = [m[1] as string, m[2] as string];

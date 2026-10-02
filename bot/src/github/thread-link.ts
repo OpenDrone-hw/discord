@@ -34,7 +34,7 @@ const PRIVATE_THREAD = 12;
 /** A week: the longest auto-archive time Discord offers. */
 export const AUTO_ARCHIVE_MINUTES = 10080;
 /** Discord error code: a thread was already started from this message. */
-const THREAD_ALREADY_CREATED = 160004;
+export const THREAD_ALREADY_CREATED = 160004;
 
 export function discussionUrl(guildId: string, threadId: string): string {
   return `https://discord.com/channels/${guildId}/${threadId}`;

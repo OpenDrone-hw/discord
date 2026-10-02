@@ -117,13 +117,14 @@ describe("/promote", () => {
 describe("command registration", () => {
   const definitions = new Registry(modules).commandDefinitions();
 
-  it("registers the seven commands and the modal handler", () => {
+  it("registers the eight commands and the modal handler", () => {
     expect(definitions.map((d) => `${d.type}:${d.name}`)).toEqual([
       "1:link",
       "1:branch",
       "1:editing",
       "1:verify",
       "1:promote",
+      "1:posting",
       "3:To GitHub issue",
       "3:Approve build",
     ]);
@@ -134,6 +135,7 @@ describe("command registration", () => {
     expect(definitionProblems(definitions)).toEqual([]);
     const perms = Object.fromEntries(definitions.map((d) => [d.name, d.default_member_permissions]));
     expect(perms.promote).toBe(ADMINISTRATOR);
+    expect(perms.posting).toBe(ADMINISTRATOR);
     expect(perms["Approve build"]).toBe(ADMINISTRATOR);
     expect(perms.link).toBe(String(1n << 11n));
     for (const d of definitions) expect(d.contexts).toEqual([0]);

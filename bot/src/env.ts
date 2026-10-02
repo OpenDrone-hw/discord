@@ -14,6 +14,8 @@ export interface Env {
   GITHUB_OAUTH_CLIENT_ID: string;
   GITHUB_OAUTH_CLIENT_SECRET: string;
   SESSION_SECRET: string;
+  /** Optional secret: "off" stops Discord posting from GitHub events (src/posting.ts). Unset means on. */
+  DISCORD_POSTING?: string;
 
   // D1 database holding linked-role users and their encrypted refresh tokens.
   DB: D1Database;
