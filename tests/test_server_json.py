@@ -602,7 +602,7 @@ class FromThePreviousLayout(ToolCase):
         self.assertTrue(guild["body"]["description"].startswith("Development, testing and support for OpenDrone"))
         self.fake.guild["system_channel_flags"] = 2 | 64  # boost messages off, an unknown bit
         [guild] = self.plan()["ops"]["guild"]
-        self.assertEqual(guild["body"]["system_channel_flags"], 1 | 4 | 8 | 64)
+        self.assertEqual(guild["body"]["system_channel_flags"], 4 | 8 | 64)
         self.apply(DESIRED)
         modlog = self.fake.by_name("mod-log")["id"]
         for rule in self.fake.automod:
