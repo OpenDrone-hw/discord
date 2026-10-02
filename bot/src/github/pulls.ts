@@ -164,6 +164,18 @@ export async function handlePullRequest(ctx: GitHubEventContext): Promise<void> 
   await runAll(`pull_request.${action} ${scope.repo.fullName}#${pull.number}`, tasks);
 }
 
+/**
+ * pull_request while the posting kill switch is off: only the KiCad collision
+ * guard runs, and it comments on GitHub without posting to Discord.
+ */
+export async function handlePullRequestCollisionsOnly(ctx: GitHubEventContext): Promise<void> {
+  const scope = makeScope(ctx);
+  const pull = readPull(ctx.payload.pull_request);
+  const action = ctx.action ?? "";
+  if (!scope || !pull || !COLLISION_ACTIONS.has(action) || pull.state !== "open") return;
+  await checkCollisions(scope, pull, null, { discord: false });
+}
+
 const REVIEW_TEXT: Record<string, { text: string; color: number; feed: string | null }> = {
   approved: { text: "approved these changes", color: Colors.success, feed: "approved" },
   changes_requested: { text: "requested changes", color: Colors.failure, feed: "changes requested" },

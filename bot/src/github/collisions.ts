@@ -16,8 +16,9 @@
  * Before warning, the guard reads the bot's markers on both PRs. A pair is
  * warned again only when the overlap contains a file no earlier marker named,
  * so repeated pushes (synchronize) and redeliveries stay quiet. Only markers
- * in comments by a Bot account count. Private repositories get the PR
- * comment but no Discord warning.
+ * in comments by a Bot account count. Private repositories, and every
+ * repository while the posting kill switch is off (src/posting.ts), get the
+ * PR comment but no Discord warning.
  */
 import type { Scope } from "./context.ts";
 import { postToThread } from "./context.ts";
@@ -118,7 +119,13 @@ function warningCard(scope: Scope, other: PullRequest, overlap: readonly string[
  * it; otherwise the PR body's link is verified here. The other PR's link is
  * always verified (linkedThread) before anything is posted to it.
  */
-export async function checkCollisions(scope: Scope, pull: PullRequest, threadId: string | null): Promise<void> {
+export async function checkCollisions(
+  scope: Scope,
+  pull: PullRequest,
+  threadId: string | null,
+  options: { discord?: boolean } = {},
+): Promise<void> {
+  const discord = options.discord ?? true;
   const mine = kicadFiles(await scope.api.pullFiles(pull.number));
   if (mine.length === 0) return;
 
@@ -143,7 +150,7 @@ export async function checkCollisions(scope: Scope, pull: PullRequest, threadId:
     if (overlap.every((f) => warned.has(f))) continue;
 
     await scope.api.comment(pull.number, collisionComment(other, overlap, pull.number));
-    if (scope.repo.private) continue;
+    if (scope.repo.private || !discord) continue;
     myThread ??= await linkedThread(scope, pull.body);
     const otherThread = await linkedThread(scope, other.body);
     if (myThread) await postToThread(scope.services, myThread, warningCard(scope, other, overlap));

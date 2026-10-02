@@ -14,6 +14,9 @@
  * | running, < 60 s old  | skips: another invocation is running it right now   |
  * | running, >= 60 s old | reclaims it: that invocation was cancelled at 30 s  |
  *
+ * A delivery skipped by the posting kill switch gets one row
+ * "<delivery>:skipped" with state "skipped" (markSkipped).
+ *
  * A step that throws deletes its claim, so a redelivery after a failure runs
  * it again while the steps that succeeded stay skipped. If D1 itself fails,
  * the step runs anyway: a duplicate message beats a lost one. A delivery
@@ -87,6 +90,22 @@ export class DeliveryStore {
 
   async release(key: string): Promise<void> {
     await this.#db.prepare("DELETE FROM github_deliveries WHERE key = ? AND state = 'running'").bind(key).run();
+  }
+
+  /**
+   * Records that the kill switch (src/posting.ts) skipped a delivery. The
+   * key "<delivery>:skipped" is outside every step key, so a redelivery after
+   * posting is switched back on still runs every step.
+   */
+  async markSkipped(delivery: string, event: string): Promise<void> {
+    await this.#ready();
+    await this.#db
+      .prepare(
+        `INSERT INTO github_deliveries (key, state, result, updated_at) VALUES (?, 'skipped', ?, ?)
+         ON CONFLICT (key) DO UPDATE SET updated_at = excluded.updated_at`,
+      )
+      .bind(`${delivery}:skipped`, JSON.stringify(event), this.#now())
+      .run();
   }
 
   /** Deletes rows last touched before now - RETENTION_MS; returns how many. */

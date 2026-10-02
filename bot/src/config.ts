@@ -11,7 +11,7 @@ import { ChannelType, type Channel, type Role } from "./types.ts";
 
 const CHANNEL_NAME = /^[a-z0-9_-]{1,100}$/;
 
-export const CHANNEL_KEYS = ["gitFeed", "announcements", "modLog"] as const;
+export const CHANNEL_KEYS = ["gitFeed", "modLog"] as const;
 export const ROLE_KEYS = [
   "admin",
   "developer",
@@ -44,7 +44,7 @@ export interface BotConfig {
   org: string;
   channels: Record<ChannelKey, string>;
   roles: Record<RoleKey, string>;
-  /** Repository topic -> lifecycle name shown in #announcements and #git-feed. */
+  /** Repository topic -> lifecycle name shown in the product channel and #git-feed. */
   lifecycle: Record<LifecycleTopic, string>;
   repos: Record<string, RepoEntry>;
 }

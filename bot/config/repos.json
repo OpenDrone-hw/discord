@@ -2,7 +2,6 @@
   "org": "OpenDrone-hw",
   "channels": {
     "gitFeed": "git-feed",
-    "announcements": "announcements",
     "modLog": "mod-log"
   },
   "roles": {

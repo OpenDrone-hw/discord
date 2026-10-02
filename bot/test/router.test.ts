@@ -429,6 +429,7 @@ describe("Registry", () => {
       "editing",
       "verify",
       "promote",
+      "posting",
       "To GitHub issue",
       "Approve build",
     ]);

@@ -2,17 +2,20 @@
  * Repository-level events: releases, lifecycle topic changes and pushes to
  * the default branch.
  *
- * | Event.action         | #announcements                 | #git-feed                  |
+ * | Event.action         | Product channel                | #git-feed                  |
  * |----------------------|--------------------------------|----------------------------|
  * | release.published    | release card with asset links  | one line                   |
- * | repository.edited    | when the status-* topic moves  | one line                   |
+ * | repository.edited    | lifecycle card when the        | one line                   |
+ * |                      | status-* topic moves           |                            |
  * | push                 | no                             | default branch only, not   |
  * |                      |                                | PR merges (already posted) |
  *
- * Private repositories post nothing.
+ * The product channel is the one config/repos.json maps the repository to.
+ * Nothing is ever posted to #announcements: that channel is written by
+ * people only. Private repositories post nothing.
  */
 import type { GitHubEventContext } from "../registry.ts";
-import { currentStatus, makeScope, postToChannel, runAll } from "./context.ts";
+import { currentStatus, makeScope, postToChannel, postToProductChannel, runAll } from "./context.ts";
 import {
   Colors,
   card,
@@ -60,7 +63,7 @@ export async function handleRelease(ctx: GitHubEventContext): Promise<void> {
   const kind = release.prerelease ? "pre-release" : "release";
   const line = `**${escapeMarkdown(scope.repo.name)}** ${kind} ${link(release.name, release.htmlUrl)} published by ${escapeMarkdown(release.author)}`;
   await runAll(`release ${scope.repo.fullName} ${release.tag}`, [
-    () => scope.once("announce", () => postToChannel(scope.services, "announcements", releaseCard(scope.repo, release))),
+    () => scope.once("product", () => postToProductChannel(scope, releaseCard(scope.repo, release))),
     () => scope.once("feed", () => postToChannel(scope.services, "gitFeed", feedLine(line))),
   ]);
 }
@@ -87,13 +90,13 @@ export async function handleRepositoryEdited(ctx: GitHubEventContext): Promise<v
   const change = from
     ? `moved from **${escapeMarkdown(labels[from])}** to **${escapeMarkdown(labels[to])}**`
     : `is now **${escapeMarkdown(labels[to])}**`;
-  const announcement = card({
+  const lifecycleCard = card({
     color: Colors.release,
     blocks: [`### ${repoLink} ${change}`],
     button: { label: "Repository on GitHub", url: scope.repo.htmlUrl },
   });
   await runAll(`repository.edited ${scope.repo.fullName}`, [
-    () => scope.once("announce", () => postToChannel(scope.services, "announcements", announcement)),
+    () => scope.once("product", () => postToProductChannel(scope, lifecycleCard)),
     () => scope.once("feed", () => postToChannel(scope.services, "gitFeed", feedLine(`**${repoLink}** ${change}`))),
   ]);
 }

@@ -171,6 +171,52 @@ export function readRelease(value: unknown): Release | null {
   };
 }
 
+export interface Issue {
+  number: number;
+  title: string;
+  body: string;
+  htmlUrl: string;
+  author: string;
+  state: string;
+  /** True for the issue side of a pull request (issue_comment on a PR). */
+  isPull: boolean;
+}
+
+export function readIssue(value: unknown): Issue | null {
+  if (!isRecord(value)) return null;
+  const number = num(value.number);
+  if (number === undefined) return null;
+  return {
+    number,
+    title: str(value.title) ?? "",
+    body: str(value.body) ?? "",
+    htmlUrl: str(value.html_url) ?? "",
+    author: login(value.user),
+    state: str(value.state) ?? "open",
+    isPull: value.pull_request !== undefined && value.pull_request !== null,
+  };
+}
+
+export interface IssueCommentEvent {
+  body: string;
+  htmlUrl: string;
+  author: string;
+  /** True for GitHub Apps and other bot accounts. */
+  isBot: boolean;
+}
+
+export function readIssueComment(value: unknown): IssueCommentEvent | null {
+  if (!isRecord(value)) return null;
+  const user = isRecord(value.user) ? value.user : {};
+  const author = login(value.user);
+  return {
+    body: str(value.body) ?? "",
+    htmlUrl: str(value.html_url) ?? "",
+    author,
+    isBot: user.type === "Bot" || author.endsWith("[bot]"),
+  };
+}
+
 export function senderLogin(payload: Record<string, unknown>): string {
   return login(payload.sender);
 }
