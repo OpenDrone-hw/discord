@@ -58,7 +58,9 @@
           "SEND_MESSAGES",
           "SEND_MESSAGES_IN_THREADS",
           "CREATE_PUBLIC_THREADS",
-          "ADD_REACTIONS"
+          "ADD_REACTIONS",
+          "CREATE_PRIVATE_THREADS",
+          "MANAGE_THREADS"
         ]
       }
     },
@@ -362,7 +364,6 @@
         {
           "name": "help",
           "type": "forum",
-          "access": "open-answered",
           "topic": "One post per problem. Say which product and revision, the firmware and its version (for example Betaflight 4.5.1), what you expected, what happened and what you already tried. Add photos, a diff or a log when you can.\nOrders, payment, shipping, warranty or anything private: open a ticket at https://opendrone.be/support instead.\nTag the product and question or bug; add solved when it is fixed.",
           "forum": {
             "layout": "list",

@@ -338,12 +338,12 @@ class ServerJson(ToolCase):
         # explicit overwrite so it does not depend on the bot's Administrator permission.
         fake = self.applied()
         names = {r["id"]: r["name"] for r in fake.roles} | {GID: "@everyone"}
-        answer = {"gen-chat", "help", *(n for _cid, n, _t, parent in CHANNELS
+        answer = {"gen-chat", *(n for _cid, n, _t, parent in CHANNELS
                                        if parent in ("1550880981592973433", "1550881887050928248")
                                        and n != "chatfpv"), "kicad-library"}
-        self.assertGreaterEqual(len(answer), 17)
+        self.assertEqual(len(answer), 17)
         want = ("VIEW_CHANNEL", "READ_MESSAGE_HISTORY", "SEND_MESSAGES", "SEND_MESSAGES_IN_THREADS",
-                "CREATE_PUBLIC_THREADS", "ADD_REACTIONS")
+                "CREATE_PUBLIC_THREADS", "ADD_REACTIONS", "CREATE_PRIVATE_THREADS", "MANAGE_THREADS")
         seen = set()
         for c in fake.channels:
             if c["name"] not in answer or c["type"] == 4:
@@ -355,6 +355,28 @@ class ServerJson(ToolCase):
             self.assertEqual(ows["OpenDrone Support"][1], 0, c["name"])
             self.assertTrue(ows["@everyone"][0] & P["VIEW_CHANNEL"], c["name"])
         self.assertEqual(seen, answer)
+
+    def test_open_answered_is_open_plus_the_support_bot_and_nothing_else(self):
+        profiles = DESIRED["profiles"]
+        extra = profiles["open-answered"]
+        self.assertEqual(extra["@everyone"], profiles["open"]["@everyone"])
+        self.assertEqual(set(extra) - set(profiles["open"]), {"OpenDrone Support"})
+        self.assertEqual(set(profiles["open"]), {"@everyone"})
+
+    def test_help_forum_is_not_an_answer_channel(self):
+        fake = self.applied()
+        bot = next(r["id"] for r in fake.roles if r["name"] == "OpenDrone Support")
+        help_forum = next(c for c in fake.channels if c["name"] == "help")
+        self.assertNotIn(bot, {o["id"] for o in help_forum["permission_overwrites"] if o["type"] == 0})
+
+    def test_no_newbie_or_member_overwrite_on_the_answer_channels(self):
+        fake = self.applied()
+        gating = {r["id"] for r in fake.roles if r["name"] in ("Newbie", "Member")}
+        for c in fake.channels:
+            if c["type"] == 4 or c["id"] in PROTECTED | {SUPPORT_CHAT, ROLES_CH}:  # unmanaged
+                continue
+            self.assertEqual({o["id"] for o in c["permission_overwrites"] if o["type"] == 0} & gating, set(), c["name"])
+        self.assertEqual(set(DESIRED["profiles"]["open-answered"]) & {"Newbie", "Member"}, set())
 
     def test_support_bot_is_not_added_to_read_only_or_member_channels(self):
         fake = self.applied()
