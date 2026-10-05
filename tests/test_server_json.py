@@ -363,6 +363,19 @@ class ServerJson(ToolCase):
         self.assertEqual(set(extra) - set(profiles["open"]), {"OpenDrone Support"})
         self.assertEqual(set(profiles["open"]), {"@everyone"})
 
+    def test_everyone_cannot_create_private_threads_on_the_answer_channels(self):
+        fake = self.applied()
+        for c in fake.channels:
+            if c["name"] not in ("gen-chat", "fc", "esc", "opendrone-web", "kicad-library"):
+                continue
+            ows = {o["id"]: (int(o["allow"]), int(o["deny"])) for o in c["permission_overwrites"] if o["type"] == 0}
+            allow, deny = ows[GID]
+            self.assertTrue(deny & P["CREATE_PRIVATE_THREADS"], c["name"])
+            self.assertFalse(allow & P["CREATE_PRIVATE_THREADS"], c["name"])
+        for name, spec in DESIRED["profiles"]["open-answered"].items():
+            if name != "OpenDrone Support":
+                self.assertNotIn("CREATE_PRIVATE_THREADS", spec.get("allow", []), name)
+
     def test_help_forum_is_not_an_answer_channel(self):
         fake = self.applied()
         bot = next(r["id"] for r in fake.roles if r["name"] == "OpenDrone Support")
