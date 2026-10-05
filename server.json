@@ -36,6 +36,32 @@
         "deny": ["MENTION_EVERYONE", "CREATE_PRIVATE_THREADS"]
       }
     },
+    "open-answered": {
+      "@everyone": {
+        "allow": [
+          "VIEW_CHANNEL",
+          "SEND_MESSAGES",
+          "READ_MESSAGE_HISTORY",
+          "ADD_REACTIONS",
+          "ATTACH_FILES",
+          "EMBED_LINKS",
+          "CREATE_PUBLIC_THREADS",
+          "SEND_MESSAGES_IN_THREADS",
+          "USE_APPLICATION_COMMANDS"
+        ],
+        "deny": ["MENTION_EVERYONE", "CREATE_PRIVATE_THREADS"]
+      },
+      "OpenDrone Support": {
+        "allow": [
+          "VIEW_CHANNEL",
+          "READ_MESSAGE_HISTORY",
+          "SEND_MESSAGES",
+          "SEND_MESSAGES_IN_THREADS",
+          "CREATE_PUBLIC_THREADS",
+          "ADD_REACTIONS"
+        ]
+      }
+    },
     "readonly": {
       "@everyone": {
         "allow": ["VIEW_CHANNEL", "READ_MESSAGE_HISTORY", "ADD_REACTIONS"],
@@ -320,7 +346,7 @@
       "name": "Community",
       "access": "open",
       "channels": [
-        {"id": "1494779609131258048", "name": "gen-chat", "topic": "General chat about OpenDrone and FPV."},
+        {"id": "1494779609131258048", "name": "gen-chat", "access": "open-answered", "topic": "General chat about OpenDrone and FPV."},
         {"id": "1494781139980779682", "name": "introduce-yourself", "topic": "Say hi: what you fly, what you build and what brought you here."},
         {"name": "flying", "type": "text", "topic": "FPV talk: gear, spots, tunes, videos. Anything that flies."},
         {"name": "off-topic", "type": "text", "topic": "Everything that is not about flying or OpenDrone."},
@@ -336,6 +362,7 @@
         {
           "name": "help",
           "type": "forum",
+          "access": "open-answered",
           "topic": "One post per problem. Say which product and revision, the firmware and its version (for example Betaflight 4.5.1), what you expected, what happened and what you already tried. Add photos, a diff or a log when you can.\nOrders, payment, shipping, warranty or anything private: open a ticket at https://opendrone.be/support instead.\nTag the product and question or bug; add solved when it is fixed.",
           "forum": {
             "layout": "list",
@@ -400,7 +427,7 @@
     {
       "id": "1550880981592973433",
       "name": "Hardware",
-      "access": "open",
+      "access": "open-answered",
       "channels": [
         {"id": "1494783056026796262", "name": "fc", "topic": "Flight controllers: OpenFC-Lite, https://github.com/OpenDrone-hw/OpenFC-Lite, and OpenFC-Lite-Mini, https://github.com/OpenDrone-hw/OpenFC-Lite-Mini. One thread per pull request."},
         {"id": "1538618173354414190", "name": "aio", "topic": "AIO boards: OpenAIO and OpenAIO-Whoop hardware. One thread per pull request."},
@@ -419,7 +446,7 @@
     {
       "id": "1550881887050928248",
       "name": "Software",
-      "access": "open",
+      "access": "open-answered",
       "channels": [
         {"id": "1494783023114096821", "name": "fc-betaflight", "topic": "Betaflight on OpenDrone flight controllers: targets, configs and the OpenDrone-hw/betaflight fork."},
         {"id": "1494758297885212832", "name": "esc-am32", "topic": "AM32 on OpenDrone ESCs: targets, settings and the OpenDrone-hw/AM32 fork."},

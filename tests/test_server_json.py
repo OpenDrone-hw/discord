@@ -333,6 +333,36 @@ class ServerJson(ToolCase):
             self.assertTrue(ows["OpenDrone Support"][0] & P[perm], perm)
         self.assertNotIn(CHATFPV, {c for p in fake.onboarding["prompts"] for o in p["options"] for c in o["channel_ids"]})
 
+    def test_support_bot_has_explicit_access_to_the_answer_channels(self):
+        # ChatFPV answers in #help, #gen-chat and the product channels as the OpenDrone Support bot. The access is an
+        # explicit overwrite so it does not depend on the bot's Administrator permission.
+        fake = self.applied()
+        names = {r["id"]: r["name"] for r in fake.roles} | {GID: "@everyone"}
+        answer = {"gen-chat", "help", *(n for _cid, n, _t, parent in CHANNELS
+                                       if parent in ("1550880981592973433", "1550881887050928248")
+                                       and n != "chatfpv"), "kicad-library"}
+        self.assertGreaterEqual(len(answer), 17)
+        want = ("VIEW_CHANNEL", "READ_MESSAGE_HISTORY", "SEND_MESSAGES", "SEND_MESSAGES_IN_THREADS",
+                "CREATE_PUBLIC_THREADS", "ADD_REACTIONS")
+        seen = set()
+        for c in fake.channels:
+            if c["name"] not in answer or c["type"] == 4:
+                continue
+            seen.add(c["name"])
+            ows = {names.get(o["id"]): (int(o["allow"]), int(o["deny"])) for o in c["permission_overwrites"] if o["type"] == 0}
+            for perm in want:
+                self.assertTrue(ows["OpenDrone Support"][0] & P[perm], (c["name"], perm))
+            self.assertEqual(ows["OpenDrone Support"][1], 0, c["name"])
+            self.assertTrue(ows["@everyone"][0] & P["VIEW_CHANNEL"], c["name"])
+        self.assertEqual(seen, answer)
+
+    def test_support_bot_is_not_added_to_read_only_or_member_channels(self):
+        fake = self.applied()
+        bot = next(r["id"] for r in fake.roles if r["name"] == "OpenDrone Support")
+        for name in ("welcome", "rules", "announcements", "introduce-yourself", "builds", "proposals", "off-topic"):
+            c = fake.by_name(name)
+            self.assertNotIn(bot, {o["id"] for o in c["permission_overwrites"] if o["type"] == 0}, name)
+
     def test_announcement_channels(self):
         fake = self.applied()
         self.assertEqual(fake.chan("1494032474626326548")["type"], 5)

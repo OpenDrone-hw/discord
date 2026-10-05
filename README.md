@@ -107,6 +107,7 @@ pinged on a new ticket and approve held replies and AI drafts with ✅. Give
 the role to whoever answers tickets.
 
 Access profiles in `server.json`: `open` (everyone reads and writes),
+`open-answered` (`open` plus an explicit `OpenDrone Support` bot overwrite: view, read history, send, send in threads, create public threads, add reactions; used on `#gen-chat`, `#help` and the Hardware and Software channels, where ChatFPV answers, so its access does not depend on the bot's Administrator permission),
 `readonly` (admin and the bot post), `staff`, `testers` and `feed` (hidden
 except for their roles). No profile uses `Newbie` or `Member`: onboarding is the
 gate, and the region answer gives `Member`.
