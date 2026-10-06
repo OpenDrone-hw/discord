@@ -4,6 +4,7 @@
  * | Provider | Authorize                               | Token endpoint                             | Scopes                          |
  * |----------|-----------------------------------------|--------------------------------------------|---------------------------------|
  * | Discord  | https://discord.com/oauth2/authorize    | POST https://discord.com/api/v10/oauth2/token | identify role_connections.write |
+ * | Discord (Early Bird) | same                        | same                                       | identify guilds.join            |
  * | GitHub   | https://github.com/login/oauth/authorize | POST https://github.com/login/oauth/access_token | none (GitHub App user token) |
  *
  * Discord refresh tokens rotate on every refresh; GitHub App user refresh
@@ -17,7 +18,7 @@ import type { RoleConnectionBody } from "./metadata.ts";
 
 export const DISCORD_AUTHORIZE_URL = "https://discord.com/oauth2/authorize";
 export const DISCORD_TOKEN_URL = `${API_BASE}/oauth2/token`;
-export const DISCORD_SCOPES = ["identify", "role_connections.write"] as const;
+export const DISCORD_SCOPES: readonly string[] = ["identify", "role_connections.write"];
 export const GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize";
 export const GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token";
 
@@ -113,12 +114,12 @@ export class DiscordOAuth {
     this.#options = options;
   }
 
-  authorizeUrl(redirectUri: string, state: string): string {
+  authorizeUrl(redirectUri: string, state: string, scopes: readonly string[] = DISCORD_SCOPES): string {
     const url = new URL(DISCORD_AUTHORIZE_URL);
     url.searchParams.set("client_id", this.#options.clientId);
     url.searchParams.set("redirect_uri", redirectUri);
     url.searchParams.set("response_type", "code");
-    url.searchParams.set("scope", DISCORD_SCOPES.join(" "));
+    url.searchParams.set("scope", scopes.join(" "));
     url.searchParams.set("state", state);
     // Always show the authorization screen: it names the account signed in to
     // discord.com in this browser and offers "Not you?" to switch.
@@ -135,10 +136,10 @@ export class DiscordOAuth {
     return tokenSet("discord", status, data, what);
   }
 
-  async exchangeCode(code: string, redirectUri: string): Promise<TokenSet> {
+  async exchangeCode(code: string, redirectUri: string, scopes: readonly string[] = DISCORD_SCOPES): Promise<TokenSet> {
     const tokens = await this.#token({ grant_type: "authorization_code", code, redirect_uri: redirectUri }, "code exchange");
     const granted = new Set(tokens.scope.split(/\s+/));
-    const missing = DISCORD_SCOPES.filter((s) => !granted.has(s));
+    const missing = scopes.filter((s) => !granted.has(s));
     if (missing.length > 0) throw new OAuthError("discord", 200, "missing_scope", `scope ${missing.join(" ")}`);
     return tokens;
   }

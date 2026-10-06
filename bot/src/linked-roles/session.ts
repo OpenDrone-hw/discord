@@ -15,7 +15,7 @@ import { open, seal } from "./crypto.ts";
 export const COOKIE_NAME = "__Host-linked-roles";
 export const SESSION_TTL_SECONDS = 600;
 
-export type SessionStep = "discord" | "github";
+export type SessionStep = "discord" | "github" | "early-bird";
 
 export interface Session {
   step: SessionStep;
@@ -26,6 +26,9 @@ export interface Session {
   discordAccessToken?: string;
   /** How the result page names the Discord account (discordLabel in oauth.ts). */
   discordName?: string;
+  /** Early Bird step: the Shopify order the claim token names (early-bird.ts). */
+  orderId?: string;
+  orderName?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -76,6 +79,8 @@ export async function readSession(
   if (typeof data.discordId === "string") session.discordId = data.discordId;
   if (typeof data.discordAccessToken === "string") session.discordAccessToken = data.discordAccessToken;
   if (typeof data.discordName === "string") session.discordName = data.discordName;
+  if (typeof data.orderId === "string") session.orderId = data.orderId;
+  if (typeof data.orderName === "string") session.orderName = data.orderName;
   return session;
 }
 

@@ -2,7 +2,8 @@
   "org": "OpenDrone-hw",
   "channels": {
     "gitFeed": "git-feed",
-    "modLog": "mod-log"
+    "modLog": "mod-log",
+    "earlyBirds": "early-birds"
   },
   "roles": {
     "admin": "admin",
@@ -12,6 +13,7 @@
     "member": "Member",
     "verifiedOwner": "Verified Owner",
     "verifiedBuilder": "Verified Builder",
+    "earlyBird": "Early Bird",
     "contributor": "Contributor",
     "maintainer": "Maintainer"
   },

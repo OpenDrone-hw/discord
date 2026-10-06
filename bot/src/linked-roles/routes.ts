@@ -38,6 +38,7 @@
 import { errorText } from "../interactions.ts";
 import type { LinkedRolesContext } from "./context.ts";
 import { randomToken } from "./crypto.ts";
+import { earlyBirdCallback } from "./early-bird.ts";
 import { roleConnectionBody } from "./metadata.ts";
 import { discordLabel, OAuthError } from "./oauth.ts";
 import { metadataFor } from "./refresh.ts";
@@ -117,6 +118,9 @@ export async function start(ctx: LinkedRolesContext, request: Request): Promise<
 export async function discordCallback(ctx: LinkedRolesContext, request: Request): Promise<Response> {
   const url = new URL(request.url);
   const key = await ctx.sessionKey();
+  // The Early Bird claim shares this redirect URI, the only one registered (early-bird.ts).
+  const earlyBird = await readSession(key, request, "early-bird", ctx.nowSeconds());
+  if (earlyBird) return earlyBirdCallback(ctx, request, earlyBird);
   const session = await readSession(key, request, "discord", ctx.nowSeconds());
   if (!session) return expired();
   if (!stateMatches(session.state, url.searchParams.get("state"))) return expired();

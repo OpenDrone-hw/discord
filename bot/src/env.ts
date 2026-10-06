@@ -14,6 +14,11 @@ export interface Env {
   GITHUB_OAUTH_CLIENT_ID: string;
   GITHUB_OAUTH_CLIENT_SECRET: string;
   SESSION_SECRET: string;
+  /**
+   * Shared with the opendrone-web Worker, which signs Early Bird claim tokens
+   * with it (linked-roles/early-bird.ts). Unset: /early-bird answers 503.
+   */
+  EARLY_BIRD_CLAIM_KEY?: string;
   /** Optional secret: "off" stops Discord posting from GitHub events (src/posting.ts). Unset means on. */
   DISCORD_POSTING?: string;
 

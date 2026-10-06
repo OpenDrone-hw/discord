@@ -47,6 +47,7 @@ export const MODULE_ROUTES = [
   "GET /linked-roles",
   "GET /linked-roles/discord/callback",
   "GET /linked-roles/github/callback",
+  "GET /early-bird",
 ] as const;
 
 export type ModuleRoute = (typeof MODULE_ROUTES)[number];

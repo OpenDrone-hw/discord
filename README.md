@@ -108,7 +108,7 @@ the role to whoever answers tickets.
 
 Access profiles in `server.json`: `open` (everyone reads and writes),
 `open-answered` (`open` plus an explicit `OpenDrone Support` bot overwrite: view, read history, send, send in threads, create public threads, add reactions, create private threads, manage threads; used on `#gen-chat` and the Hardware and Software channels, where ChatFPV opens a private draft thread per proposed reply, posts the approved answer, and archives and locks the draft thread; the bot role itself has no Administrator),
-`readonly` (admin and the bot post), `staff`, `testers` and `feed` (hidden
+`readonly` (admin and the bot post), `staff`, `testers`, `early-birds` and `feed` (hidden
 except for their roles). No profile uses `Newbie` or `Member`: onboarding is the
 gate, and the region answer gives `Member`.
 
@@ -127,6 +127,7 @@ gate, and the region answer gives `Member`.
 | `Maintainer` | Linked role: member of the GitHub team `core` |
 | `Verified Owner` | Linked role: an order on opendrone.be (the storefront does not report it yet) |
 | `Verified Builder` | The bot's Approve build command |
+| `Early Bird` | The bot, for a paid OpenDrone preorder placed before 2026-12-15, one Discord account per order ([bot/README.md](bot/README.md), "Early Bird"); opens `#early-birds` |
 | `Support` | Moderators; the only managed role with permissions |
 | `Betaflight`, `AM32`, `ExpressLRS` | By hand, for those projects' maintainers |
 
