@@ -349,6 +349,18 @@ export class DiscordClient {
 
   // --- roles ---------------------------------------------------------------
 
+  /**
+   * PUT /guilds/{guild}/members/{user} with the user's OAuth access token
+   * (scope guilds.join). Adds a user who is not a member with `roles` and
+   * returns the member (201); returns null (204) for an existing member, whose
+   * roles this call leaves unchanged.
+   */
+  addGuildMember(guildId: string, userId: string, accessToken: string, roles: string[], reason?: string): Promise<unknown> {
+    const options: RequestOptions = { body: { access_token: accessToken, roles } };
+    if (reason !== undefined) options.reason = reason;
+    return this.request("PUT", `/guilds/${guildId}/members/${userId}`, options);
+  }
+
   addMemberRole(guildId: string, userId: string, roleId: string, reason?: string): Promise<null> {
     const options: RequestOptions = {};
     if (reason !== undefined) options.reason = reason;

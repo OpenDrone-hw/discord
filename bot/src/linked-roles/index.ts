@@ -12,6 +12,7 @@
  * | D1 users, sealed tokens      | store.ts    |
  * | Key derivation, AES-GCM      | crypto.ts   |
  * | Refresh without the browser  | refresh.ts  |
+ * | Early Bird preorder role     | early-bird.ts |
  *
  * For the github module: call refreshLinkedUser(services, login) after an
  * event that changes a user's facts (a merged pull request, an organisation
@@ -33,6 +34,7 @@ import type { Services } from "../services.ts";
 import { LinkedRolesContext, type LinkedRolesOptions } from "./context.ts";
 import { METADATA_RECORDS } from "./metadata.ts";
 import { refreshByGitHubLogin, refreshStale, type KnownFacts, type RefreshResult } from "./refresh.ts";
+import { startEarlyBird } from "./early-bird.ts";
 import { discordCallback, githubCallback, start } from "./routes.ts";
 
 export type { LinkedRolesOptions } from "./context.ts";
@@ -53,6 +55,7 @@ export function createLinkedRolesModule(options: LinkedRolesOptions = {}): BotMo
         route: "GET /linked-roles/github/callback",
         handle: (request, services) => githubCallback(context(services), request),
       },
+      { route: "GET /early-bird", handle: (request, services) => startEarlyBird(context(services), request) },
     ],
     async scheduled(_controller, services) {
       const s = await refreshStale(context(services));

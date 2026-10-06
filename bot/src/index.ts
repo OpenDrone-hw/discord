@@ -8,6 +8,7 @@
  * | GET /linked-roles                     | linked-roles module             |
  * | GET /linked-roles/discord/callback    | linked-roles module             |
  * | GET /linked-roles/github/callback     | linked-roles module             |
+ * | GET /early-bird                       | linked-roles module (early-bird.ts) |
  * | scheduled() (cron in wrangler.toml)   | every module's scheduled()      |
  *
  * Anything else is 404; a known path with the wrong method is 405.

@@ -106,10 +106,12 @@ describe("routing", () => {
     expect(start.status).toBe(302);
     expect(start.headers.get("Location")).toMatch(/^https:\/\/discord\.com\/oauth2\/authorize\?/);
     // Callbacks without the session cookie are refused before any provider call.
-    for (const route of MODULE_ROUTES.slice(1)) {
+    for (const route of MODULE_ROUTES.slice(1).filter((r) => r !== "GET /early-bird")) {
       const path = route.split(" ")[1];
       expect((await call(new Request(`${BASE}${path}?code=x&state=y`))).status).toBe(400);
     }
+    // Without EARLY_BIRD_CLAIM_KEY the Early Bird claim is closed.
+    expect((await call(new Request(`${BASE}/early-bird?t=x`))).status).toBe(503);
   });
 
   it("dispatches module routes and hides handler errors behind a 500", async () => {

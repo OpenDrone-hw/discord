@@ -8,7 +8,7 @@ and modals but no message, reaction or member events.
 flowchart LR
   D[Discord] -->|POST /interactions| W[Worker]
   G[GitHub App] -->|POST /github| W
-  B[Browser] -->|GET /linked-roles| W
+  B[Browser] -->|GET /linked-roles, /early-bird| W
   C[Cron every 6 h] --> W
   W --> DA[Discord API]
   W --> GA[GitHub API]
@@ -100,6 +100,25 @@ Members are holders of `Member` (given by the onboarding region answer),
 A merge or a team change refreshes that user at once; the cron refreshes the
 rest daily.
 
+## Early Bird
+
+Every paid, not cancelled OpenDrone preorder placed before the preorder run
+closes (2026-12-15) unlocks the `Early Bird` role and the private
+`#early-birds` channel for one Discord account.
+
+| Step | Where |
+|---|---|
+| Buyer proves the order: signed in on opendrone.be, or the link in the order confirmation mail | opendrone.be `/early-bird` (OpenDrone-Web) |
+| Storefront checks the order in Shopify and signs a 10-minute claim token with `EARLY_BIRD_CLAIM_KEY` | opendrone.be |
+| `GET /early-bird?t=<token>`: Discord authorization, scopes `identify guilds.join`, on the linked-roles callback | `src/linked-roles/early-bird.ts` |
+| D1 `early_bird_claims`: the order is the primary key, so the first Discord account to claim it keeps it; that account may claim again | `migrations/0003_early_bird_claims.sql` |
+| The bot adds a non-member to the server with the role, or adds the role to a member | Discord API |
+
+Nothing is posted and no token is stored. To move an order to another
+account, a person deletes its row in the Cloudflare D1 console
+(`early_bird_claims`, by `order_name`) and the buyer claims again; the role
+on the old account is removed by hand in Discord.
+
 ## Configuration
 
 `config/repos.json` maps each repository to its product channel and names the
@@ -121,6 +140,7 @@ channels and roles the bot uses; ids are resolved by name at runtime.
 | `GITHUB_WEBHOOK_SECRET` | The App's webhook secret |
 | `SESSION_SECRET` | `openssl rand -base64 32`; rotating it unlinks every user |
 | `DISCORD_POSTING` | Optional kill switch; unset means on, `off` stops GitHub posting |
+| `EARLY_BIRD_CLAIM_KEY` | `openssl rand -base64 32`; the same value is the opendrone-web Worker secret of that name. Unset, `/early-bird` answers 503 |
 
 The GitHub App has Metadata read, Pull requests and Issues read and write,
 Checks and Contents read, organisation Members read, and no Administration.
@@ -136,6 +156,7 @@ The Developer Portal points the Interactions Endpoint at
 
 ```sh
 cd bot
+npx wrangler d1 migrations apply opendrone-discord-bot --remote   # after a new migration
 npx wrangler deploy
 npm run register-commands -- --yes    # after a command changes
 npm run register-metadata -- --yes    # after a linked-role key changes
@@ -161,7 +182,8 @@ Tests replace `fetch` and fail on any network access.
 | `src/commands/`, `src/github/`, `src/linked-roles/` | The three modules |
 | `src/discord.ts`, `src/github.ts` | API clients |
 | `config/repos.json` | Repository to channel map, channel and role names |
-| `migrations/` | D1 schema of the linked-role tables; the GitHub tables `github_deliveries`, `github_issues` and `bot_settings` are created on first use |
+| `src/linked-roles/early-bird.ts` | Early Bird claim |
+| `migrations/` | D1 schema of the linked-role and Early Bird tables; the GitHub tables `github_deliveries`, `github_issues` and `bot_settings` are created on first use |
 | `src/posting.ts` | Kill switch |
 
 ## Licence

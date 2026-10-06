@@ -11,7 +11,7 @@ import { ChannelType, type Channel, type Role } from "./types.ts";
 
 const CHANNEL_NAME = /^[a-z0-9_-]{1,100}$/;
 
-export const CHANNEL_KEYS = ["gitFeed", "modLog"] as const;
+export const CHANNEL_KEYS = ["gitFeed", "modLog", "earlyBirds"] as const;
 export const ROLE_KEYS = [
   "admin",
   "developer",
@@ -20,6 +20,7 @@ export const ROLE_KEYS = [
   "member",
   "verifiedOwner",
   "verifiedBuilder",
+  "earlyBird",
   "contributor",
   "maintainer",
 ] as const;
