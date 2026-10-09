@@ -24,6 +24,9 @@ through `gh api`, and tests pass a fake fetcher instead.
 | Gating model A | Onboarding is the gate. Never add a `Newbie` or `Member` overwrite to a channel or profile, and never delete those roles |
 | No deletes | Never delete channels, roles, messages, commands or anything else from a script. Retire a channel through `archive` in `server.json`, or drop it from `server.json` and leave the delete to a person in the Discord UI. Both scripts' REST clients refuse DELETE |
 | Firmware team roles | `Betaflight`, `AM32` and `ExpressLRS` are maintainer roles in `guard.unassignable_roles`; onboarding gives the `* user` roles |
+| Deleting in the Discord UI loses message history | Before asking a person to delete a channel, list its name, category and message count from the dry run or a read-only API call. Moving it to `archive` keeps the history |
+| Role order is a UI step | `discord_config.py` manages channel positions, not role order. The bot role stays above every role it edits, or `apply` stops with "sits at or above the bot's role" |
+| `Early Bird` comes only from the claim flow | One Discord account per order (`early_bird_claims` in D1, `bot/README.md` "Early Bird"). Never assign the role by hand except in the documented order move |
 | Keep the `OpenDrone Support` bot permissions on `#web-support`, `#web-support-admin` and `#chatfpv` | The storefront ticket system and ChatFPV post there; README "Support" |
 | No bot deploys or registrations unasked | `wrangler deploy`, `wrangler secret put`, `register-commands --yes` and `register-metadata --yes` need an explicit request |
 
@@ -34,6 +37,7 @@ through `gh api`, and tests pass a fake fetcher instead.
 | Never print, log, commit or echo a token | Refer to `OPENDRONE_DISCORD_BOT_TOKEN` (config tool, `texts.py`) or the Worker secret names in `bot/README.md` |
 | `snapshots/` stays out of Git | It holds member-visible server state |
 | `bot/.dev.vars` stays out of Git | Local copies of Worker secrets |
+| A token seen in a chat, log or commit | Treat it as leaked: ask a person to reset it in the Discord developer portal, then update `OPENDRONE_DISCORD_BOT_TOKEN` and the Worker secret |
 | Bot text from GitHub or users | Send with `allowed_mentions: {parse: []}` (the client adds it by default) |
 
 ## Code
