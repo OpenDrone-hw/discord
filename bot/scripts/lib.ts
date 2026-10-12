@@ -50,13 +50,13 @@ export function setting(name: string): string {
 
 /**
  * Bot token from DISCORD_BOT_TOKEN, else OPENDRONE_DISCORD_BOT_TOKEN from the
- * environment or ~/.config/incutec/credentials.env. The value is never printed.
+ * environment or INCUTEC_CREDENTIALS_FILE (default ~/.config/incutec/credentials.env). The value is never printed.
  */
 export function botToken(): string {
   const direct = process.env.DISCORD_BOT_TOKEN || process.env.OPENDRONE_DISCORD_BOT_TOKEN;
   if (direct) return direct;
   const home = process.env.HOME;
-  const file = home ? `${home}/.config/incutec/credentials.env` : undefined;
+  const file = process.env.INCUTEC_CREDENTIALS_FILE || (home ? `${home}/.config/incutec/credentials.env` : undefined);
   if (file && existsSync(file)) {
     const value = envFileValue("OPENDRONE_DISCORD_BOT_TOKEN", readFileSync(file, "utf8"));
     if (value) return value;

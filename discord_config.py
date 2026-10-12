@@ -26,7 +26,6 @@ API = "https://discord.com/api/v10"
 ROOT = Path(__file__).resolve().parent
 SNAPSHOTS = ROOT / "snapshots"
 TOKEN_VAR = "OPENDRONE_DISCORD_BOT_TOKEN"
-CREDENTIALS = Path.home() / ".config/incutec/credentials.env"
 AUDIT_REASON = "OpenDrone-hw/discord discord_config.py"
 DISCORD_EPOCH_MS = 1420070400000
 
@@ -1402,14 +1401,30 @@ def automod_action_key(a: dict) -> tuple:
 # --- Discord REST ----------------------------------------------------------
 
 
+def credentials_file() -> Path:
+    """The workspace credentials file: INCUTEC_CREDENTIALS_FILE, else ~/.config/incutec/credentials.env."""
+    return Path(os.environ.get("INCUTEC_CREDENTIALS_FILE") or "~/.config/incutec/credentials.env").expanduser()
+
+
+def credential(name: str) -> str | None:
+    """The process environment first, then the credentials file. Nothing else is read."""
+    if os.environ.get(name):
+        return os.environ[name]
+    try:
+        text = credentials_file().read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    for line in text.splitlines():
+        key, sep, value = line.strip().removeprefix("export ").partition("=")
+        if sep and key.strip() == name and value.strip().strip("'\""):
+            return value.strip().strip("'\"")
+    return None
+
+
 def token() -> str:
-    value = os.environ.get(TOKEN_VAR)
-    if not value and CREDENTIALS.exists():
-        for line in CREDENTIALS.read_text(encoding="utf-8").splitlines():
-            if line.startswith(TOKEN_VAR + "="):
-                value = line.split("=", 1)[1].strip().strip('"')
+    value = credential(TOKEN_VAR)
     if not value:
-        raise ConfigError(f"{TOKEN_VAR} is not set (environment or {CREDENTIALS})")
+        raise ConfigError(f"{TOKEN_VAR} is not set (environment or {credentials_file()})")
     return value
 
 
