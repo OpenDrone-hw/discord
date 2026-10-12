@@ -1,52 +1,22 @@
 # OpenDrone Discord
 
-Configuration as code for the OpenDrone Discord server (`server.json`,
-`discord_config.py`, `texts.py`) and a Cloudflare Worker bot (`bot/`). Read
-`README.md`, and `bot/README.md` for bot work.
+Configuration as code for the OpenDrone Discord server (`server.json`, `discord_config.py`, `texts.py`) and a Cloudflare Worker bot (`bot/`).
 
-## Validation
+Validate: `python3 -m unittest discover -s tests` and `cd bot && npm ci && npm test && npx tsc --noEmit`
 
-| Part | Command |
-|---|---|
-| Config tool and texts | `python3 -m unittest discover -s tests` |
-| Bot | `cd bot && npm ci && npm test && npx tsc --noEmit` |
-| Against the live server (read-only) | `python3 discord_config.py plan` |
+## Boundaries
 
-Tests never touch the network. Keep it that way: `texts.py hubs` reads GitHub
-through `gh api`, and tests pass a fake fetcher instead.
+- `--yes` (`discord_config.py apply`, `restore`, every `texts.py ... --yes`) changes a live server with hundreds of members: run it only after the requester saw the dry run of that exact change.
+- Layout and permissions change only in `server.json`; UI edits to managed channels are reverted by the next apply.
+- Onboarding is the gate: never add a `Newbie` or `Member` overwrite to a channel, never delete those roles.
+- Never delete channels, roles or messages from a script; retire channels through `archive` in `server.json`. Deleting in the Discord UI loses message history.
+- `Early Bird` is assigned only by the claim flow (`bot/README.md` "Early Bird").
+- Keep the `OpenDrone Support` bot permissions on `#web-support`, `#web-support-admin` and `#chatfpv`.
+- No `wrangler deploy`, `wrangler secret put`, `register-commands --yes` or `register-metadata --yes` unless asked.
+- A token seen in a chat, log or commit is leaked: have a person reset it in the Discord developer portal.
+- Tests never touch the network; Python standard library only; bot has zero runtime dependencies.
 
-## Live server rules
+## Pointers
 
-| Rule | Detail |
-|---|---|
-| `--yes` only after the dry run was seen | `discord_config.py apply --yes`, `restore --yes` and every `texts.py ... --yes` change a live server with hundreds of members. Run them only after the person who asked has seen the dry-run output for that exact change |
-| `server.json` is the only place layout and permissions change | Clicking a managed channel's permissions in the Discord UI is reverted by the next apply |
-| Gating model A | Onboarding is the gate. Never add a `Newbie` or `Member` overwrite to a channel or profile, and never delete those roles |
-| No deletes | Never delete channels, roles, messages, commands or anything else from a script. Retire a channel through `archive` in `server.json`, or drop it from `server.json` and leave the delete to a person in the Discord UI. Both scripts' REST clients refuse DELETE |
-| Firmware team roles | `Betaflight`, `AM32` and `ExpressLRS` are maintainer roles in `guard.unassignable_roles`; onboarding gives the `* user` roles |
-| Deleting in the Discord UI loses message history | Before asking a person to delete a channel, list its name, category and message count from the dry run or a read-only API call. Moving it to `archive` keeps the history |
-| Role order is a UI step | `discord_config.py` manages channel positions, not role order. The bot role stays above every role it edits, or `apply` stops with "sits at or above the bot's role" |
-| `Early Bird` comes only from the claim flow | One Discord account per order (`early_bird_claims` in D1, `bot/README.md` "Early Bird"). Never assign the role by hand except in the documented order move |
-| Keep the `OpenDrone Support` bot permissions on `#web-support`, `#web-support-admin` and `#chatfpv` | The storefront ticket system and ChatFPV post there; README "Support" |
-| No bot deploys or registrations unasked | `wrangler deploy`, `wrangler secret put`, `register-commands --yes` and `register-metadata --yes` need an explicit request |
-
-## Tokens and secrets
-
-| Rule | Detail |
-|---|---|
-| Never print, log, commit or echo a token | Refer to `OPENDRONE_DISCORD_BOT_TOKEN` (config tool, `texts.py`) or the Worker secret names in `bot/README.md` |
-| `snapshots/` stays out of Git | It holds member-visible server state |
-| `bot/.dev.vars` stays out of Git | Local copies of Worker secrets |
-| A token seen in a chat, log or commit | Treat it as leaked: ask a person to reset it in the Discord developer portal, then update `OPENDRONE_DISCORD_BOT_TOKEN` and the Worker secret |
-| Bot text from GitHub or users | Send with `allowed_mentions: {parse: []}` (the client adds it by default) |
-
-## Code
-
-| Part | Rule |
-|---|---|
-| Python | Standard library only |
-| Bot | TypeScript, zero runtime dependencies; dev dependencies only wrangler, typescript, vitest, @cloudflare/workers-types |
-| Bot ids | Resolve channel and role ids by name through `config/repos.json`; never hard-code them |
-| Product channels | One text channel per product; `config/repos.json` maps each repository to one, and pull request threads start there. No development forums, no lifecycle tags |
-| Names shared by `server.json` and `config/repos.json` | Change both in one PR; `tests/test_server_json.py` checks they match |
-| Docs | Update `README.md` or `bot/README.md` in the same PR as the behaviour they describe |
+- `README.md`, `bot/README.md`
+- `python3 discord_config.py plan`: read-only diff against the live server
