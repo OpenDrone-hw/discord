@@ -21,8 +21,8 @@ python3 discord_config.py apply --yes   # snapshot, apply, read back
 python3 discord_config.py restore snapshots/<file>.json [--yes]
 ```
 
-The token comes from `OPENDRONE_DISCORD_BOT_TOKEN`, else
-`~/.config/incutec/credentials.env`. Python 3.10+, standard library only.
+The token comes from `OPENDRONE_DISCORD_BOT_TOKEN` in the environment, then in
+`INCUTEC_CREDENTIALS_FILE` (default `~/.config/incutec/credentials.env`). Python 3.10+, standard library only.
 
 | Rule | Effect |
 |---|---|
