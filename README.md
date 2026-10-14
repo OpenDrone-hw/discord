@@ -158,6 +158,23 @@ when the text changed; nothing is reposted or pinned twice.
 | `python3 texts.py rules --rules-file <md>` | #rules, pinned |
 | `python3 texts.py hubs` | One pinned hub per public repository in its product channel: link, description, lifecycle, releases |
 
+## Release announcements (#announcements)
+
+A release (a video, a product launch) is announced by the bot `OpenDrone Dev`
+in `#announcements` (channel id `1494032474626326548`) with the bot token, on
+the founder's go for that message. The GitHub-activity Worker never posts there.
+
+| Rule | Detail |
+|---|---|
+| Ping | The message starts with `@everyone`, sent with `allowed_mentions: {"parse": ["everyone"]}`; an edit never pings, so a missed ping means a new message |
+| Layout | Short paragraphs with a blank line between them and a bold heading per block (what is new, preorders, links); no single block of text |
+| Links | The main link (video) unwrapped so Discord shows its preview; every other link in `<...>` so it does not embed; store links carry `utm_source=discord&utm_medium=chat` |
+| Numbers | Preorder counts read from `https://opendrone.be/api/status/campaign` right before posting; promises only from `OpenDrone/web/content/preorders.json` |
+| Publish | Crosspost once (`POST /channels/<id>/messages/<id>/crosspost`) so following servers get it; a repost is not crossposted again |
+
+Owner, 2026-10-14: "the bot is suppost to do announcement", "you need to
+@everyone when doing an announcement", "write in paragraphs the next time".
+
 ## Discord UI only
 
 | Task | Where |

@@ -20,7 +20,7 @@ flowchart LR
 A pull request or issue in a public repository gets one thread in the
 product channel `config/repos.json` maps it to. Private repositories post
 nothing; a payload without the `private` flag counts as private. The bot
-never posts to `#announcements`: people write that channel.
+never posts to `#announcements`; release announcements are sent by hand with the bot token (README "Release announcements").
 
 | Event | Thread | Product channel | `#git-feed` |
 |---|---|---|---|
