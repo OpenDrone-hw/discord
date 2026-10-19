@@ -8,30 +8,27 @@
  * compares this PR's KiCad files with every other open PR in the repository.
  *
  * For each overlapping pair it posts one PR comment on the PR that triggered
- * the check and a warning card in both PRs' threads. The comment ends
- * with a hidden marker naming the pair and the files:
+ * the check; nothing goes to Discord. The comment ends with a hidden marker
+ * naming the pair and the files:
  *
  *   <!-- opendrone-kicad-collision pair=12,15 files=board%2Fmain.kicad_pcb -->
  *
  * Before warning, the guard reads the bot's markers on both PRs. A pair is
  * warned again only when the overlap contains a file no earlier marker named,
  * so repeated pushes (synchronize) and redeliveries stay quiet. Only markers
- * in comments by a Bot account count. Private repositories, and every
- * repository while the posting kill switch is off (src/posting.ts), get the
- * PR comment but no Discord warning.
+ * in comments by a Bot account count. The guard runs whatever the posting
+ * kill switch (src/posting.ts) says.
  */
 import type { Scope } from "./context.ts";
-import { postToThread } from "./context.ts";
-import { Colors, card, code, link } from "./format.ts";
+import { code } from "./format.ts";
 import type { IssueComment } from "./api.ts";
 import type { PullRequest } from "./payload.ts";
-import { linkedThread } from "./thread-link.ts";
 
 export const KICAD_FILE = /\.kicad_(pcb|sch)$/i;
 /** Other open PRs compared per check, to stay inside the 30 s handler budget. */
 export const MAX_OTHER_PULLS = 25;
 const CONCURRENCY = 4;
-/** Files listed in one comment or card; the marker always names all of them. */
+/** Files listed in one comment; the marker always names all of them. */
 const MAX_LISTED_FILES = 15;
 const MARKER = /<!-- opendrone-kicad-collision pair=(\d+),(\d+) files=([^\s]*) -->/g;
 
@@ -81,7 +78,7 @@ export function collisionComment(other: PullRequest, overlap: readonly string[],
     "",
     fileList(overlap),
     "",
-    "KiCad files cannot be merged. Agree in the Discord threads which pull request goes first; " +
+    "KiCad files cannot be merged. Agree which pull request goes first; " +
       "the other one then redoes its changes on top of the merged result.",
     "",
     collisionMarker(thisNumber, other.number, overlap),
@@ -101,31 +98,8 @@ async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T) 
   return results;
 }
 
-function warningCard(scope: Scope, other: PullRequest, overlap: readonly string[]): ReturnType<typeof card> {
-  return card({
-    color: Colors.warning,
-    blocks: [
-      `### KiCad collision with ${link(`${scope.repo.name} #${other.number}: ${other.title}`, other.htmlUrl)}`,
-      `Both pull requests change:\n${fileList(overlap)}`,
-      `KiCad files cannot be merged. Agree here which one goes first; the other redoes its changes on top.`,
-    ],
-    button: { label: "Open the other PR", url: other.htmlUrl },
-  });
-}
-
-/**
- * Compares `pull` with the other open PRs and warns about new overlaps.
- * `threadId` is this PR's verified thread when the caller already has
- * it; otherwise the PR body's link is verified here. The other PR's link is
- * always verified (linkedThread) before anything is posted to it.
- */
-export async function checkCollisions(
-  scope: Scope,
-  pull: PullRequest,
-  threadId: string | null,
-  options: { discord?: boolean } = {},
-): Promise<void> {
-  const discord = options.discord ?? true;
+/** Compares `pull` with the other open PRs and comments on new overlaps. */
+export async function checkCollisions(scope: Scope, pull: PullRequest): Promise<void> {
   const mine = kicadFiles(await scope.api.pullFiles(pull.number));
   if (mine.length === 0) return;
 
@@ -143,20 +117,12 @@ export async function checkCollisions(
   const colliding = overlaps.filter((o) => o.overlap.length > 0);
   if (colliding.length === 0) return;
   const myComments = await scope.api.comments(pull.number);
-  let myThread: string | null | undefined = threadId ?? undefined;
 
   for (const { other, overlap } of colliding) {
     const warned = warnedFiles([...myComments, ...(await scope.api.comments(other.number))], pull.number, other.number);
     if (overlap.every((f) => warned.has(f))) continue;
 
     await scope.api.comment(pull.number, collisionComment(other, overlap, pull.number));
-    if (scope.repo.private || !discord) continue;
-    myThread ??= await linkedThread(scope, pull.body);
-    const otherThread = await linkedThread(scope, other.body);
-    if (myThread) await postToThread(scope.services, myThread, warningCard(scope, other, overlap));
-    if (otherThread && otherThread !== myThread) {
-      await postToThread(scope.services, otherThread, warningCard(scope, pull, overlap));
-    }
   }
 }
 

@@ -95,7 +95,6 @@ describe("kill switch off", () => {
       expect(skipped.map((r) => (r as { key: string }).key)).toEqual([
         "d-comment:skipped",
         "d-issue:skipped",
-        "d-pr:skipped",
         "d-push:skipped",
         "d-release:skipped",
         "d-repo:skipped",
@@ -116,7 +115,7 @@ describe("kill switch off", () => {
     expect(h.world.messagesIn(FEED)).toHaveLength(1);
   });
 
-  it("keeps the KiCad collision guard commenting on GitHub", async () => {
+  it("keeps the KiCad collision guard commenting on GitHub, ungated", async () => {
     const h = await harness();
     h.env.DISCORD_POSTING = "off";
     h.world.addPull("OpenRX", pullJson("OpenRX", 10, { title: "Rework power" }), [PCB]);

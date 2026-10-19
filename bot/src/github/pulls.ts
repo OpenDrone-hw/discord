@@ -1,253 +1,46 @@
 /**
- * Pull request, review and check suite events: cards in the PR's thread
- * in its product channel, compact lines in #git-feed. A missing thread is
- * started from a one-line starter message in the product channel.
+ * Pull request and check suite events. Pull requests post nothing to
+ * Discord: no thread, no card, no #git-feed line.
  *
- * | Event.action                   | Thread                          | #git-feed        |
- * |--------------------------------|---------------------------------|------------------|
- * | pull_request.opened            | started if missing, PR card     | yes              |
- * | pull_request.reopened          | started if missing, card        | yes              |
- * | pull_request.ready_for_review  | started if missing, card        | yes              |
- * | pull_request.synchronize       | started if missing, push line   | no               |
- * | pull_request.closed            | card if linked (merged/closed)  | yes              |
- * | pull_request_review.submitted  | started if missing, review card | approve/changes  |
- * | check_suite.completed          | card if linked, PR head only    | default-branch   |
- * |                                |                                 | failures only    |
+ * | Event.action                                     | Does                                  |
+ * |--------------------------------------------------|---------------------------------------|
+ * | pull_request opened, reopened, ready_for_review, | KiCad collision guard (PR comment on  |
+ * | synchronize                                      | GitHub only)                          |
+ * | check_suite.completed                            | #git-feed line for a failed suite on  |
+ * |                                                  | the default branch outside any PR     |
  *
  * Private repositories post nothing to Discord.
  */
 import type { GitHubEventContext } from "../registry.ts";
-import type { MessagePayload } from "../types.ts";
 import { checkCollisions } from "./collisions.ts";
-import { makeScope, postToChannel, postToThread, runAll, type Scope } from "./context.ts";
-import {
-  Colors,
-  card,
-  code,
-  escapeMarkdown,
-  feedLine,
-  firstParagraph,
-  link,
-  plainExcerpt,
-  shortSha,
-} from "./format.ts";
-import { readCheckSuite, readPull, readReview, str, type PullRequest, type Review } from "./payload.ts";
-import { findOrCreateThread, linkedThread } from "./thread-link.ts";
+import { makeScope, postToChannel } from "./context.ts";
+import { code, escapeMarkdown, feedLine, link, shortSha } from "./format.ts";
+import { readCheckSuite, readPull } from "./payload.ts";
 
-export const PULL_ACTIONS = ["opened", "reopened", "ready_for_review", "synchronize", "closed"];
-const OPENING = new Set(["opened", "reopened", "ready_for_review"]);
-const COLLISION_ACTIONS = new Set(["opened", "reopened", "ready_for_review", "synchronize"]);
-export const REPORTED_CONCLUSIONS: Record<string, { text: string; color: number }> = {
-  success: { text: "passed", color: Colors.success },
-  failure: { text: "failed", color: Colors.failure },
-  timed_out: { text: "timed out", color: Colors.failure },
-  action_required: { text: "need action", color: Colors.warning },
-  startup_failure: { text: "failed to start", color: Colors.failure },
+export const PULL_ACTIONS = ["opened", "reopened", "ready_for_review", "synchronize"];
+/** Default-branch check conclusions worth a #git-feed line. */
+export const REPORTED_CONCLUSIONS: Record<string, string> = {
+  failure: "failed",
+  timed_out: "timed out",
+  action_required: "need action",
+  startup_failure: "failed to start",
 };
-const DISCUSSION_TEXT = /^[ \t]*Discussion:.*$/gim;
-
-function heading(scope: Scope, pull: PullRequest): string {
-  return `### ${link(`${scope.repo.name} #${pull.number}: ${pull.title}`, pull.htmlUrl)}`;
-}
-
-function stats(pull: PullRequest): string {
-  if (pull.changedFiles === undefined) return "";
-  const lines = pull.additions !== undefined && pull.deletions !== undefined ? `, +${pull.additions} -${pull.deletions}` : "";
-  return `-# ${pull.changedFiles} ${pull.changedFiles === 1 ? "file" : "files"} changed${lines}`;
-}
-
-/** Longest PR summary on a card; "Open on GitHub" carries the rest. */
-export const MAX_SUMMARY = 300;
-
-function description(pull: PullRequest): string {
-  return firstParagraph(pull.body.replace(DISCUSSION_TEXT, ""), MAX_SUMMARY);
-}
-
-interface PullEvent {
-  actor: string;
-  text: string;
-  color: number;
-  feed: string | null;
-}
-
-export function describePullEvent(action: string, pull: PullRequest, sender: string, after: string): PullEvent | null {
-  switch (action) {
-    case "opened":
-      return pull.draft
-        ? { actor: pull.author, text: "opened a draft pull request", color: Colors.draft, feed: "opened a draft" }
-        : { actor: pull.author, text: "opened this pull request", color: Colors.open, feed: "opened" };
-    case "reopened":
-      return { actor: sender, text: "reopened this pull request", color: Colors.open, feed: "reopened" };
-    case "ready_for_review":
-      return { actor: sender, text: "marked this pull request ready for review", color: Colors.open, feed: "marked ready for review" };
-    case "synchronize":
-      return {
-        actor: sender,
-        text: `pushed ${code(shortSha(after || pull.headSha))} to ${code(pull.headRef)}`,
-        color: Colors.neutral,
-        feed: null,
-      };
-    case "closed":
-      return pull.merged
-        ? {
-            actor: pull.mergedBy ?? sender,
-            text: `merged this pull request into ${code(pull.baseRef)}`,
-            color: Colors.merged,
-            feed: "merged",
-          }
-        : { actor: sender, text: "closed this pull request without merging", color: Colors.closed, feed: "closed" };
-    default:
-      return null;
-  }
-}
-
-/**
- * Starter message in the product channel: one line; the thread started from it holds the cards.
- * It never says "draft": it is not edited later, and the cards show the state.
- */
-export function pullStarter(scope: Scope, pull: PullRequest): MessagePayload {
-  return feedLine(
-    `Pull request **${escapeMarkdown(scope.repo.name)}** #${pull.number} by ${escapeMarkdown(pull.author)}: ${link(pull.title, pull.htmlUrl)}`,
-  );
-}
-
-function eventCard(scope: Scope, pull: PullRequest, event: PullEvent, withDetails: boolean): MessagePayload {
-  return card({
-    color: event.color,
-    blocks: [
-      heading(scope, pull),
-      `**${escapeMarkdown(event.actor)}** ${event.text}`,
-      withDetails ? description(pull) : "",
-      withDetails ? stats(pull) : "",
-    ],
-    button: { label: "Open on GitHub", url: pull.htmlUrl },
-  });
-}
-
-function feedText(scope: Scope, pull: PullRequest, verb: string, actor: string): string {
-  return `**${escapeMarkdown(scope.repo.name)}** #${pull.number} ${verb} by ${escapeMarkdown(actor)}: ${link(pull.title, pull.htmlUrl)}`;
-}
 
 export async function handlePullRequest(ctx: GitHubEventContext): Promise<void> {
   const scope = makeScope(ctx);
   const pull = readPull(ctx.payload.pull_request);
-  const action = ctx.action ?? "";
-  if (!scope || !pull) return;
-  const event = describePullEvent(action, pull, scope.sender, str(ctx.payload.after) ?? "");
-  if (!event) return;
-
-  const tasks: Array<() => Promise<unknown>> = [];
-  let threadId: string | null = null;
-  if (!scope.repo.private) {
-    tasks.push(async () => {
-      const thread = await findOrCreateThread(scope, pull, {
-        create: action !== "closed",
-        starter: (current) => pullStarter(scope, current),
-      });
-      threadId = thread?.threadId ?? null;
-      if (!thread) return;
-      // A thread started by this delivery shows the description and size even on a push.
-      const details = OPENING.has(action) || thread.created;
-      await scope.once("card", () => postToThread(scope.services, thread.threadId, eventCard(scope, pull, event, details)));
-    });
-    if (event.feed) {
-      const verb = event.feed;
-      tasks.push(() => scope.once("feed", () => postToChannel(scope.services, "gitFeed", feedLine(feedText(scope, pull, verb, event.actor)))));
-    }
-  }
-  if (COLLISION_ACTIONS.has(action) && pull.state === "open") {
-    // Runs after the thread step so a thread created by this delivery gets the warning too.
-    // Private repositories and a failed thread step leave threadId null; the guard then
-    // verifies the body's link itself before posting.
-    tasks.push(() => checkCollisions(scope, pull, threadId));
-  }
-  await runAll(`pull_request.${action} ${scope.repo.fullName}#${pull.number}`, tasks);
-}
-
-/**
- * pull_request while the posting kill switch is off: only the KiCad collision
- * guard runs, and it comments on GitHub without posting to Discord.
- */
-export async function handlePullRequestCollisionsOnly(ctx: GitHubEventContext): Promise<void> {
-  const scope = makeScope(ctx);
-  const pull = readPull(ctx.payload.pull_request);
-  const action = ctx.action ?? "";
-  if (!scope || !pull || !COLLISION_ACTIONS.has(action) || pull.state !== "open") return;
-  await checkCollisions(scope, pull, null, { discord: false });
-}
-
-const REVIEW_TEXT: Record<string, { text: string; color: number; feed: string | null }> = {
-  approved: { text: "approved these changes", color: Colors.success, feed: "approved" },
-  changes_requested: { text: "requested changes", color: Colors.failure, feed: "changes requested" },
-  commented: { text: "reviewed", color: Colors.neutral, feed: null },
-};
-
-export function reviewCard(scope: Scope, pull: PullRequest, review: Review): MessagePayload | null {
-  const kind = REVIEW_TEXT[review.state];
-  if (!kind) return null;
-  const body = plainExcerpt(review.body, 500);
-  if (review.state === "commented" && !body) return null;
-  return card({
-    color: kind.color,
-    blocks: [heading(scope, pull), `**${escapeMarkdown(review.author)}** ${kind.text}`, body],
-    button: { label: "Open review", url: review.htmlUrl || pull.htmlUrl },
-  });
-}
-
-export async function handleReview(ctx: GitHubEventContext): Promise<void> {
-  const scope = makeScope(ctx);
-  const pull = readPull(ctx.payload.pull_request);
-  const review = readReview(ctx.payload.review);
-  if (!scope || !pull || !review || scope.repo.private) return;
-  const message = reviewCard(scope, pull, review);
-  if (!message) return;
-  const feed = REVIEW_TEXT[review.state]?.feed ?? null;
-
-  const tasks: Array<() => Promise<unknown>> = [
-    async () => {
-      const thread = await findOrCreateThread(scope, pull, {
-        create: pull.state === "open",
-        starter: (current) => pullStarter(scope, current),
-      });
-      if (thread) await scope.once("card", () => postToThread(scope.services, thread.threadId, message));
-    },
-  ];
-  if (feed) {
-    tasks.push(() =>
-      scope.once("feed", () => postToChannel(scope.services, "gitFeed", feedLine(feedText(scope, pull, feed, review.author)))),
-    );
-  }
-  await runAll(`pull_request_review ${scope.repo.fullName}#${pull.number}`, tasks);
+  if (!scope || !pull || pull.state !== "open") return;
+  await checkCollisions(scope, pull);
 }
 
 export async function handleCheckSuite(ctx: GitHubEventContext): Promise<void> {
   const scope = makeScope(ctx);
   const suite = readCheckSuite(ctx.payload.check_suite);
   if (!scope || !suite || scope.repo.private || !suite.conclusion) return;
-  const outcome = REPORTED_CONCLUSIONS[suite.conclusion];
-  if (!outcome) return;
+  const verb = REPORTED_CONCLUSIONS[suite.conclusion];
+  if (!verb || suite.pullNumbers.length > 0 || suite.headBranch !== scope.repo.defaultBranch) return;
 
-  const tasks: Array<() => Promise<unknown>> = suite.pullNumbers.map((number) => async () => {
-    const pull = await scope.api.pull(number);
-    // A suite for an older commit than the PR head is stale news.
-    if (!pull || pull.state !== "open" || pull.headSha !== suite.headSha) return;
-    const threadId = await linkedThread(scope, pull.body);
-    if (!threadId) return;
-    const message = card({
-      color: outcome.color,
-      blocks: [
-        heading(scope, pull),
-        `Checks ${outcome.text} (${escapeMarkdown(suite.app)}) on ${code(shortSha(suite.headSha))}`,
-      ],
-      button: { label: "Open checks", url: `${pull.htmlUrl}/checks` },
-    });
-    await scope.once(`check:${number}`, () => postToThread(scope.services, threadId, message));
-  });
-
-  if (suite.pullNumbers.length === 0 && suite.headBranch === scope.repo.defaultBranch && suite.conclusion !== "success") {
-    const commitUrl = `${scope.repo.htmlUrl}/commit/${suite.headSha}`;
-    const text = `**${escapeMarkdown(scope.repo.name)}** checks ${outcome.text} on ${code(suite.headBranch)} (${escapeMarkdown(suite.app)}, ${link(shortSha(suite.headSha), commitUrl)})`;
-    tasks.push(() => scope.once("feed", () => postToChannel(scope.services, "gitFeed", feedLine(text))));
-  }
-  await runAll(`check_suite ${scope.repo.fullName}`, tasks);
+  const commitUrl = `${scope.repo.htmlUrl}/commit/${suite.headSha}`;
+  const text = `**${escapeMarkdown(scope.repo.name)}** checks ${verb} on ${code(suite.headBranch)} (${escapeMarkdown(suite.app)}, ${link(shortSha(suite.headSha), commitUrl)})`;
+  await scope.once("feed", () => postToChannel(scope.services, "gitFeed", feedLine(text)));
 }

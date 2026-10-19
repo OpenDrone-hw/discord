@@ -1,40 +1,25 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import { githubModule } from "../../src/github/index.ts";
 import { Registry } from "../../src/registry.ts";
-import {
-  ANNOUNCEMENTS,
-  CHANNEL_RX,
-  EXISTING_THREAD,
-  FC_THREAD,
-  OLD_FORUM_THREAD,
-  OTHER_FORUM_THREAD,
-  RULES,
-  FEED,
-  FakeWorld,
-  GUILD,
-  harness,
-  pullJson,
-  repoPayload,
-} from "./fakes.ts";
+import { EXISTING_THREAD, FEED, FakeWorld, GUILD, harness, pullJson, repoPayload } from "./fakes.ts";
 
 const LINK = `Discussion: https://discord.com/channels/${GUILD}/${EXISTING_THREAD}`;
 
 let errors: MockInstance;
-let warnings: MockInstance;
 beforeEach(() => {
   errors = vi.spyOn(console, "error").mockImplementation(() => {});
-  warnings = vi.spyOn(console, "warn").mockImplementation(() => {});
+  vi.spyOn(console, "warn").mockImplementation(() => {});
 });
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function expectNoErrors() {
-  expect(errors.mock.calls.map((c) => c.map(String).join(" "))).toEqual([]);
-}
-
 function prEvent(action: string, pull: object, extra: Record<string, unknown> = {}) {
   return { action, number: (pull as { number: number }).number, pull_request: pull, repository: repoPayload(), ...extra };
+}
+
+function discordCalls(world: FakeWorld) {
+  return world.calls.filter((c) => c.url.startsWith("https://discord.com/"));
 }
 
 describe("module registration", () => {
@@ -44,12 +29,11 @@ describe("module registration", () => {
     for (const action of ["opened", "reopened", "ready_for_review", "synchronize"]) {
       expect(names("pull_request", action)).toBe(1);
     }
-    // closed: the thread/feed handler and the linked-role refresh.
-    expect(names("pull_request", "closed")).toBe(2);
+    // closed: the linked-role refresh only.
+    expect(names("pull_request", "closed")).toBe(1);
     expect(names("pull_request", "edited")).toBe(0);
     expect(names("pull_request", "labeled")).toBe(0);
-    expect(names("pull_request_review", "submitted")).toBe(1);
-    expect(names("pull_request_review", "dismissed")).toBe(0);
+    expect(names("pull_request_review", "submitted")).toBe(0);
     expect(names("check_suite", "completed")).toBe(1);
     expect(names("check_suite", "requested")).toBe(0);
     expect(names("release", "published")).toBe(1);
@@ -64,299 +48,27 @@ describe("module registration", () => {
   });
 });
 
-describe("pull_request opened", () => {
-  it("starts a thread from a one-line starter in the product channel, links it and posts to #git-feed", async () => {
+describe("pull requests post nothing to Discord", () => {
+  it("on any action, linked or not, and never edits the PR body", async () => {
     const { world, deliver } = await harness();
-    const pull = world.addPull("OpenRX", pullJson("OpenRX", 12, { title: "Move the **antenna** <@&1>", body: "Adds a u.FL.\n<!-- hidden -->" }));
-
-    const response = await deliver("pull_request", prEvent("opened", { ...pull }));
-    expect(response.status).toBe(202);
-    expectNoErrors();
-
-    const starters = world.messagesIn(CHANNEL_RX);
-    expect(starters).toHaveLength(1);
-    const starter = starters[0]!;
-    expect(starter.flags).toBe(1 << 15);
-    expect(starter.allowed_mentions).toEqual({ parse: [] });
-    expect(FakeWorld.text(starter)).toBe(
-      "Pull request **OpenRX** #12 by alice: [Move the \\*\\*antenna\\*\\* \\<@&1\\>](https://github.com/OpenDrone-hw/OpenRX/pull/12)",
-    );
-
-    expect(world.threads).toHaveLength(1);
-    const thread = world.threads[0]!;
-    expect(thread.channelId).toBe(CHANNEL_RX);
-    expect(thread.id).toBe(starter.id);
-    expect(thread.body).toEqual({ name: "OpenRX #12: Move the **antenna** <@&1>", auto_archive_duration: 10080 });
-    expect(decodeURIComponent(thread.reason ?? "")).toBe("GitHub OpenDrone-hw/OpenRX#12");
-
-    // The card with the description goes into the thread, not the channel.
-    const cards = world.messagesIn(thread.id);
-    expect(cards).toHaveLength(1);
-    const text = FakeWorld.text(cards[0]);
-    expect(text).toContain("[OpenRX #12: Move the \\*\\*antenna\\*\\* \\<@&1\\>](https://github.com/OpenDrone-hw/OpenRX/pull/12)");
-    expect(text).toContain("**alice** opened this pull request");
-    expect(text).toContain("Adds a u.FL.");
-    expect(text).not.toContain("hidden");
-    expect(text).toContain("-# 3 files changed, +10 -2");
-    expect(pull.body).toBe(`Adds a u.FL.\n<!-- hidden -->\n\nDiscussion: https://discord.com/channels/${GUILD}/${thread.id}`);
-
-    const feed = world.messagesIn(FEED);
-    expect(feed).toHaveLength(1);
-    expect(FakeWorld.text(feed[0])).toBe(
-      "**OpenRX** #12 opened by alice: [Move the \\*\\*antenna\\*\\* \\<@&1\\>](https://github.com/OpenDrone-hw/OpenRX/pull/12)",
-    );
-    for (const call of world.discordPosts().filter((c) => !c.url.endsWith("/threads"))) {
-      expect((call.body as Record<string, unknown>).allowed_mentions).toEqual({ parse: [] });
+    const fresh = world.addPull("OpenRX", pullJson("OpenRX", 12, { body: "Adds a u.FL." }));
+    const linked = world.addPull("OpenRX", pullJson("OpenRX", 5, { body: LINK }));
+    for (const action of ["opened", "reopened", "ready_for_review", "synchronize"]) {
+      expect((await deliver("pull_request", prEvent(action, { ...fresh }))).status).toBe(202);
+      await deliver("pull_request", prEvent(action, { ...linked }));
     }
-    // No forum post and no tags: the only thread route used is "start a thread from a message".
-    expect(world.discordPosts().filter((c) => c.url.endsWith("/threads")).map((c) => new URL(c.url).pathname)).toEqual([
-      `/api/v10/channels/${CHANNEL_RX}/messages/${thread.id}/threads`,
-    ]);
-  });
-
-  it("posts into the linked thread instead of creating one", async () => {
-    const { world, deliver } = await harness();
-    const pull = world.addPull("OpenRX", pullJson("OpenRX", 3, { body: `Text\n\n${LINK}` }));
-    await deliver("pull_request", prEvent("opened", { ...pull }));
-    expectNoErrors();
-    expect(world.threads).toHaveLength(0);
-    expect(world.messagesIn(EXISTING_THREAD)).toHaveLength(1);
-    expect(FakeWorld.text(world.messagesIn(EXISTING_THREAD)[0])).toContain("opened this pull request");
-    expect(world.mutations().some((c) => c.method === "PATCH")).toBe(false);
-  });
-
-  it("marks drafts and uses the draft wording in the feed", async () => {
-    const { world, deliver } = await harness();
-    const pull = world.addPull("OpenRX", pullJson("OpenRX", 4, { draft: true }));
-    await deliver("pull_request", prEvent("opened", { ...pull }));
-    expect(FakeWorld.text(world.messagesIn(CHANNEL_RX)[0])).toMatch(/^Pull request \*\*OpenRX\*\* #4/);
-    expect(FakeWorld.text(world.messagesIn(world.threads[0]!.id)[0])).toContain("opened a draft pull request");
-    expect(FakeWorld.text(world.messagesIn(FEED)[0])).toContain("#4 opened a draft by alice");
-  });
-
-  it("does nothing twice when GitHub redelivers the same delivery", async () => {
-    const { world, deliver } = await harness();
-    const pull = world.addPull("OpenRX", pullJson("OpenRX", 12));
-    const payload = prEvent("opened", { ...pull });
-    await deliver("pull_request", payload, "same-guid");
-    const before = world.mutations().length;
-    await deliver("pull_request", payload, "same-guid");
-    expectNoErrors();
-    expect(world.threads).toHaveLength(1);
-    expect(world.messagesIn(FEED)).toHaveLength(1);
-    expect(world.mutations()).toHaveLength(before);
-  });
-
-  it("reads the PR again before creating a thread, so a stale payload does not duplicate it", async () => {
-    const { world, deliver } = await harness();
-    const pull = world.addPull("OpenRX", pullJson("OpenRX", 12));
-    const stale = prEvent("opened", { ...pull });
-    await deliver("pull_request", stale);
-    // Same event under a new delivery id (for example a manual re-send): the payload body has no line.
-    await deliver("pull_request", stale);
-    expect(world.threads).toHaveLength(1);
-    expect(world.messagesIn(world.threads[0]!.id)).toHaveLength(2);
-  });
-
-  it("retries only the failed step on redelivery", async () => {
-    const { world, deliver } = await harness();
-    const pull = world.addPull("OpenRX", pullJson("OpenRX", 12));
-    world.failing.add(`POST /api/v10/channels/${FEED}/messages`);
-    const payload = prEvent("opened", { ...pull });
-    await deliver("pull_request", payload, "guid-1");
-    expect(errors).toHaveBeenCalledOnce();
-    expect(world.threads).toHaveLength(1);
-    expect(world.messagesIn(FEED)).toHaveLength(0);
-
-    world.failing.clear();
-    await deliver("pull_request", payload, "guid-1");
-    expect(world.threads).toHaveLength(1);
-    expect(world.messagesIn(FEED)).toHaveLength(1);
-  });
-
-  it("keeps a body edit made while the thread was being created", async () => {
-    const { world, deliver } = await harness();
-    const pull = world.addPull("OpenRX", pullJson("OpenRX", 12, { body: "old" }));
-    const payload = prEvent("opened", { ...pull });
-    pull.body = "edited by the author";
-    await deliver("pull_request", payload);
-    expect(pull.body).toBe(`edited by the author\n\nDiscussion: https://discord.com/channels/${GUILD}/${world.threads[0]!.id}`);
-  });
-
-  it("posts only to #git-feed for an org repository missing from repos.json", async () => {
-    const { world, deliver } = await harness();
-    const pull = pullJson("Sandbox", 1);
-    world.addPull("Sandbox", pull);
-    await deliver("pull_request", { ...prEvent("opened", pull), repository: repoPayload("Sandbox") });
-    expectNoErrors();
-    expect(world.threads).toHaveLength(0);
-    expect(world.messagesIn(FEED)).toHaveLength(1);
-  });
-
-  it("ignores private repositories and repositories outside the organisation", async () => {
-    const { world, deliver } = await harness();
-    const pull = world.addPull("OpenRX", pullJson("OpenRX", 12));
-    await deliver("pull_request", { ...prEvent("opened", pull), repository: repoPayload("OpenRX", { private: true }) });
-    await deliver("pull_request", {
-      ...prEvent("opened", pull),
-      repository: { ...repoPayload("OpenRX"), full_name: "someone/OpenRX", owner: { login: "someone" } },
-    });
-    const noFlag = repoPayload("OpenRX");
-    delete noFlag.private;
-    await deliver("pull_request", { ...prEvent("opened", pull), repository: noFlag });
-    expectNoErrors();
-    expect(world.discordPosts()).toEqual([]);
-    expect(world.mutations().filter((c) => c.method === "PATCH")).toEqual([]);
-  });
-
-  it("retries only the thread start, from the starter already posted", async () => {
-    const { world, deliver } = await harness();
-    const pull = world.addPull("OpenRX", pullJson("OpenRX", 12));
-    const threadRoute = `POST /api/v10/channels/${CHANNEL_RX}/messages/`;
-    world.failing.add(threadRoute);
-    const payload = prEvent("opened", { ...pull });
-    await deliver("pull_request", payload, "guid-2");
-    expect(errors).toHaveBeenCalledOnce();
-    expect(world.messagesIn(CHANNEL_RX)).toHaveLength(1);
-    expect(world.threads).toHaveLength(0);
-    expect(pull.body).toBe("");
-
-    world.failing.delete(threadRoute);
-    await deliver("pull_request", payload, "guid-2");
-    expect(world.messagesIn(CHANNEL_RX)).toHaveLength(1);
-    expect(world.threads.map((t) => t.id)).toEqual([world.messagesIn(CHANNEL_RX)[0]!.id]);
-    expect(pull.body).toBe(`Discussion: https://discord.com/channels/${GUILD}/${world.threads[0]!.id}`);
-  });
-
-  it("uses the starter's thread when Discord already started it but the answer was lost", async () => {
-    const { world, deliver } = await harness();
-    const pull = world.addPull("OpenRX", pullJson("OpenRX", 12));
-    const threadRoute = `POST /api/v10/channels/${CHANNEL_RX}/messages/`;
-    world.failing.add(threadRoute);
-    const payload = prEvent("opened", { ...pull });
-    await deliver("pull_request", payload, "guid-3");
-    const starterId = String(world.messagesIn(CHANNEL_RX)[0]!.id);
-    // Discord started the thread; the bot only saw the error.
-    world.threadChannels.set(starterId, { id: starterId, type: 11, parent_id: CHANNEL_RX });
-    world.messages.set(starterId, []);
-
-    world.failing.delete(threadRoute);
-    await deliver("pull_request", payload, "guid-3");
-    expect(errors).toHaveBeenCalledOnce();
-    expect(pull.body).toBe(`Discussion: https://discord.com/channels/${GUILD}/${starterId}`);
-    expect(world.messagesIn(starterId)).toHaveLength(1);
-  });
-
-  it("reports a missing product channel as an error but still posts the feed line", async () => {
-    const world = new FakeWorld();
-    world.channels = world.channels.slice(1);
-    const { deliver } = await harness({ world });
-    const pull = world.addPull("OpenRX", pullJson("OpenRX", 12));
-    await deliver("pull_request", prEvent("opened", { ...pull }));
-    expect(String(errors.mock.calls[0]?.[1])).toContain("text channel rx for OpenRX does not exist");
-    expect(world.threads).toHaveLength(0);
-    expect(world.messagesIn(FEED)).toHaveLength(1);
-  });
-});
-
-describe("pull_request other actions", () => {
-  it("posts a compact push line on synchronize without a feed line", async () => {
-    const { world, deliver } = await harness();
-    const pull = world.addPull("OpenRX", pullJson("OpenRX", 5, { body: LINK }));
-    await deliver("pull_request", prEvent("synchronize", { ...pull }, { after: "0123456789abcdef", sender: { login: "bob" } }));
-    expectNoErrors();
-    const messages = world.messagesIn(EXISTING_THREAD);
-    expect(messages).toHaveLength(1);
-    expect(FakeWorld.text(messages[0])).toContain("**bob** pushed `0123456` to `feature-5`");
-    expect(FakeWorld.text(messages[0])).not.toContain("files changed");
-    expect(world.messagesIn(FEED)).toHaveLength(0);
-  });
-
-  it("starts the thread for an older PR on its first push, with the details in the first card", async () => {
-    const { world, deliver } = await harness();
-    const pull = world.addPull("OpenRX", pullJson("OpenRX", 6, { body: "Older work." }));
-    await deliver("pull_request", prEvent("synchronize", { ...pull }, { after: "fedcba9876543210" }));
-    expect(world.threads).toHaveLength(1);
-    expect(FakeWorld.text(world.messagesIn(CHANNEL_RX)[0])).toContain("Pull request **OpenRX** #6 by alice");
-    const messages = world.messagesIn(world.threads[0]!.id);
-    expect(messages).toHaveLength(1);
-    expect(FakeWorld.text(messages[0])).toContain("pushed `fedcba9`");
-    expect(FakeWorld.text(messages[0])).toContain("Older work.");
-    expect(FakeWorld.text(messages[0])).toContain("files changed");
-  });
-
-  it("announces a merge in the thread and the feed", async () => {
-    const { world, deliver } = await harness();
-    const pull = world.addPull(
-      "OpenRX",
-      pullJson("OpenRX", 7, { body: LINK, state: "closed", merged: true, merged_by: { login: "carol" } }),
-    );
-    await deliver("pull_request", prEvent("closed", { ...pull }));
-    expectNoErrors();
-    const card = world.messagesIn(EXISTING_THREAD)[0];
-    expect(FakeWorld.text(card)).toContain("**carol** merged this pull request into `main`");
-    expect((card?.components as Array<{ accent_color: number }>)[0]?.accent_color).toBe(0x8250df);
-    expect(FakeWorld.text(world.messagesIn(FEED)[0])).toContain("#7 merged by carol");
-  });
-
-  it("reports a close without merge and never creates a thread for a closed PR", async () => {
-    const { world, deliver } = await harness();
-    const pull = world.addPull("OpenRX", pullJson("OpenRX", 8, { state: "closed" }));
-    await deliver("pull_request", prEvent("closed", { ...pull }, { sender: { login: "dave" } }));
-    expectNoErrors();
-    expect(world.threads).toHaveLength(0);
-    expect(FakeWorld.text(world.messagesIn(FEED)[0])).toContain("#8 closed by dave");
-  });
-
-  it("skips a linked thread that was deleted", async () => {
-    const world = new FakeWorld();
-    world.goneThreads.add(EXISTING_THREAD);
-    const { deliver } = await harness({ world });
-    const pull = world.addPull("OpenRX", pullJson("OpenRX", 9, { body: LINK }));
-    await deliver("pull_request", prEvent("ready_for_review", { ...pull }));
-    expectNoErrors();
-    expect(world.threads).toHaveLength(0);
-    expect(String(warnings.mock.calls[0]?.[0])).toContain("is not a thread in #rx");
-    expect(world.discordPosts().filter((c) => c.url.includes(EXISTING_THREAD))).toHaveLength(0);
-    expect(FakeWorld.text(world.messagesIn(FEED)[0])).toContain("marked ready for review");
-  });
-});
-
-describe("pull_request_review", () => {
-  function review(state: string, body = "", user = "erin") {
-    return { state, body, user: { login: user }, html_url: "https://github.com/OpenDrone-hw/OpenRX/pull/5#pullrequestreview-1" };
-  }
-
-  it("posts approvals to the thread and the feed", async () => {
-    const { world, deliver } = await harness();
-    const pull = world.addPull("OpenRX", pullJson("OpenRX", 5, { body: LINK }));
+    await deliver("pull_request", prEvent("closed", { ...linked, state: "closed", merged: true, merged_by: { login: "carol" } }));
     await deliver("pull_request_review", {
       action: "submitted",
-      review: review("approved", "Looks good, see [notes](https://evil.example)"),
-      pull_request: { ...pull },
+      review: { state: "approved", body: "ok", user: { login: "erin" }, html_url: `${linked.html_url}#review-1` },
+      pull_request: { ...linked },
       repository: repoPayload(),
     });
-    expectNoErrors();
-    const text = FakeWorld.text(world.messagesIn(EXISTING_THREAD)[0]);
-    expect(text).toContain("**erin** approved these changes");
-    expect(text).toContain("notes (https://evil.example)");
-    expect(FakeWorld.text(world.messagesIn(FEED)[0])).toContain("#5 approved by erin");
-  });
-
-  it("posts requested changes and skips empty comment reviews", async () => {
-    const { world, deliver } = await harness();
-    const pull = world.addPull("OpenRX", pullJson("OpenRX", 5, { body: LINK }));
-    await deliver("pull_request_review", { action: "submitted", review: review("CHANGES_REQUESTED", "Fix the footprint"), pull_request: { ...pull }, repository: repoPayload() });
-    await deliver("pull_request_review", { action: "submitted", review: review("commented"), pull_request: { ...pull }, repository: repoPayload() });
-    await deliver("pull_request_review", { action: "submitted", review: review("commented", "nit: rename"), pull_request: { ...pull }, repository: repoPayload() });
-    expectNoErrors();
-    const texts = world.messagesIn(EXISTING_THREAD).map((m) => FakeWorld.text(m));
-    expect(texts).toHaveLength(2);
-    expect(texts[0]).toContain("requested changes");
-    expect(texts[1]).toContain("**erin** reviewed");
-    expect(world.messagesIn(FEED).map((m) => FakeWorld.text(m))).toEqual([
-      expect.stringContaining("#5 changes requested by erin"),
-    ]);
+    expect(errors).not.toHaveBeenCalled();
+    expect(discordCalls(world)).toEqual([]);
+    expect(world.threads).toHaveLength(0);
+    expect(world.mutations().filter((c) => c.method === "PATCH")).toEqual([]);
+    expect(fresh.body).toBe("Adds a u.FL.");
   });
 });
 
@@ -375,111 +87,30 @@ describe("check_suite", () => {
     };
   }
 
-  it("posts results for the PR head into linked threads only", async () => {
-    const { world, deliver } = await harness();
-    const linked = world.addPull("OpenRX", pullJson("OpenRX", 5, { body: LINK }));
-    world.addPull("OpenRX", pullJson("OpenRX", 6));
-    await deliver("check_suite", suite("failure", [5, 6], linked.head.sha));
-    expectNoErrors();
-    const messages = world.messagesIn(EXISTING_THREAD);
-    expect(messages).toHaveLength(1);
-    expect(FakeWorld.text(messages[0])).toContain("Checks failed (GitHub Actions) on `aaaaaaa`");
-    expect(world.threads).toHaveLength(0);
-    expect(world.messagesIn(FEED)).toHaveLength(0);
-  });
-
-  it("looks up the installation when the payload has none", async () => {
+  it("posts nothing for a pull request's suite", async () => {
     const { world, deliver } = await harness();
     const pull = world.addPull("OpenRX", pullJson("OpenRX", 5, { body: LINK }));
-    await deliver("check_suite", { ...suite("success", [5], pull.head.sha), installation: null });
-    expectNoErrors();
-    const paths = world.calls.filter((c) => c.url.startsWith("https://api.github.com/")).map((c) => new URL(c.url).pathname);
-    expect(paths.slice(0, 3)).toEqual([
-      "/repos/OpenDrone-hw/OpenRX/installation",
-      "/app/installations/99/access_tokens",
-      "/repos/OpenDrone-hw/OpenRX/pulls/5",
-    ]);
-    expect(world.messagesIn(EXISTING_THREAD)).toHaveLength(1);
-  });
-
-  it("skips stale suites and unreported conclusions", async () => {
-    const { world, deliver } = await harness();
-    const pull = world.addPull("OpenRX", pullJson("OpenRX", 5, { body: LINK }));
-    await deliver("check_suite", suite("success", [5], "b".repeat(40)));
-    await deliver("check_suite", suite("neutral", [5], pull.head.sha));
-    await deliver("check_suite", suite("cancelled", [5], pull.head.sha));
+    await deliver("check_suite", suite("failure", [5], pull.head.sha));
     await deliver("check_suite", suite("success", [5], pull.head.sha));
-    expectNoErrors();
-    expect(world.messagesIn(EXISTING_THREAD).map((m) => FakeWorld.text(m))).toEqual([
-      expect.stringContaining("Checks passed"),
-    ]);
+    expect(errors).not.toHaveBeenCalled();
+    expect(discordCalls(world)).toEqual([]);
   });
 
   it("reports default-branch failures to the feed", async () => {
     const { world, deliver } = await harness();
     await deliver("check_suite", suite("failure", [], "c".repeat(40), "main"));
     await deliver("check_suite", suite("success", [], "c".repeat(40), "main"));
+    await deliver("check_suite", suite("neutral", [], "c".repeat(40), "main"));
     await deliver("check_suite", suite("failure", [], "c".repeat(40), "other"));
-    expectNoErrors();
+    expect(errors).not.toHaveBeenCalled();
     expect(world.messagesIn(FEED).map((m) => FakeWorld.text(m))).toEqual([
       "**OpenRX** checks failed on `main` (GitHub Actions, [ccccccc](https://github.com/OpenDrone-hw/OpenRX/commit/cccccccccccccccccccccccccccccccccccccccc))",
     ]);
   });
-});
 
-describe("Discussion lines that do not point at this repository's product channel", () => {
-  const targets: Array<[string, string]> = [
-    ["a text channel itself (#rules)", RULES],
-    ["the product channel itself (#rx)", CHANNEL_RX],
-    ["an announcement channel", ANNOUNCEMENTS],
-    ["a thread in a forum outside repos.json (#web-support)", OTHER_FORUM_THREAD],
-    ["a thread in the retired #receivers forum", OLD_FORUM_THREAD],
-    ["a thread in another repository's product channel", FC_THREAD],
-    ["a channel that does not exist", "1600000000000077777"],
-  ];
-  const linkTo = (id: string) => `Discussion: https://discord.com/channels/${GUILD}/${id}`;
-
-  for (const [label, target] of targets) {
-    it(`posts nothing for ${label} and starts no second thread`, async () => {
-      const { world, deliver } = await harness();
-      const pull = world.addPull("OpenRX", pullJson("OpenRX", 21, { body: `Change.\n\n${linkTo(target)}` }));
-      const before = pull.body;
-      await deliver("pull_request", prEvent("opened", { ...pull }));
-      await deliver("pull_request", prEvent("synchronize", { ...pull }, { after: "b".repeat(40) }));
-      await deliver("pull_request_review", {
-        action: "submitted",
-        review: { state: "APPROVED", body: "ok", user: { login: "erin" }, html_url: `${pull.html_url}#review-1` },
-        pull_request: { ...pull },
-        repository: repoPayload(),
-      });
-      await deliver("check_suite", {
-        action: "completed",
-        check_suite: {
-          conclusion: "failure",
-          head_sha: pull.head.sha,
-          head_branch: "feature",
-          app: { name: "GitHub Actions" },
-          pull_requests: [{ number: 21 }],
-        },
-        repository: repoPayload(),
-      });
-      expectNoErrors();
-      expect(world.threads).toHaveLength(0);
-      const posted = world.discordPosts().map((c) => c.url);
-      expect(posted.every((url) => url.endsWith(`/channels/${FEED}/messages`))).toBe(true);
-      expect(posted).toHaveLength(2);
-      expect(world.pull("OpenRX", 21).body).toBe(before);
-      expect(warnings.mock.calls.map((c) => String(c[0])).some((w) => w.includes(`points at ${target}`))).toBe(true);
-    });
-  }
-
-  it("reads each linked channel from Discord once per isolate", async () => {
+  it("posts nothing for a private repository", async () => {
     const { world, deliver } = await harness();
-    const pull = world.addPull("OpenRX", pullJson("OpenRX", 22, { body: LINK }));
-    await deliver("pull_request", prEvent("synchronize", { ...pull }));
-    await deliver("pull_request", prEvent("synchronize", { ...pull }));
-    expectNoErrors();
-    expect(world.messagesIn(EXISTING_THREAD)).toHaveLength(2);
-    expect(world.calls.filter((c) => c.method === "GET" && c.url.endsWith(`/channels/${EXISTING_THREAD}`))).toHaveLength(1);
+    await deliver("check_suite", { ...suite("failure", [], "c".repeat(40), "main"), repository: repoPayload("OpenRX", { private: true }) });
+    expect(discordCalls(world)).toEqual([]);
   });
 });

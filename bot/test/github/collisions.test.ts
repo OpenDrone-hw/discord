@@ -6,7 +6,7 @@ import {
   pairKey,
   warnedFiles,
 } from "../../src/github/collisions.ts";
-import { EXISTING_THREAD, CHANNEL_RX, FakeWorld, GUILD, OTHER_FORUM_THREAD, RULES, harness, pullJson, repoPayload } from "./fakes.ts";
+import { EXISTING_THREAD, CHANNEL_RX, FakeWorld, GUILD, harness, pullJson, repoPayload } from "./fakes.ts";
 
 const OTHER_THREAD = "1600000000000000888";
 const link = (thread: string) => `Discussion: https://discord.com/channels/${GUILD}/${thread}`;
@@ -57,7 +57,7 @@ describe("helpers", () => {
 });
 
 describe("KiCad collision guard", () => {
-  it("comments once on the PR and warns both threads", async () => {
+  it("comments once on the PR and posts nothing to Discord", async () => {
     const { world, deliver, pull } = await twoPulls([PCB, SCH, "README.md"], [PCB, "docs/x.md"]);
     await deliver("pull_request", event("synchronize", { ...pull }));
     expect(errors).not.toHaveBeenCalled();
@@ -67,15 +67,10 @@ describe("KiCad collision guard", () => {
     expect(comments[0]?.body).toContain("**KiCad collision:** this pull request and #10 both change:");
     expect(comments[0]?.body).toContain(`- \`${PCB}\``);
     expect(comments[0]?.body).not.toContain(SCH);
+    expect(comments[0]?.body).not.toContain("Discord");
     expect(comments[0]?.body).toContain(collisionMarker(12, 10, [PCB]));
     expect(world.comments.get("OpenRX#10")).toBeUndefined();
-
-    const mine = world.messagesIn(EXISTING_THREAD).map((m) => FakeWorld.text(m));
-    const theirs = world.messagesIn(OTHER_THREAD).map((m) => FakeWorld.text(m));
-    expect(mine.some((t) => t.includes("KiCad collision with [OpenRX #10: Rework power]"))).toBe(true);
-    expect(theirs).toHaveLength(1);
-    expect(theirs[0]).toContain("KiCad collision with [OpenRX #12: Move antenna]");
-    expect(theirs[0]).toContain(`\`${PCB}\``);
+    expect(world.calls.filter((c) => c.url.startsWith("https://discord.com/"))).toEqual([]);
   });
 
   it("stays quiet on repeated pushes and redeliveries", async () => {
@@ -84,7 +79,6 @@ describe("KiCad collision guard", () => {
     await deliver("pull_request", event("synchronize", { ...pull }), "push-2");
     await deliver("pull_request", event("synchronize", { ...pull }), "push-2");
     expect(world.comments.get("OpenRX#12")).toHaveLength(1);
-    expect(world.messagesIn(OTHER_THREAD)).toHaveLength(1);
   });
 
   it("does not warn again when the other PR pushes", async () => {
@@ -93,21 +87,6 @@ describe("KiCad collision guard", () => {
     await deliver("pull_request", event("synchronize", { ...other }));
     expect(world.comments.get("OpenRX#12")).toHaveLength(1);
     expect(world.comments.get("OpenRX#10")).toBeUndefined();
-    expect(world.messagesIn(OTHER_THREAD).filter((m) => FakeWorld.text(m).includes("KiCad collision"))).toHaveLength(1);
-  });
-
-  it("does not post into the other PR's Discussion target unless it is a thread in this repository's product channel", async () => {
-    for (const target of [RULES, OTHER_FORUM_THREAD]) {
-      const { world, deliver, pull, other } = await twoPulls([PCB], [PCB]);
-      world.messages.set(target, []);
-      other.body = link(target);
-      await deliver("pull_request", event("synchronize", { ...pull }));
-      expect(errors).not.toHaveBeenCalled();
-      expect(world.comments.get("OpenRX#12")).toHaveLength(1);
-      expect(world.messagesIn(target)).toHaveLength(0);
-      expect(world.messagesIn(OTHER_THREAD)).toHaveLength(0);
-      expect(world.messagesIn(EXISTING_THREAD).some((m) => FakeWorld.text(m).includes("KiCad collision"))).toBe(true);
-    }
   });
 
   it("warns again when a new file starts to overlap", async () => {
@@ -149,19 +128,11 @@ describe("KiCad collision guard", () => {
     expect(world.comments.get("OpenRX#12")?.[0]?.body).toContain(`\`${PCB}\``);
   });
 
-  it("also runs on opened, after the new thread exists", async () => {
-    const world = new FakeWorld();
-    world.messages.set(OTHER_THREAD, []);
-    world.threadChannels.set(OTHER_THREAD, { id: OTHER_THREAD, type: 11, parent_id: CHANNEL_RX });
-    const { deliver } = await harness({ world });
-    world.addPull("OpenRX", pullJson("OpenRX", 10, { body: link(OTHER_THREAD) }), [PCB]);
-    const pull = world.addPull("OpenRX", pullJson("OpenRX", 12), [PCB]);
+  it("also runs on opened", async () => {
+    const { world, deliver, pull } = await twoPulls([PCB], [PCB]);
     await deliver("pull_request", event("opened", { ...pull }));
-    expect(world.threads).toHaveLength(1);
-    const created = world.messagesIn(world.threads[0]!.id).map((m) => FakeWorld.text(m));
-    expect(created).toHaveLength(2);
-    expect(created[1]).toContain("KiCad collision with");
-    expect(world.messagesIn(OTHER_THREAD)).toHaveLength(1);
+    expect(world.comments.get("OpenRX#12")).toHaveLength(1);
+    expect(world.threads).toHaveLength(0);
   });
 
   it("comments but posts nothing to Discord for a private repository", async () => {
