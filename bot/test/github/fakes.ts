@@ -11,7 +11,6 @@ import { GitHubApp } from "../../src/github.ts";
 import { createGitHubModule } from "../../src/github/index.ts";
 import type { RefreshLinkedUser } from "../../src/github/linked-roles.ts";
 import type { KnownFacts } from "../../src/linked-roles/index.ts";
-import { clearThreadParentCache } from "../../src/github/thread-link.ts";
 import { createWorker } from "../../src/index.ts";
 import type { Services } from "../../src/services.ts";
 import { ChannelType, type Channel } from "../../src/types.ts";
@@ -361,7 +360,6 @@ export interface Harness {
 export async function harness(
   options: { db?: D1Database; world?: FakeWorld; refresh?: RefreshLinkedUser; refreshDeadlineMs?: number } = {},
 ): Promise<Harness> {
-  clearThreadParentCache();
   const world = options.world ?? new FakeWorld();
   const env = makeEnv({ GITHUB_APP_PRIVATE_KEY: await appPrivateKey(), DB: options.db ?? sqliteD1() });
   const discord = new DiscordClient({ token: BOT_TOKEN, fetch: world.fetch });

@@ -17,37 +17,32 @@ flowchart LR
 
 ## GitHub activity
 
-A pull request or issue in a public repository gets one thread in the
-product channel `config/repos.json` maps it to. Private repositories post
-nothing; a payload without the `private` flag counts as private. The bot
-never posts to `#announcements`: people write that channel.
+An issue in a public repository gets one thread in the product channel
+`config/repos.json` maps it to. Pull requests post nothing to Discord: no
+thread, no card, no `#git-feed` line. Private repositories post nothing; a
+payload without the `private` flag counts as private. The bot never posts to
+`#announcements`: people write that channel.
 
 | Event | Thread | Product channel | `#git-feed` |
 |---|---|---|---|
-| PR opened, reopened, ready for review | PR thread started if missing; card with the first paragraph of the description | Starter line | Line |
-| New commits | Push line in the PR thread | | |
-| Review submitted | Review card | | Approved or changes requested |
-| Checks finished | Card for the head commit | | Default-branch failures |
-| PR merged or closed | Card | | Line |
 | Issue opened | Issue thread started; card with the first paragraph | Starter line | Line |
 | Issue reopened | Card (thread started if missing) | | |
 | Issue comment | One line: author, first 300 characters, link. Bot comments and comments on PRs post nothing | | |
 | Issue closed | Close card, then the thread is archived | | Line |
+| Checks failed on the default branch, outside a PR | | | Line |
 | Release published | | Release card | Line |
 | `status-*` topic changed | | Lifecycle card | Line |
 | Push to the default branch | | | Line |
 
-A PR thread is named `<repo> #<n>: <title>`. A PR that already has a
-`Discussion:` line pointing at a thread in its product channel posts there
-instead of starting one. An issue thread is named `<repo> issue #<n>: <title>`;
-the link lives in D1 (`github_issues`), not in the issue. A comment on an open
-issue without a thread starts one. Threads auto-archive after a week, the
-longest Discord allows; the cron unarchives the thread of every issue that is
-still open, without posting.
+An issue thread is named `<repo> issue #<n>: <title>`; the link lives in D1
+(`github_issues`), not in the issue. A comment on an open issue without a
+thread starts one. Threads auto-archive after a week, the longest Discord
+allows; the cron unarchives the thread of every issue that is still open,
+without posting.
 
 KiCad collision guard: when two open PRs in one repository change the same
-`.kicad_pcb` or `.kicad_sch` file, the bot comments on the PR and posts a
-warning in both threads. KiCad files cannot be merged.
+`.kicad_pcb` or `.kicad_sch` file, the bot comments on the PR on GitHub.
+KiCad files cannot be merged.
 
 Each delivery is processed once (D1 table `github_deliveries`); a redelivery
 repeats only the failed steps. Every message is sent with
@@ -66,8 +61,8 @@ does not.
 
 `/posting` with no option shows both. While off, every delivery still gets
 202 and is recorded as skipped in `github_deliveries`; a redelivery after
-switching on posts it. The KiCad guard still comments on GitHub, issue states
-stay current in D1, and the linked-role refresh keeps running. The cron does
+switching on posts it. The KiCad guard and the linked-role refresh are not
+gated, and issue states stay current in D1. The cron does
 not unarchive threads while off.
 
 ## Commands
@@ -145,7 +140,8 @@ channels and roles the bot uses; ids are resolved by name at runtime.
 The GitHub App has Metadata read, Pull requests and Issues read and write,
 Checks and Contents read, organisation Members read, and no Administration.
 It subscribes to pull request, review, check suite, issues, issue comment,
-release, repository, push, organization and membership events.
+release, repository, push, organization and membership events. Review
+events have no handler and are ignored.
 
 The Developer Portal points the Interactions Endpoint at
 `https://<worker>/interactions`, the Linked Roles Verification URL at

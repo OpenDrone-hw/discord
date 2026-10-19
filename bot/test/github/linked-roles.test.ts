@@ -5,7 +5,7 @@ import { createWorker } from "../../src/index.ts";
 import { refreshLinkedUser, type RefreshResult } from "../../src/linked-roles/index.ts";
 import { fakeContext, githubSignature } from "../helpers.ts";
 import { harness as linkedRolesHarness, link } from "../linked-roles/harness.ts";
-import { EXISTING_THREAD, FEED, FakeWorld, GUILD, ORG, harness, pullJson, repoPayload } from "./fakes.ts";
+import { EXISTING_THREAD, GUILD, ORG, harness, pullJson, repoPayload } from "./fakes.ts";
 
 const LINK = `Discussion: https://discord.com/channels/${GUILD}/${EXISTING_THREAD}`;
 
@@ -109,16 +109,15 @@ describe("refreshTarget", () => {
 });
 
 describe("refresh through the webhook", () => {
-  it("refreshes the author of a merged PR and still posts the merge card and feed line", async () => {
+  it("refreshes the author of a merged PR and posts nothing to Discord", async () => {
     const { world, deliver } = await harness();
     const pull = world.addPull("OpenRX", merged(7, "alice"));
     const response = await deliver("pull_request", closedPr({ ...pull }, { sender: { login: "carol" } }));
     expect(response.status).toBe(202);
-    expect(await response.json()).toEqual({ ok: true, handlers: 2 });
+    expect(await response.json()).toEqual({ ok: true, handlers: 1 });
     expect(world.refreshed).toEqual(["alice"]);
     expect(world.refreshFacts).toEqual([{ minMergedPrs: 1 }]);
-    expect(FakeWorld.text(world.messagesIn(EXISTING_THREAD)[0])).toContain("merged this pull request");
-    expect(FakeWorld.text(world.messagesIn(FEED)[0])).toContain("#7 merged by carol");
+    expect(world.discordPosts()).toEqual([]);
     expect(errorLines()).toEqual([]);
   });
 
@@ -159,7 +158,7 @@ describe("refresh through the webhook", () => {
     expect(String(logs.mock.calls[0]?.[0])).toContain(": updated");
   });
 
-  it("logs a failed refresh and does not affect the reply or the other handlers", async () => {
+  it("logs a failed refresh and does not affect the reply", async () => {
     const refresh: RefreshLinkedUser = async () => {
       throw new Error("D1_ERROR: database unavailable");
     };
@@ -167,7 +166,6 @@ describe("refresh through the webhook", () => {
     const pull = world.addPull("OpenRX", merged(9, "alice"));
     const response = await deliver("pull_request", closedPr({ ...pull }), "delivery-fail");
     expect(response.status).toBe(202);
-    expect(FakeWorld.text(world.messagesIn(FEED)[0])).toContain("#9 merged by carol");
     const lines = errorLines();
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain("linked-roles refresh for alice after pull_request.closed delivery delivery-fail failed:");

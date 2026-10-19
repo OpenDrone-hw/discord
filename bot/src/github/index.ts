@@ -1,18 +1,18 @@
 /**
- * GitHub webhook module: pull requests, reviews, checks, issues, releases,
- * pushes and repository topic changes, posted into the Discord product
- * channels, their pull request and issue threads and #git-feed, plus the
- * KiCad collision guard and the linked-role refresh after merges and
- * organisation or team membership changes. Nothing is posted to
+ * GitHub webhook module: issues, releases, pushes, default-branch check
+ * failures and repository topic changes, posted into the Discord product
+ * channels, their issue threads and #git-feed, plus the KiCad collision
+ * guard and the linked-role refresh after merges and organisation or team
+ * membership changes. Pull requests post nothing to Discord. Nothing is posted to
  * #announcements: people write that channel.
  *
  * | File              | Content                                                   |
  * |-------------------|-----------------------------------------------------------|
- * | pulls.ts          | pull_request, pull_request_review, check_suite            |
+ * | pulls.ts          | pull_request (collision guard), check_suite               |
  * | issues.ts         | issues, issue_comment; issue threads (D1 github_issues)   |
  * | collisions.ts     | KiCad collision guard (.kicad_pcb, .kicad_sch)            |
  * | repository.ts     | release, repository (status-* topics), push               |
- * | thread-link.ts    | "Discussion:" line in PR bodies, thread creation          |
+ * | thread-link.ts    | "Discussion:" line in PR bodies (/link, /branch)          |
  * | deliveries.ts     | redelivery idempotency on X-GitHub-Delivery (D1)          |
  * | context.ts        | per-delivery scope, posting to channels and threads       |
  * | api.ts            | GitHub REST calls as the installation                     |
@@ -22,14 +22,12 @@
  *
  * Kill switch (src/posting.ts): every posting handler is wrapped by gated().
  * While posting is off the delivery is recorded as skipped, nothing reaches
- * Discord, the KiCad guard still comments on GitHub, issue states stay
- * current in D1, and the webhook still answers 202. The linked-role refresh
- * handlers are not gated.
+ * Discord, issue states stay current in D1, and the webhook still answers
+ * 202. The KiCad guard and the linked-role refresh handlers are not gated.
  *
  * Handlers run in waitUntil after the 202 reply and are cancelled 30 s after
  * it. Channel ids come from services.directory, never from constants.
- * Private repositories never post to Discord; the collision guard still
- * comments on their pull requests.
+ * Private repositories never post to Discord.
  *
  * GitHub App permissions, webhook events and the bot role's Discord
  * permissions: bot/README.md, "Configuration".
@@ -46,7 +44,7 @@ import { postingEnabled } from "../posting.ts";
 import type { BotModule, GitHubEventContext, GitHubHandler } from "../registry.ts";
 import { storeFor } from "./deliveries.ts";
 import { ISSUE_ACTIONS, handleIssue, handleIssueComment, issueStoreFor, trackIssueState, unarchiveOpenIssueThreads } from "./issues.ts";
-import { PULL_ACTIONS, handleCheckSuite, handlePullRequest, handlePullRequestCollisionsOnly, handleReview } from "./pulls.ts";
+import { PULL_ACTIONS, handleCheckSuite, handlePullRequest } from "./pulls.ts";
 import { refreshHandlers, type RefreshHandlerOptions } from "./linked-roles.ts";
 import { handlePush, handleRelease, handleRepositoryEdited } from "./repository.ts";
 
@@ -80,8 +78,7 @@ export function createGitHubModule(options: GitHubModuleOptions = {}): BotModule
   return {
     name: "github",
     github: [
-      gated("pull_request", PULL_ACTIONS, handlePullRequest, handlePullRequestCollisionsOnly),
-      gated("pull_request_review", ["submitted"], handleReview),
+      { event: "pull_request", actions: PULL_ACTIONS, handle: handlePullRequest },
       gated("check_suite", ["completed"], handleCheckSuite),
       gated("issues", ISSUE_ACTIONS, handleIssue, trackIssueState),
       gated("issue_comment", ["created"], handleIssueComment),

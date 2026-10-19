@@ -183,9 +183,7 @@ export async function productThread(ctx: InteractionContext, channelId?: string)
 
 /**
  * Null when `repo` belongs to the thread's channel, else the refusal for
- * `command`. The GitHub module (src/github/thread-link.ts linkState) follows
- * a "Discussion:" line only to a thread in the repository's own product
- * channel, so a link or line for any other repository would be ignored there.
+ * `command`: a repository is discussed only in its own product channel.
  */
 export function wrongChannel(thread: ThreadContext, repo: RepoMatch, command: string): string | null {
   if (repo.channel === thread.channel.name) return null;
