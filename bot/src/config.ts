@@ -36,13 +36,25 @@ export type ChannelKey = (typeof CHANNEL_KEYS)[number];
 export type RoleKey = (typeof ROLE_KEYS)[number];
 export type LifecycleTopic = (typeof LIFECYCLE_TOPICS)[number];
 
+/**
+ * What GitHub activity posts to Discord. "deploys": one #git-feed line per
+ * deploy (push to the default branch, published release) and nothing else.
+ * "full": pull request and issue threads, cards and every feed line.
+ */
+export const FEED_MODES = ["deploys", "full"] as const;
+export type FeedMode = (typeof FEED_MODES)[number];
+
 export interface RepoEntry {
-  /** Product text channel name: pull request threads start there. */
+  /** Product text channel name: pull request threads start there (feed "full"). */
   channel: string;
+  /** Per-repository override of the top-level feed mode. */
+  feed?: FeedMode;
 }
 
 export interface BotConfig {
   org: string;
+  /** Default feed mode of every repository. */
+  feed: FeedMode;
   channels: Record<ChannelKey, string>;
   roles: Record<RoleKey, string>;
   /** Repository topic -> lifecycle name shown in the product channel and #git-feed. */
@@ -74,7 +86,12 @@ function channelName(value: unknown, where: string): string {
   return name;
 }
 
-const TOP_KEYS = new Set(["org", "channels", "roles", "lifecycle", "repos"]);
+function feedMode(value: unknown, where: string): FeedMode {
+  if (typeof value === "string" && (FEED_MODES as readonly string[]).includes(value)) return value as FeedMode;
+  throw new ConfigError(`${where}: expected "deploys" or "full"`);
+}
+
+const TOP_KEYS = new Set(["org", "feed", "channels", "roles", "lifecycle", "repos"]);
 
 /** Validates repos.json. Throws ConfigError naming the first problem. */
 export function parseConfig(value: unknown): BotConfig {
@@ -83,6 +100,7 @@ export function parseConfig(value: unknown): BotConfig {
     if (!TOP_KEYS.has(key)) throw new ConfigError(`repos.json: unknown key ${key}`);
   }
   const org = nonEmpty(value.org, "org");
+  const feed = feedMode(value.feed, "feed");
 
   const channelsIn = isRecord(value.channels) ? value.channels : {};
   const channels = {} as Record<ChannelKey, string>;
@@ -109,14 +127,14 @@ export function parseConfig(value: unknown): BotConfig {
     seenRepos.add(repo.toLowerCase());
     if (!isRecord(entry)) throw new ConfigError(`repos.${repo}: expected an object`);
     for (const key of Object.keys(entry)) {
-      if (key !== "channel") throw new ConfigError(`repos.${repo}: unknown key ${key}`);
+      if (key !== "channel" && key !== "feed") throw new ConfigError(`repos.${repo}: unknown key ${key}`);
     }
     const channel = channelName(entry.channel, `repos.${repo}.channel`);
     if (shared.has(channel)) throw new ConfigError(`repos.${repo}.channel: ${channel} is a bot channel, not a product channel`);
-    repos[repo] = { channel };
+    repos[repo] = entry.feed === undefined ? { channel } : { channel, feed: feedMode(entry.feed, `repos.${repo}.feed`) };
   }
   if (Object.keys(repos).length === 0) throw new ConfigError("repos: expected at least one repository");
-  return { org, channels, roles, lifecycle, repos };
+  return { org, feed, channels, roles, lifecycle, repos };
 }
 
 export const config: BotConfig = parseConfig(raw);
@@ -140,6 +158,11 @@ export function findRepo(fullName: string, cfg: BotConfig = config): RepoMatch |
     if (repo.toLowerCase() === lower) return { repo, ...entry };
   }
   return null;
+}
+
+/** Feed mode of "owner/name" or "name": its override, else the top-level default. */
+export function feedModeFor(fullName: string, cfg: BotConfig = config): FeedMode {
+  return findRepo(fullName, cfg)?.feed ?? cfg.feed;
 }
 
 /** Product channel names in repos.json order, each once. */

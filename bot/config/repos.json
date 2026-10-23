@@ -1,5 +1,6 @@
 {
   "org": "OpenDrone-hw",
+  "feed": "deploys",
   "channels": {
     "gitFeed": "git-feed",
     "modLog": "mod-log",
