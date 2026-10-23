@@ -121,3 +121,32 @@ export async function handlePush(ctx: GitHubEventContext): Promise<void> {
     `${link(truncate(subject || shortSha(after), 120), compare)}`;
   await scope.once("feed", () => postToChannel(scope.services, "gitFeed", feedLine(text)));
 }
+
+/**
+ * Feed "deploys": one #git-feed line per deploy and nothing in product
+ * channels. A push to the default branch deploys, PR merges included (merging
+ * main deploys production for OpenDrone-Web); so does a published release.
+ */
+export async function handleDeployPush(ctx: GitHubEventContext): Promise<void> {
+  const scope = makeScope(ctx);
+  if (!scope || scope.repo.private) return;
+  const { payload } = ctx;
+  if (str(payload.ref) !== `refs/heads/${scope.repo.defaultBranch}`) return;
+  const after = str(payload.after) ?? "";
+  if (payload.deleted === true || !after || ZERO_SHA.test(after)) return;
+  const commits = Array.isArray(payload.commits) ? payload.commits : [];
+  if (commits.length === 0) return;
+  const head = isRecord(payload.head_commit) ? payload.head_commit : {};
+  const title = truncate(oneLine((str(head.message) ?? "").split("\n")[0] ?? "") || shortSha(after), 120);
+  const url = str(head.url) ?? `${scope.repo.htmlUrl}/commit/${after}`;
+  const text = `**${escapeMarkdown(scope.repo.name)}** ${code(shortSha(after))} ${link(title, url)}`;
+  await scope.once("feed", () => postToChannel(scope.services, "gitFeed", feedLine(text)));
+}
+
+export async function handleDeployRelease(ctx: GitHubEventContext): Promise<void> {
+  const scope = makeScope(ctx);
+  const release = readRelease(ctx.payload.release);
+  if (!scope || !release || scope.repo.private || release.draft) return;
+  const text = `**${escapeMarkdown(scope.repo.name)}** ${code(release.tag)} ${link(release.name || release.tag, release.htmlUrl)}`;
+  await scope.once("feed", () => postToChannel(scope.services, "gitFeed", feedLine(text)));
+}

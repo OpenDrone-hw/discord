@@ -4,7 +4,7 @@
  * with in-memory state. Every request is recorded.
  */
 import { DatabaseSync } from "node:sqlite";
-import { Directory, DirectoryCache } from "../../src/config.ts";
+import { Directory, DirectoryCache, config, type BotConfig } from "../../src/config.ts";
 import { DiscordClient } from "../../src/discord.ts";
 import type { Env } from "../../src/env.ts";
 import { GitHubApp } from "../../src/github.ts";
@@ -359,14 +359,22 @@ export interface Harness {
  * world.refreshed and answers "not-linked".
  */
 export async function harness(
-  options: { db?: D1Database; world?: FakeWorld; refresh?: RefreshLinkedUser; refreshDeadlineMs?: number } = {},
+  options: { feed?: "full" | "deploys"; repoFeed?: Record<string, "full" | "deploys">; db?: D1Database; world?: FakeWorld; refresh?: RefreshLinkedUser; refreshDeadlineMs?: number } = {},
 ): Promise<Harness> {
   clearThreadParentCache();
   const world = options.world ?? new FakeWorld();
   const env = makeEnv({ GITHUB_APP_PRIVATE_KEY: await appPrivateKey(), DB: options.db ?? sqliteD1() });
   const discord = new DiscordClient({ token: BOT_TOKEN, fetch: world.fetch });
   const github = new GitHubApp({ appId: env.GITHUB_APP_ID, privateKey: env.GITHUB_APP_PRIVATE_KEY, fetch: world.fetch });
-  const directory = new Directory(discord, GUILD, { cache: new DirectoryCache() });
+  // Existing tests cover the "full" feed; the shipped config is "deploys".
+  const testConfig: BotConfig = {
+    ...config,
+    feed: options.feed ?? "full",
+    repos: Object.fromEntries(
+      Object.entries(config.repos).map(([name, entry]) => [name, options.repoFeed?.[name] ? { ...entry, feed: options.repoFeed[name] } : { channel: entry.channel }]),
+    ),
+  };
+  const directory = new Directory(discord, GUILD, { cache: new DirectoryCache(), config: testConfig });
   const context = fakeContext();
   const services: Services = { env, waitUntil: (p) => context.ctx.waitUntil(p), discord, github, directory };
   const refresh: RefreshLinkedUser =

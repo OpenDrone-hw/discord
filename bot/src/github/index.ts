@@ -20,6 +20,11 @@
  * | payload.ts        | typed views of webhook payloads                           |
  * | linked-roles.ts   | linked-role refresh on merges and membership changes      |
  *
+ * Feed mode: config/repos.json "feed" is "deploys" by default (only a push to
+ * the default branch or a published release posts, one #git-feed line each);
+ * a repository with "feed": "full" keeps the threads and cards above. See
+ * gated().
+ *
  * Kill switch (src/posting.ts): every posting handler is wrapped by gated().
  * While posting is off the delivery is recorded as skipped, nothing reaches
  * Discord, the KiCad guard still comments on GitHub, issue states stay
@@ -41,6 +46,7 @@
  *
  * Contract: src/registry.ts (GitHubHandler, GitHubEventContext).
  */
+import { feedModeFor } from "../config.ts";
 import { errorText } from "../interactions.ts";
 import { postingEnabled } from "../posting.ts";
 import type { BotModule, GitHubEventContext, GitHubHandler } from "../registry.ts";
@@ -48,7 +54,7 @@ import { storeFor } from "./deliveries.ts";
 import { ISSUE_ACTIONS, handleIssue, handleIssueComment, issueStoreFor, trackIssueState, unarchiveOpenIssueThreads } from "./issues.ts";
 import { PULL_ACTIONS, handleCheckSuite, handlePullRequest, handlePullRequestCollisionsOnly, handleReview } from "./pulls.ts";
 import { refreshHandlers, type RefreshHandlerOptions } from "./linked-roles.ts";
-import { handlePush, handleRelease, handleRepositoryEdited } from "./repository.ts";
+import { handleDeployPush, handleDeployRelease, handlePush, handleRelease, handleRepositoryEdited } from "./repository.ts";
 
 export interface GitHubModuleOptions {
   /** Options of the linked-role refresh handlers (tests pass a fake refresh). */
@@ -57,20 +63,39 @@ export interface GitHubModuleOptions {
 
 type Handle = (ctx: GitHubEventContext) => Promise<void>;
 
+async function recordSkipped(ctx: GitHubEventContext): Promise<void> {
+  const store = storeFor(ctx.services.env.DB);
+  if (store && ctx.delivery) {
+    await store.markSkipped(ctx.delivery, `${ctx.event}.${ctx.action ?? "-"}`).catch((error: unknown) => {
+      console.error("could not record the skipped delivery:", errorText(error));
+    });
+  }
+}
+
 /**
  * Runs `handle` while posting is on. While it is off, records the delivery
  * as skipped and runs `whenOff` (GitHub-only or D1-only work), if any.
+ *
+ * Feed mode (config/repos.json "feed", per-repository override): with
+ * "full" `handle` runs as it always did. With "deploys" `deploy` runs
+ * instead (a #git-feed line for a push or release, GitHub-only work for a
+ * pull request), or nothing when the event is not a deploy; the delivery is
+ * then recorded as skipped. `deploy` runs only while posting is on.
  */
-export function gated(event: string, actions: string[] | undefined, handle: Handle, whenOff?: Handle): GitHubHandler {
+export function gated(event: string, actions: string[] | undefined, handle: Handle, whenOff?: Handle, deploy?: Handle): GitHubHandler {
+  const feedHandle: Handle = async (ctx) => {
+    const repo = ctx.payload.repository;
+    const name = typeof repo === "object" && repo !== null ? (repo as { full_name?: unknown }).full_name : undefined;
+    if (feedModeFor(typeof name === "string" ? name : "", ctx.services.directory.config) === "full") return handle(ctx);
+    console.log(`feed is deploys only: ${ctx.event}.${ctx.action ?? "-"} delivery ${ctx.delivery ?? "?"} not posted`);
+    if (deploy) return deploy(ctx);
+    await recordSkipped(ctx);
+    if (whenOff) await whenOff(ctx);
+  };
   const gatedHandle: Handle = async (ctx) => {
-    if (await postingEnabled(ctx.services.env)) return handle(ctx);
+    if (await postingEnabled(ctx.services.env)) return feedHandle(ctx);
     console.log(`discord posting is off: ${ctx.event}.${ctx.action ?? "-"} delivery ${ctx.delivery ?? "?"} skipped`);
-    const store = storeFor(ctx.services.env.DB);
-    if (store && ctx.delivery) {
-      await store.markSkipped(ctx.delivery, `${ctx.event}.${ctx.action ?? "-"}`).catch((error: unknown) => {
-        console.error("could not record the skipped delivery:", errorText(error));
-      });
-    }
+    await recordSkipped(ctx);
     if (whenOff) await whenOff(ctx);
   };
   return actions ? { event, actions, handle: gatedHandle } : { event, handle: gatedHandle };
@@ -85,9 +110,9 @@ export function createGitHubModule(options: GitHubModuleOptions = {}): BotModule
       gated("check_suite", ["completed"], handleCheckSuite),
       gated("issues", ISSUE_ACTIONS, handleIssue, trackIssueState),
       gated("issue_comment", ["created"], handleIssueComment),
-      gated("release", ["published"], handleRelease),
+      gated("release", ["published"], handleRelease, undefined, handleDeployRelease),
       gated("repository", ["edited"], handleRepositoryEdited),
-      gated("push", undefined, handlePush),
+      gated("push", undefined, handlePush, undefined, handleDeployPush),
       ...refreshHandlers(options.linkedRoles),
     ],
     async scheduled(_controller, services) {

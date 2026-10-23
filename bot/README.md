@@ -17,27 +17,34 @@ flowchart LR
 
 ## GitHub activity
 
-A pull request or issue in a public repository gets one thread in the
-product channel `config/repos.json` maps it to. Private repositories post
-nothing; a payload without the `private` flag counts as private. The bot
-never posts to `#announcements`: people write that channel.
+Default: only deploys post, one line each, only to the bot channel
+`#git-feed`. No PR threads, PR cards, review cards, check cards, issue threads
+or product-channel lines. Private repositories post nothing; a payload without
+the `private` flag counts as private. The bot never posts to `#announcements`:
+people write that channel.
 
-| Event | Thread | Product channel | `#git-feed` |
-|---|---|---|---|
-| PR opened, reopened, ready for review | PR thread started if missing; card with the first paragraph of the description | Starter line | Line |
-| New commits | Push line in the PR thread | | |
-| Review submitted | Review card | | Approved or changes requested |
-| Checks finished | Card for the head commit | | Default-branch failures |
-| PR merged or closed | Card | | Line |
-| Issue opened | Issue thread started; card with the first paragraph | Starter line | Line |
-| Issue reopened | Card (thread started if missing) | | |
-| Issue comment | One line: author, first 300 characters, link. Bot comments and comments on PRs post nothing | | |
-| Issue closed | Close card, then the thread is archived | | Line |
-| Release published | | Release card | Line |
-| `status-*` topic changed | | Lifecycle card | Line |
-| Push to the default branch | | | Line |
+`config/repos.json` sets the mode: top-level `"feed": "deploys"` (the default
+for every repository) and an optional per-repository `"feed": "full"`. No
+repository has the override now.
 
-A PR thread is named `<repo> #<n>: <title>`. A PR that already has a
+| Event | `feed: deploys` (default) | `feed: full` |
+|---|---|---|
+| Push to the default branch (PR merges included) | `#git-feed` line: repo, short sha, commit title, link | Line, except PR merges (the PR card already posted) |
+| Release published (not a draft) | `#git-feed` line: repo, tag, release name, link | Release card in the product channel, line |
+| PR opened, reopened, ready for review | Nothing | PR thread started if missing; card with the first paragraph of the description; starter line in the product channel; `#git-feed` line |
+| New commits on a PR | Nothing | Push line in the PR thread |
+| Review submitted | Nothing | Review card; `#git-feed` line for approved or changes requested |
+| Checks finished | Nothing | Card for the head commit; default-branch failures in `#git-feed` |
+| PR merged or closed | Nothing | Card, `#git-feed` line |
+| Issue opened, reopened, comment, closed | Nothing | Issue thread, cards, comment lines, starter line, `#git-feed` line |
+| `status-*` topic changed | Nothing | Lifecycle card, `#git-feed` line |
+| KiCad collision guard | Comment on the PR on GitHub | Comment on GitHub and a warning in both threads |
+
+A delivery that posts nothing still answers 202 and is recorded as skipped in
+`github_deliveries`.
+
+The rest of this section describes `feed: full`. A PR thread is named
+`<repo> #<n>: <title>`. A PR that already has a
 `Discussion:` line pointing at a thread in its product channel posts there
 instead of starting one. An issue thread is named `<repo> issue #<n>: <title>`;
 the link lives in D1 (`github_issues`), not in the issue. A comment on an open
@@ -121,8 +128,8 @@ on the old account is removed by hand in Discord.
 
 ## Configuration
 
-`config/repos.json` maps each repository to its product channel and names the
-channels and roles the bot uses; ids are resolved by name at runtime.
+`config/repos.json` sets the GitHub feed mode (`feed`), maps each repository to
+its product channel and names the channels and roles the bot uses; ids are resolved by name at runtime.
 `tests/test_server_json.py` in the parent repository checks these names match
 `server.json`.
 
@@ -181,7 +188,7 @@ Tests replace `fetch` and fail on any network access.
 | `src/index.ts`, `src/registry.ts` | Routes and the module contract |
 | `src/commands/`, `src/github/`, `src/linked-roles/` | The three modules |
 | `src/discord.ts`, `src/github.ts` | API clients |
-| `config/repos.json` | Repository to channel map, channel and role names |
+| `config/repos.json` | Feed mode, repository to channel map, channel and role names |
 | `src/linked-roles/early-bird.ts` | Early Bird claim |
 | `migrations/` | D1 schema of the linked-role and Early Bird tables; the GitHub tables `github_deliveries`, `github_issues` and `bot_settings` are created on first use |
 | `src/posting.ts` | Kill switch |
