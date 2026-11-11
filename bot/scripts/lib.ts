@@ -2,6 +2,7 @@
  * Shared helpers for the register scripts. Every script is a dry run unless
  * called with --yes, refuses unknown arguments, and never prints a token.
  */
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 
 export class UsageError extends Error {}
@@ -49,8 +50,27 @@ export function setting(name: string): string {
 }
 
 /**
- * Bot token from DISCORD_BOT_TOKEN, else OPENDRONE_DISCORD_BOT_TOKEN from the
- * environment or INCUTEC_CREDENTIALS_FILE (default ~/.config/incutec/credentials.env). The value is never printed.
+ * A name from the workspace secret store (<workspace>/.incutec/secret_store.py: Keychain by standard name, the name
+ * used here is its alias). Undefined when the loader is absent (standalone clone, CI) or the name does not resolve.
+ * The value travels on a pipe and is never printed.
+ */
+export function storeValue(name: string): string | undefined {
+  if (process.env.INCUTEC_CREDENTIALS_FILE) return undefined;
+  const home = process.env.HOME;
+  const loader = `${process.env.INCUTEC_WORKSPACE || (home ? `${home}/Incutec` : "")}/.incutec/secret_store.py`;
+  if (!existsSync(loader)) return undefined;
+  const done = spawnSync("python3", [loader, "run", "--allow-missing", "--names", name, "--", "printenv", name], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  const value = done.status === 0 ? done.stdout.trim() : "";
+  return value || undefined;
+}
+
+/**
+ * Bot token from DISCORD_BOT_TOKEN, else OPENDRONE_DISCORD_BOT_TOKEN from the environment,
+ * INCUTEC_CREDENTIALS_FILE (default ~/.config/incutec/credentials.env) or the workspace secret store.
+ * The value is never printed.
  */
 export function botToken(): string {
   const direct = process.env.DISCORD_BOT_TOKEN || process.env.OPENDRONE_DISCORD_BOT_TOKEN;
@@ -59,8 +79,10 @@ export function botToken(): string {
   const file = process.env.INCUTEC_CREDENTIALS_FILE || (home ? `${home}/.config/incutec/credentials.env` : undefined);
   if (file && existsSync(file)) {
     const value = envFileValue("OPENDRONE_DISCORD_BOT_TOKEN", readFileSync(file, "utf8"));
-    if (value) return value;
+    if (value && !value.startsWith("keychain://")) return value;
   }
+  const stored = storeValue("OPENDRONE_DISCORD_BOT_TOKEN");
+  if (stored) return stored;
   throw new UsageError("set DISCORD_BOT_TOKEN or OPENDRONE_DISCORD_BOT_TOKEN");
 }
 

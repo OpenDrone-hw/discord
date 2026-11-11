@@ -1406,17 +1406,56 @@ def credentials_file() -> Path:
     return Path(os.environ.get("INCUTEC_CREDENTIALS_FILE") or "~/.config/incutec/credentials.env").expanduser()
 
 
+
+def _secret_store():
+    """The workspace secret loader (<workspace>/.incutec/secret_store.py: Keychain service `incutec`, standard names
+    with the names used here as aliases), or None: standalone clone, CI, Linux host, or INCUTEC_CREDENTIALS_FILE set."""
+    if os.environ.get("INCUTEC_CREDENTIALS_FILE") or os.environ.get("INCUTEC_SECRET_STORE") == "off":
+        return None
+    import importlib.util
+    from pathlib import Path as _Path
+    roots = [os.environ.get("INCUTEC_WORKSPACE"), *_Path(__file__).resolve().parents, _Path.home() / "Incutec"]
+    for root in roots:
+        path = _Path(root) / ".incutec" / "secret_store.py" if root else None
+        if path and path.is_file():
+            try:
+                spec = importlib.util.spec_from_file_location("incutec_secret_store", path)
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                return module
+            except Exception:  # noqa: BLE001 - the credentials file still applies
+                return None
+    return None
+
+
+def from_store(names):
+    """{name: value} for the names the secret store (or a config default) resolves; {} without a store. Never raises."""
+    store, out = _secret_store(), {}
+    if store is None:
+        return out
+    for name in names:
+        try:
+            value, where = store.locate(name, env={}, legacy_file={})
+        except Exception:  # noqa: BLE001 - locked or unreadable store
+            continue
+        if value and where in ("store", "default"):
+            out[name] = value
+    return out
+
+
 def credential(name: str) -> str | None:
-    """The process environment first, then the credentials file. Nothing else is read."""
+    """The process environment first, then the workspace secret store, then the credentials file."""
     if os.environ.get(name):
         return os.environ[name]
+    if stored := from_store([name]).get(name):
+        return stored
     try:
         text = credentials_file().read_text(encoding="utf-8", errors="replace")
     except OSError:
         return None
     for line in text.splitlines():
         key, sep, value = line.strip().removeprefix("export ").partition("=")
-        if sep and key.strip() == name and value.strip().strip("'\""):
+        if sep and key.strip() == name and value.strip().strip("'\"") and not value.strip().strip("'\"").startswith("keychain://"):
             return value.strip().strip("'\"")
     return None
 
