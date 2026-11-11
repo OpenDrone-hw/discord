@@ -16,3 +16,11 @@ declare module "node:fs" {
 interface ImportMeta {
   url: string;
 }
+
+declare module "node:child_process" {
+  export function spawnSync(
+    command: string,
+    args: string[],
+    options: { encoding: "utf8"; stdio: Array<"ignore" | "pipe"> },
+  ): { status: number | null; stdout: string };
+}
