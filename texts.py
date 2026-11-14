@@ -77,7 +77,7 @@ Roadmap: https://opendrone.be/roadmap""",
 ## Buying and support
 The products are sold at https://opendrone.be. Incutec is responsible for production, quality and delivery of every order, and carries the legal responsibility for a product sold.
 
-Alpha boards may be offered as a preorder against a funding target. The first production batch is built once the target is met.
+Alpha boards may be offered as a preorder. Preorders ship in production batches, with the ship-by date shown at checkout.
 
 Where to go:
 - Order, payment, shipping, warranty or returns: a ticket at https://opendrone.be/support. Only the Incutec team reads it, and no Discord account is needed.
