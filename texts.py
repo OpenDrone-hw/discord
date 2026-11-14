@@ -60,38 +60,36 @@ KiCad files cannot be merged. If two people edit the same .kicad_pcb or .kicad_s
 Full guide: https://github.com/OpenDrone-hw/.github/blob/main/CONTRIBUTING.md""",
     "product-lifecycle": """\
 ## Product lifecycle
-Every repo starts as a copy of hardware-template. Its status-* topic on GitHub says how far along it is. The roadmap on opendrone.be reads it.
+Each repo's status-* topic on GitHub says how far along it is. The roadmap reads it.
 
-1. Planned: there is a spec, no board. Not for sale. Help with research, parts and opinions.
-2. In progress: the design is being drawn. Not for sale. Help draw and review.
-3. Alpha: boards exist and are being tested. Preorder only. Fly them, break them, report back.
-4. Beta: on sale as the first batch. Tell us how it holds up in real use.
-5. Launched: on sale and the design is fixed. A change from here is a new product.
+1. Planned: a spec, no board. Help with research and parts.
+2. In progress: being drawn. Help draw and review.
+3. Alpha: boards in testing, preorder only. Fly them and report.
+4. Beta: first batch on sale. Report real use.
+5. Launched: design fixed. A change is a new product.
 
-Only admins and the Incutec team change the status, because it changes the website.
+Only the Incutec team changes the status.
 
-Want a new product? Post a paragraph in {#proposals}: what and why. Want to test an alpha board? Say so in its channel.
+New product idea: one paragraph in {#proposals}. Want to test an alpha board: say so in its channel.
 
 Roadmap: https://opendrone.be/roadmap""",
     "buying-and-support": """\
 ## Buying and support
-We sell at https://opendrone.be. The seller is Incutec BV in Leuven, Belgium. We are responsible for every order: production, quality and delivery.
+Incutec BV (Leuven, Belgium) sells at https://opendrone.be and is responsible for every order. We sell parts, not complete kits.
 
-We sell parts, not complete kits: flight controllers, ESCs, receivers, frames and motors. You build the drone.
-
-In-stock boards ship within the EU now. Preorders ship in the next batch, by 31 March 2027 at the latest. The product page shows which one you are buying.
+In-stock boards ship within the EU now. Preorders ship by 31 March 2027.
 
 Where to ask:
-- Order, payment, shipping, warranty or returns: open a ticket at https://opendrone.be/support. Only our team reads it. You don't need Discord.
-- A board that doesn't work: post in {#help}. Other pilots and the team answer there, and the answer stays findable. Keep order numbers and personal details for a ticket.
+- Order, payment, shipping, warranty or returns: a ticket at https://opendrone.be/support. Only our team reads it, no Discord needed.
+- A board that doesn't work: {#help}. Order numbers and personal details go in a ticket.
 - Design questions: the board's channel under Hardware.
-- Firmware: Betaflight, AM32 and ExpressLRS are upstream open-source projects. Our boards run them unchanged where we can. Use the channels under Software.
-- Anything that should be findable later: open a GitHub issue on the repo.""",
+- Firmware (Betaflight, AM32, ExpressLRS): the channels under Software.
+- Anything that should stay findable: a GitHub issue on the repo.""",
     "licence-and-ai": """\
 ## Licence, names and AI
-The hardware is CERN-OHL-S-2.0, a copyleft licence. You can change a board and sell your version. If someone asks for your sources, you give them on the same terms. We don't want to stop clones. We want everyone to share their improvements.
+The hardware is CERN-OHL-S-2.0, a copyleft licence. Change a board and sell it, but share your sources on the same terms when asked. We don't want to stop clones, we want shared improvements.
 
-incutec is a trademark. OpenDrone is not. Build the designs, sell them, call them what you like. Just don't present your product as an official incutec product, or use incutec branding so it looks like we made, tested or support it. Saying what your board is based on is fine.
+incutec is a trademark. OpenDrone is not. Build and sell the designs under any name. Don't use incutec branding in a way that suggests we made, tested or support your product. Saying what it is based on is fine.
 
 Some bundled 3D models have their own licence (CC-BY-SA-4.0 or GPL), noted inside the file. Those notices still apply.
 
@@ -100,16 +98,14 @@ Licence text: https://ohwr.org/cern_ohl_s_v2.txt
 ### AI usage
 You are responsible for what you commit. If you do not personally understand what an AI did and why, do not commit it.
 
-We use AI for research, reading datasheets, finding parts, BOM work, library upkeep, running ERC and DRC and explaining the results, documentation and planning.
-
-It does not draw schematics, place parts or route boards.""",
+We use AI for research, datasheets, parts, BOMs, libraries, ERC and DRC, documentation and planning. It does not draw schematics, place parts or route boards.""",
     "welcome": f"""\
 ## Welcome to OpenDrone
-OpenDrone is open-source FPV drone hardware made by Incutec, a small company in Leuven, Belgium. This server is where we build it, test it and help each other.
+OpenDrone is open-source FPV drone hardware by Incutec, Leuven. We build, test and support it here.
 Start with {{#rules}}, say hi in {{#introduce-yourself}}, ask board questions in {{#help}} and propose products or changes in {{#proposals}}.
 Pick the product channels you want in Channels & Roles: {CUSTOMIZE}
-Development happens in the product channels, one thread per pull request. Want every pull request, merge and release in one channel? Pick GitHub feed in Channels & Roles.
-Orders, payment, shipping and warranty: a private ticket at https://opendrone.be/support""",
+Each pull request gets a thread in its product channel. For all of them in one place, pick GitHub feed.
+Orders and warranty: a ticket at https://opendrone.be/support""",
 }
 
 
